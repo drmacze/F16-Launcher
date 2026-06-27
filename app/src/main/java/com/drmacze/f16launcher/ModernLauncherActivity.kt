@@ -1,6 +1,5 @@
 package com.drmacze.f16launcher
 
-import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -30,6 +29,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -38,7 +38,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,7 +59,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
-import org.json.JSONObject
 
 private const val GAME_PACKAGE = "com.ea.gp.fifaworld"
 
@@ -69,10 +67,7 @@ data class TopicItem(val id: String, val title: String, val body: String, val re
 data class PostItem(val id: String, val authorId: String, val body: String, val createdAt: String)
 
 enum class Page(val label: String, val icon: String) {
-    Home("Home", "⌂"),
-    Community("Community", "◉"),
-    Plan("Plan", "◇"),
-    Profile("Profile", "☻")
+    Home("Home", "⌂"), Community("Community", "◉"), Plan("Plan", "◇"), Profile("Profile", "☻")
 }
 
 class ModernLauncherActivity : ComponentActivity() {
@@ -85,14 +80,9 @@ class ModernLauncherActivity : ComponentActivity() {
 @Composable
 fun DLavieModernApp() {
     val scheme = darkColorScheme(
-        background = Color(0xFF050812),
-        surface = Color(0xFF101827),
-        primary = Color(0xFF27C8FF),
-        secondary = Color(0xFF6C63FF),
-        onPrimary = Color(0xFF00111D),
-        onSecondary = Color.White,
-        onBackground = Color(0xFFF7FAFF),
-        onSurface = Color(0xFFF7FAFF)
+        background = Color(0xFF050812), surface = Color(0xFF101827), primary = CandyCyan,
+        secondary = CandyBlue, onPrimary = Color(0xFF00111D), onSecondary = Color.White,
+        onBackground = Color(0xFFF7FAFF), onSurface = Color(0xFFF7FAFF)
     )
     MaterialTheme(colorScheme = scheme) {
         val context = LocalContext.current
@@ -100,19 +90,11 @@ fun DLavieModernApp() {
         var loggedIn by remember { mutableStateOf(api.loggedIn()) }
         Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF050812)) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0xFF050812), Color(0xFF081525), Color(0xFF050812))
-                        )
-                    )
+                modifier = Modifier.fillMaxSize().background(
+                    Brush.linearGradient(listOf(Color(0xFF050812), Color(0xFF081525), Color(0xFF050812)))
+                )
             ) {
-                if (!loggedIn) {
-                    AuthScreen(api = api, onSuccess = { loggedIn = true })
-                } else {
-                    MainShell(api = api, onLogout = { api.logout(); loggedIn = false })
-                }
+                if (!loggedIn) AuthScreen(api) { loggedIn = true } else MainShell(api) { api.logout(); loggedIn = false }
             }
         }
     }
@@ -128,16 +110,10 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
     var avatarUrl by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("Masuk dulu untuk membuka DLavie Hub.") }
     var loading by remember { mutableStateOf(false) }
-
-    Row(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(18.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        GlassCard(modifier = Modifier.weight(1f).fillMaxSize()) {
+    Row(Modifier.fillMaxSize().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        GlassCard(Modifier.weight(1f).fillMaxSize()) {
             Text("DLavie", fontSize = 42.sp, fontWeight = FontWeight.Black, color = Color.White)
-            Text("Modern Mod Hub", fontSize = 18.sp, color = CandyBlue)
+            Text("Modern Mod Hub", fontSize = 18.sp, color = CandyCyan)
             Spacer(Modifier.height(18.dp))
             Text("Login page dibuat sebagai halaman pertama. Setelah login, baru masuk Home, Community, Upgrade Plan, dan Profile.", color = SoftText, fontSize = 15.sp)
             Spacer(Modifier.height(22.dp))
@@ -146,7 +122,7 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
             InfoLine("Avatar", "Opsional. Bisa dikosongkan dulu.")
             InfoLine("Community", "Topic, reply, mention @username sudah memakai Supabase DlavieAPP.")
         }
-        GlassCard(modifier = Modifier.weight(1f).fillMaxSize()) {
+        GlassCard(Modifier.weight(1f).fillMaxSize()) {
             Text("Account", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = SoftText)
             Spacer(Modifier.height(10.dp))
             ModernField("Email", email) { email = it }
@@ -160,16 +136,11 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
             Button(
                 enabled = !loading,
                 onClick = {
-                    loading = true
-                    status = "Login..."
+                    loading = true; status = "Login..."
                     scope.launch {
-                        try {
-                            withContext(Dispatchers.IO) { api.login(email, password) }
-                            status = "Login berhasil."
-                            onSuccess()
-                        } catch (t: Throwable) {
-                            status = "Login gagal: ${t.message}. Jika belum punya akun, tekan Register."
-                        } finally { loading = false }
+                        try { withContext(Dispatchers.IO) { api.login(email, password) }; status = "Login berhasil."; onSuccess() }
+                        catch (t: Throwable) { status = "Login gagal: ${t.message}. Jika belum punya akun, tekan Register." }
+                        finally { loading = false }
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -179,28 +150,15 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
             Button(
                 enabled = !loading,
                 onClick = {
-                    if (!username.matches(Regex("[a-zA-Z0-9_]{3,24}"))) {
-                        status = "Username wajib 3-24 karakter: huruf, angka, underscore."
-                        return@Button
-                    }
-                    if (displayName.trim().length < 2) {
-                        status = "Display name wajib minimal 2 karakter."
-                        return@Button
-                    }
-                    loading = true
-                    status = "Register..."
+                    if (!username.matches(Regex("[a-zA-Z0-9_]{3,24}"))) { status = "Username wajib 3-24 karakter: huruf, angka, underscore."; return@Button }
+                    if (displayName.trim().length < 2) { status = "Display name wajib minimal 2 karakter."; return@Button }
+                    loading = true; status = "Register..."
                     scope.launch {
                         try {
                             withContext(Dispatchers.IO) { api.register(email, password, username, displayName, avatarUrl) }
-                            if (api.loggedIn()) {
-                                status = "Register berhasil."
-                                onSuccess()
-                            } else {
-                                status = "Register berhasil. Jika email confirmation aktif, cek email lalu login."
-                            }
-                        } catch (t: Throwable) {
-                            status = "Register gagal: ${t.message}"
-                        } finally { loading = false }
+                            if (api.loggedIn()) { status = "Register berhasil."; onSuccess() } else status = "Register berhasil. Jika email confirmation aktif, cek email lalu login."
+                        } catch (t: Throwable) { status = "Register gagal: ${t.message}" }
+                        finally { loading = false }
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -213,12 +171,8 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
 @Composable
 fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
     var page by remember { mutableStateOf(Page.Home) }
-    Column(modifier = Modifier.fillMaxSize()) {
-        AnimatedContent(
-            targetState = page,
-            label = "page",
-            modifier = Modifier.weight(1f)
-        ) { target ->
+    Column(Modifier.fillMaxSize()) {
+        AnimatedContent(targetState = page, label = "page", modifier = Modifier.weight(1f)) { target ->
             when (target) {
                 Page.Home -> HomeScreen()
                 Page.Community -> CommunityScreen(api)
@@ -228,12 +182,7 @@ fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
         }
         NavigationBar(containerColor = Color(0xEE0E1728), tonalElevation = 0.dp) {
             Page.values().forEach { item ->
-                NavigationBarItem(
-                    selected = page == item,
-                    onClick = { page = item },
-                    icon = { Text(item.icon, fontSize = 18.sp) },
-                    label = { Text(item.label) }
-                )
+                NavigationBarItem(selected = page == item, onClick = { page = item }, icon = { Text(item.icon, fontSize = 18.sp) }, label = { Text(item.label) })
             }
         }
     }
@@ -242,33 +191,26 @@ fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
 @Composable
 fun HomeScreen() {
     val context = LocalContext.current
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         GlassCard {
             Text("DLavie Hub", fontSize = 38.sp, fontWeight = FontWeight.Black, color = Color.White)
-            Text("FIFA 16 Mobile Mod Center", fontSize = 16.sp, color = CandyBlue)
+            Text("FIFA 16 Mobile Mod Center", fontSize = 16.sp, color = CandyCyan)
             Spacer(Modifier.height(14.dp))
             Text("UI baru ini tidak memaksa landscape. Layout mengikuti orientasi device seperti app modern biasa.", color = SoftText)
             Spacer(Modifier.height(18.dp))
             Button(
                 onClick = {
                     val launch = context.packageManager.getLaunchIntentForPackage(GAME_PACKAGE)
-                    if (launch != null) context.startActivity(launch)
-                    else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$GAME_PACKAGE")))
+                    if (launch != null) context.startActivity(launch) else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$GAME_PACKAGE")))
                 },
                 modifier = Modifier.fillMaxWidth().height(54.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B))
             ) { Text("Launch FIFA 16", fontWeight = FontWeight.Bold) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            SmallGlassStat("Community", "Online")
-            SmallGlassStat("Backend", "Supabase")
-            SmallGlassStat("APK", "0.4.0")
+            SmallGlassStat("Community", "Online", Modifier.weight(1f))
+            SmallGlassStat("Backend", "Supabase", Modifier.weight(1f))
+            SmallGlassStat("APK", "0.4.0", Modifier.weight(1f))
         }
         GlassCard {
             Text("Patch Engine", fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -289,247 +231,79 @@ fun CommunityScreen(api: CommunityApi) {
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
     var reply by remember { mutableStateOf("") }
-
-    fun loadTopics() {
-        scope.launch {
-            try {
-                topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
-                status = if (topics.isEmpty()) "Belum ada topic." else "${topics.size} topic loaded."
-            } catch (t: Throwable) { status = "Gagal load topic: ${t.message}" }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        try {
-            categories = withContext(Dispatchers.IO) { jsonCategories(api.categories()) }
-            selectedCategory = categories.firstOrNull()
-            topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
-            status = "Community ready."
-        } catch (t: Throwable) { status = "Community error: ${t.message}" }
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(14.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        GlassCard(modifier = Modifier.width(210.dp).fillMaxSize()) {
+    fun loadTopics() { scope.launch { try { topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }; status = if (topics.isEmpty()) "Belum ada topic." else "${topics.size} topic loaded." } catch (t: Throwable) { status = "Gagal load topic: ${t.message}" } } }
+    LaunchedEffect(Unit) { try { categories = withContext(Dispatchers.IO) { jsonCategories(api.categories()) }; selectedCategory = categories.firstOrNull(); topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }; status = "Community ready." } catch (t: Throwable) { status = "Community error: ${t.message}" } }
+    Row(Modifier.fillMaxSize().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        GlassCard(Modifier.width(210.dp).fillMaxSize()) {
             Text("Channels", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
-            categories.forEach { c ->
-                OutlinedButton(
-                    onClick = { selectedCategory = c; selectedTopic = null; posts = emptyList(); loadTopics() },
-                    modifier = Modifier.fillMaxWidth(),
-                    border = BorderStroke(1.dp, if (selectedCategory?.id == c.id) CandyCyan else GlassStroke)
-                ) { Text(c.name) }
-            }
+            categories.forEach { c -> OutlinedButton(onClick = { selectedCategory = c; selectedTopic = null; posts = emptyList(); loadTopics() }, modifier = Modifier.fillMaxWidth(), border = BorderStroke(1.dp, if (selectedCategory?.id == c.id) CandyCyan else GlassStroke)) { Text(c.name) } }
         }
-        GlassCard(modifier = Modifier.weight(1f).fillMaxSize()) {
+        GlassCard(Modifier.weight(1f).fillMaxSize()) {
             Text("Topics", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(status, color = SoftText, fontSize = 12.sp)
             Spacer(Modifier.height(8.dp))
             ModernField("Judul topic baru", title) { title = it }
             ModernField("Isi topic baru, bisa tag @username", body) { body = it }
-            Button(
-                onClick = {
-                    val cat = selectedCategory ?: return@Button
-                    if (title.trim().length < 4 || body.trim().isEmpty()) {
-                        status = "Judul minimal 4 karakter dan isi wajib diisi."
-                        return@Button
-                    }
-                    scope.launch {
-                        try {
-                            val newTopic = withContext(Dispatchers.IO) { api.createTopic(cat.id, title, body) }
-                            title = ""; body = ""
-                            topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(cat.id)) }
-                            selectedTopic = topics.firstOrNull { it.id == newTopic.optString("id") }
-                            status = "Topic dibuat."
-                        } catch (t: Throwable) { status = "Gagal membuat topic: ${t.message}" }
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D)),
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("New Topic") }
+            Button(onClick = {
+                val cat = selectedCategory ?: return@Button
+                if (title.trim().length < 4 || body.trim().isEmpty()) { status = "Judul minimal 4 karakter dan isi wajib diisi."; return@Button }
+                scope.launch { try { val newTopic = withContext(Dispatchers.IO) { api.createTopic(cat.id, title, body) }; title = ""; body = ""; topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(cat.id)) }; selectedTopic = topics.firstOrNull { it.id == newTopic.optString("id") }; status = "Topic dibuat." } catch (t: Throwable) { status = "Gagal membuat topic: ${t.message}" } }
+            }, colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D)), modifier = Modifier.fillMaxWidth()) { Text("New Topic") }
             Spacer(Modifier.height(8.dp))
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(topics) { topic ->
-                    GlassListItem(
-                        title = topic.title,
-                        subtitle = "${topic.replyCount} replies • ${topic.createdAt.take(10)}",
-                        selected = selectedTopic?.id == topic.id,
-                        onClick = {
-                            selectedTopic = topic
-                            scope.launch {
-                                try { posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) } }
-                                catch (t: Throwable) { status = "Gagal load thread: ${t.message}" }
-                            }
-                        }
-                    )
-                }
-            }
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) { items(topics) { topic -> GlassListItem(topic.title, "${topic.replyCount} replies • ${topic.createdAt.take(10)}", selectedTopic?.id == topic.id) { selectedTopic = topic; scope.launch { try { posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) } } catch (t: Throwable) { status = "Gagal load thread: ${t.message}" } } } } }
         }
-        GlassCard(modifier = Modifier.weight(1f).fillMaxSize()) {
+        GlassCard(Modifier.weight(1f).fillMaxSize()) {
             Text(selectedTopic?.title ?: "Thread", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(selectedTopic?.body ?: "Pilih topic untuk membaca dan membalas.", color = SoftText)
             Spacer(Modifier.height(10.dp))
-            LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(posts) { p -> GlassListItem("user:${p.authorId.take(8)}", p.body, false) {} }
-            }
+            LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) { items(posts) { p -> GlassListItem("user:${p.authorId.take(8)}", p.body, false) {} } }
             ModernField("Reply, bisa tag @username", reply) { reply = it }
-            Button(
-                onClick = {
-                    val topic = selectedTopic ?: return@Button
-                    if (reply.trim().isEmpty()) return@Button
-                    scope.launch {
-                        try {
-                            withContext(Dispatchers.IO) { api.createPost(topic.id, "", reply) }
-                            reply = ""
-                            posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) }
-                            topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
-                        } catch (t: Throwable) { status = "Gagal reply: ${t.message}" }
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B)),
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Send Reply") }
+            Button(onClick = {
+                val topic = selectedTopic ?: return@Button
+                if (reply.trim().isEmpty()) return@Button
+                scope.launch { try { withContext(Dispatchers.IO) { api.createPost(topic.id, "", reply) }; reply = ""; posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) }; topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) } } catch (t: Throwable) { status = "Gagal reply: ${t.message}" } }
+            }, colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B)), modifier = Modifier.fillMaxWidth()) { Text("Send Reply") }
             Text("Upload file/screenshot: next step setelah Storage bucket aktif.", color = SoftText, fontSize = 12.sp)
         }
     }
 }
 
 @Composable
-fun PlanScreen() {
-    Column(modifier = Modifier.fillMaxSize().padding(18.dp)) {
-        GlassCard {
-            Text("Upgrade Plan", fontSize = 34.sp, fontWeight = FontWeight.Black)
-            Text("Coming Soon", fontSize = 22.sp, color = CandyBlue, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
-            Text("Subscription dikosongkan dulu. Tidak ada checkout palsu, benefit palsu, atau tombol pembayaran dummy.", color = SoftText)
-        }
-    }
-}
+fun PlanScreen() { Column(Modifier.fillMaxSize().padding(18.dp)) { GlassCard { Text("Upgrade Plan", fontSize = 34.sp, fontWeight = FontWeight.Black); Text("Coming Soon", fontSize = 22.sp, color = CandyCyan, fontWeight = FontWeight.Bold); Spacer(Modifier.height(10.dp)); Text("Subscription dikosongkan dulu. Tidak ada checkout palsu, benefit palsu, atau tombol pembayaran dummy.", color = SoftText) } } }
 
 @Composable
 fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
     var autoCheck by remember { mutableStateOf(false) }
     var autoLaunch by remember { mutableStateOf(false) }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(70.dp)
-                        .background(Brush.linearGradient(listOf(CandyCyan, CandyBlue)), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) { Text("DL", fontSize = 24.sp, fontWeight = FontWeight.Black, color = Color.White) }
-                Spacer(Modifier.width(14.dp))
-                Column {
-                    Text(api.displayName().ifEmpty { "DLavie User" }, fontSize = 26.sp, fontWeight = FontWeight.Black)
-                    Text("@${api.username().ifEmpty { "unknown" }}", color = SoftText)
-                }
-            }
-            Spacer(Modifier.height(14.dp))
-            InfoLine("Profile avatar", "Opsional. Avatar upload akan aktif setelah Storage bucket aktif.")
-            InfoLine("Backend", CommunityApi.SUPABASE_URL)
-            InfoLine("Target game", GAME_PACKAGE)
-        }
-        GlassCard {
-            Text("Settings", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            SettingRow("Auto check update", autoCheck) { autoCheck = it }
-            SettingRow("Auto launch after patch", autoLaunch) { autoLaunch = it }
-            Text("Theme toggle light/dark akan saya aktifkan penuh di tahap berikutnya setelah port semua patch engine ke Compose.", color = SoftText, fontSize = 13.sp)
-            Spacer(Modifier.height(10.dp))
-            Button(onClick = onLogout, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5269)), modifier = Modifier.fillMaxWidth()) {
-                Text("Logout", fontWeight = FontWeight.Bold)
-            }
-        }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        GlassCard { Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(70.dp).background(Brush.linearGradient(listOf(CandyCyan, CandyBlue)), CircleShape), contentAlignment = Alignment.Center) { Text("DL", fontSize = 24.sp, fontWeight = FontWeight.Black, color = Color.White) }; Spacer(Modifier.width(14.dp)); Column { Text(api.displayName().ifEmpty { "DLavie User" }, fontSize = 26.sp, fontWeight = FontWeight.Black); Text("@${api.username().ifEmpty { "unknown" }}", color = SoftText) } }; Spacer(Modifier.height(14.dp)); InfoLine("Profile avatar", "Opsional. Avatar upload akan aktif setelah Storage bucket aktif."); InfoLine("Backend", CommunityApi.SUPABASE_URL); InfoLine("Target game", GAME_PACKAGE) }
+        GlassCard { Text("Settings", fontSize = 22.sp, fontWeight = FontWeight.Bold); SettingRow("Auto check update", autoCheck) { autoCheck = it }; SettingRow("Auto launch after patch", autoLaunch) { autoLaunch = it }; Text("Theme toggle light/dark akan saya aktifkan penuh di tahap berikutnya setelah port semua patch engine ke Compose.", color = SoftText, fontSize = 13.sp); Spacer(Modifier.height(10.dp)); Button(onClick = onLogout, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5269)), modifier = Modifier.fillMaxWidth()) { Text("Logout", fontWeight = FontWeight.Bold) } }
     }
 }
 
 @Composable
-fun GlassCard(modifier: Modifier = Modifier, content: @Composable Column.() -> Unit) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xCC101827)),
-        border = BorderStroke(1.dp, GlassStroke)
-    ) { Column(modifier = Modifier.padding(18.dp), content = content) }
-}
+fun GlassCard(modifier: Modifier = Modifier, content: @Composable Column.() -> Unit) { Card(modifier = modifier, shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Color(0xCC101827)), border = BorderStroke(1.dp, GlassStroke)) { Column(modifier = Modifier.padding(18.dp), content = content) } }
 
 @Composable
-fun ModernField(label: String, value: String, password: Boolean = false, onChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(label) },
-        visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        singleLine = false
-    )
-    Spacer(Modifier.height(8.dp))
-}
+fun ModernField(label: String, value: String, password: Boolean = false, onChange: (String) -> Unit) { OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) }, visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), singleLine = false); Spacer(Modifier.height(8.dp)) }
 
 @Composable
-fun InfoLine(title: String, body: String) {
-    Spacer(Modifier.height(10.dp))
-    Text(title, color = SoftText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-    Text(body, color = Color.White, fontSize = 14.sp)
-}
+fun InfoLine(title: String, body: String) { Spacer(Modifier.height(10.dp)); Text(title, color = SoftText, fontWeight = FontWeight.Bold, fontSize = 13.sp); Text(body, color = Color.White, fontSize = 14.sp) }
 
 @Composable
-fun SmallGlassStat(title: String, value: String) {
-    GlassCard(modifier = Modifier.weight(1f)) {
-        Text(title, color = SoftText, fontSize = 12.sp)
-        Text(value, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-    }
-}
+fun SmallGlassStat(title: String, value: String, modifier: Modifier = Modifier) { GlassCard(modifier = modifier) { Text(title, color = SoftText, fontSize = 12.sp); Text(value, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) } }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GlassListItem(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) { Surface(onClick = onClick, shape = RoundedCornerShape(18.dp), color = if (selected) Color(0x5539D8FF) else Color(0x66172132), border = BorderStroke(1.dp, if (selected) CandyCyan else GlassStroke), modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { Text(title, color = Color.White, fontWeight = FontWeight.Bold); Text(subtitle, color = SoftText, fontSize = 12.sp) } } }
 
 @Composable
-fun GlassListItem(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(18.dp),
-        color = if (selected) Color(0x5539D8FF) else Color(0x66172132),
-        border = BorderStroke(1.dp, if (selected) CandyCyan else GlassStroke),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(Modifier.padding(12.dp)) {
-            Text(title, color = Color.White, fontWeight = FontWeight.Bold)
-            Text(subtitle, color = SoftText, fontSize = 12.sp)
-        }
-    }
-}
+fun SettingRow(title: String, value: Boolean, onChange: (Boolean) -> Unit) { Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) { Text(title, modifier = Modifier.weight(1f), color = Color.White); Switch(checked = value, onCheckedChange = onChange) } }
 
-@Composable
-fun SettingRow(title: String, value: Boolean, onChange: (Boolean) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, modifier = Modifier.weight(1f), color = Color.White)
-        Switch(checked = value, onCheckedChange = onChange)
-    }
-}
-
-fun jsonCategories(arr: JSONArray): List<CategoryItem> = List(arr.length()) { i ->
-    val o = arr.getJSONObject(i)
-    CategoryItem(o.optString("id"), o.optString("name"), o.optString("description"))
-}
-
-fun jsonTopics(arr: JSONArray): List<TopicItem> = List(arr.length()) { i ->
-    val o = arr.getJSONObject(i)
-    TopicItem(o.optString("id"), o.optString("title"), o.optString("body"), o.optInt("reply_count"), o.optString("created_at"))
-}
-
-fun jsonPosts(arr: JSONArray): List<PostItem> = List(arr.length()) { i ->
-    val o = arr.getJSONObject(i)
-    PostItem(o.optString("id"), o.optString("author_id"), o.optString("body"), o.optString("created_at"))
-}
+fun jsonCategories(arr: JSONArray): List<CategoryItem> = List(arr.length()) { i -> val o = arr.getJSONObject(i); CategoryItem(o.optString("id"), o.optString("name"), o.optString("description")) }
+fun jsonTopics(arr: JSONArray): List<TopicItem> = List(arr.length()) { i -> val o = arr.getJSONObject(i); TopicItem(o.optString("id"), o.optString("title"), o.optString("body"), o.optInt("reply_count"), o.optString("created_at")) }
+fun jsonPosts(arr: JSONArray): List<PostItem> = List(arr.length()) { i -> val o = arr.getJSONObject(i); PostItem(o.optString("id"), o.optString("author_id"), o.optString("body"), o.optString("created_at")) }
 
 val CandyCyan = Color(0xFF27C8FF)
 val CandyBlue = Color(0xFF6C63FF)
