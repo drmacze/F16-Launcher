@@ -11,8 +11,10 @@
 
     <application
         android:allowBackup="true"
+        android:icon="@drawable/dlavie_launcher_icon"
+        android:roundIcon="@drawable/dlavie_launcher_icon"
         android:label="@string/app_name"
-        android:theme="@style/AppTheme"
+        android:theme="@style/AppTheme.Splash"
         android:usesCleartextTraffic="false">
 
         <meta-data
@@ -34,6 +36,7 @@
         <activity
             android:name=".GameHubActivity"
             android:exported="true"
+            android:icon="@drawable/dlavie_launcher_icon"
             android:label="DLavie Updater">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -44,7 +47,9 @@
         <activity
             android:name=".ModernLauncherActivity"
             android:exported="true"
-            android:label="DLavie Hub">
+            android:icon="@drawable/dlavie_launcher_icon"
+            android:label="DLavie Hub"
+            android:theme="@style/AppTheme.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
