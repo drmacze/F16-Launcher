@@ -47,6 +47,8 @@ public class MainActivity extends Activity {
     private static final String PREFS = "f16_launcher";
     private static final String KEY_VERSION = "local_version_code";
     private static final String KEY_URL = "manifest_url";
+    private static final String KEY_LAST_BACKUP = "last_backup_root";
+    private static final String KEY_LAST_TARGET = "last_backup_target";
     private static final int SHIZUKU_REQ = 1601;
     private static final String GAME_PACKAGE = "com.ea.gp.fifaworld";
     private static final String DEFAULT_MANIFEST = "https://raw.githubusercontent.com/drmacze/F16/main/updates/latest.json";
@@ -70,7 +72,6 @@ public class MainActivity extends Activity {
     private Button updateButton;
     private Button shizukuButton;
     private Button rootBadge;
-
     private JSONObject lastManifest;
 
     @Override
@@ -88,7 +89,6 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(BG);
-
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(18), dp(18), dp(24));
@@ -100,13 +100,10 @@ public class MainActivity extends Activity {
         hero.setBackground(roundGradient(22, Color.rgb(41, 47, 75), Color.rgb(13, 16, 28)));
         root.addView(hero, matchWrap());
 
-        TextView brand = text("DLavie", 34, TEXT, true);
-        hero.addView(brand);
-
+        hero.addView(text("DLavie", 34, TEXT, true));
         TextView subtitle = text("FIFA 16 Mobile Mod Launcher", 15, MUTED, false);
         setMargins(subtitle, 0, dp(2), 0, 0);
         hero.addView(subtitle);
-
         TextView tagline = text("Update patch kecil, apply otomatis, lalu langsung launch game.", 13, MUTED, false);
         setMargins(tagline, 0, dp(10), 0, 0);
         hero.addView(tagline);
@@ -115,12 +112,10 @@ public class MainActivity extends Activity {
         badgeRow.setOrientation(LinearLayout.HORIZONTAL);
         setMargins(badgeRow, 0, dp(14), 0, 0);
         hero.addView(badgeRow);
-
         shizukuButton = pill("Shizuku: cek", CARD_2, MUTED);
+        shizukuButton.setOnClickListener(v -> requestShizuku());
         badgeRow.addView(shizukuButton);
         setMargins(shizukuButton, 0, 0, dp(8), 0);
-        shizukuButton.setOnClickListener(v -> requestShizuku());
-
         rootBadge = pill("Root: cek", CARD_2, MUTED);
         badgeRow.addView(rootBadge);
 
@@ -137,7 +132,6 @@ public class MainActivity extends Activity {
         LinearLayout updateCard = card();
         setMargins(updateCard, 0, dp(14), 0, 0);
         root.addView(updateCard);
-
         TextView updateTitle = text("Update Source", 12, MUTED, true);
         updateTitle.setLetterSpacing(0.08f);
         updateCard.addView(updateTitle);
@@ -174,7 +168,6 @@ public class MainActivity extends Activity {
         LinearLayout toolsCard = card();
         setMargins(toolsCard, 0, dp(14), 0, 0);
         root.addView(toolsCard);
-
         TextView toolsTitle = text("Tools", 12, MUTED, true);
         toolsTitle.setLetterSpacing(0.08f);
         toolsCard.addView(toolsTitle);
@@ -191,6 +184,10 @@ public class MainActivity extends Activity {
         });
         toolsCard.addView(markBase);
 
+        Button restore = actionButton("Restore Backup Terakhir", CARD_2, TEXT);
+        restore.setOnClickListener(v -> restoreBackup());
+        toolsCard.addView(restore);
+
         Button launch = actionButton("Launch FIFA 16", SUCCESS, Color.rgb(2, 20, 12));
         launch.setOnClickListener(v -> launchGame());
         toolsCard.addView(launch);
@@ -204,7 +201,6 @@ public class MainActivity extends Activity {
         logView = text("Siap digunakan.", 13, MUTED, false);
         setMargins(logView, 0, dp(8), 0, 0);
         logCard.addView(logView);
-
         setContentView(scroll);
     }
 
@@ -389,9 +385,7 @@ public class MainActivity extends Activity {
                 int local = prefs.getInt(KEY_VERSION, 1);
                 while (local < latest) {
                     JSONObject patch = findPatch(lastManifest.getJSONArray("patches"), local);
-                    if (patch == null) {
-                        throw new IllegalStateException("Patch dari v" + local + " tidak ditemukan di manifest.");
-                    }
+                    if (patch == null) throw new IllegalStateException("Patch dari v" + local + " tidak ditemukan di manifest.");
                     applyOnePatch(patch);
                     local = patch.getInt("to");
                     prefs.edit().putInt(KEY_VERSION, local).apply();
@@ -401,10 +395,7 @@ public class MainActivity extends Activity {
                 refreshStatus();
             } catch (Throwable t) {
                 appendLog("Update gagal: " + t.getMessage());
-                main.post(() -> {
-                    updateButton.setEnabled(true);
-                    updateButton.setAlpha(1.0f);
-                });
+                main.post(() -> { updateButton.setEnabled(true); updateButton.setAlpha(1.0f); });
             }
         });
     }
@@ -420,43 +411,65 @@ public class MainActivity extends Activity {
     private void applyOnePatch(JSONObject patch) throws Exception {
         int to = patch.getInt("to");
         String name = patch.optString("name", "patch-v" + to);
-        String url = patch.getString("url");
-        String sha = patch.optString("sha256", "").trim();
         String target = patch.optString("target", "/sdcard/Android/data/com.ea.gp.fifaworld/");
+        appendLog("Menyiapkan " + name + "...");
 
-        appendLog("Download " + name + "...");
         File work = new File(getExternalFilesDir(null), "updates/v" + to);
         deleteRecursive(work);
         if (!work.mkdirs() && !work.exists()) throw new IllegalStateException("Tidak bisa membuat folder kerja.");
-        File zip = new File(work, "patch.zip");
-        downloadFile(url, zip);
+        File extract = new File(work, "extracted");
+        if (!extract.mkdirs() && !extract.exists()) throw new IllegalStateException("Tidak bisa membuat folder extract.");
+        List<String> entries = new ArrayList<>();
 
-        if (!sha.isEmpty()) {
-            String got = sha256(zip);
-            if (!got.equalsIgnoreCase(sha)) throw new IllegalStateException("SHA-256 tidak cocok. File update dibatalkan.");
-            appendLog("SHA-256 valid.");
+        if (patch.has("files")) {
+            createInlineFiles(patch.getJSONArray("files"), extract, entries);
+            appendLog("Inline patch siap: " + entries.size() + " file.");
         } else {
-            appendLog("SHA-256 kosong, verifikasi dilewati.");
+            String url = patch.getString("url");
+            String sha = patch.optString("sha256", "").trim();
+            File zip = new File(work, "patch.zip");
+            appendLog("Download " + name + "...");
+            downloadFile(url, zip);
+            if (!sha.isEmpty()) {
+                String got = sha256(zip);
+                if (!got.equalsIgnoreCase(sha)) throw new IllegalStateException("SHA-256 tidak cocok. File update dibatalkan.");
+                appendLog("SHA-256 valid.");
+            } else {
+                appendLog("SHA-256 kosong, verifikasi dilewati.");
+            }
+            unzip(zip, extract);
+            entries.addAll(listZipFiles(zip));
+            appendLog("Patch diekstrak: " + entries.size() + " file.");
         }
 
-        File extract = new File(work, "extracted");
-        unzip(zip, extract);
-        appendLog("Patch diekstrak.");
-
-        List<String> entries = listZipFiles(zip);
         String backup = "/sdcard/F16Launcher/backups/v" + to + "/" + System.currentTimeMillis();
-        String cmd = buildCopyCommand(extract.getAbsolutePath(), target, backup, entries);
-        ShellResult r = runPrivileged(cmd);
+        ShellResult r = runPrivileged(buildCopyCommand(extract.getAbsolutePath(), target, backup, entries));
         appendLog(r.output.trim().isEmpty() ? "Copy selesai." : r.output.trim());
         if (r.code != 0) throw new IllegalStateException("Command gagal, exit code " + r.code);
+        prefs.edit().putString(KEY_LAST_BACKUP, backup).putString(KEY_LAST_TARGET, target).apply();
+    }
+
+    private void createInlineFiles(JSONArray files, File extract, List<String> entries) throws Exception {
+        String root = extract.getCanonicalPath() + File.separator;
+        for (int i = 0; i < files.length(); i++) {
+            JSONObject f = files.getJSONObject(i);
+            String rel = f.getString("path").replace('\\', '/');
+            if (rel.startsWith("../") || rel.contains("/../")) throw new IllegalStateException("Path file tidak aman: " + rel);
+            File out = new File(extract, rel);
+            if (!out.getCanonicalPath().startsWith(root)) throw new IllegalStateException("Path file tidak aman: " + rel);
+            File parent = out.getParentFile();
+            if (parent != null) parent.mkdirs();
+            try (FileOutputStream fos = new FileOutputStream(out)) {
+                fos.write(f.optString("content", "").getBytes("UTF-8"));
+            }
+            entries.add(rel);
+        }
     }
 
     private String buildCopyCommand(String srcRoot, String targetRoot, String backupRoot, List<String> entries) {
         if (!targetRoot.endsWith("/")) targetRoot += "/";
         StringBuilder c = new StringBuilder();
-        c.append("set -e; ");
-        c.append("mkdir -p ").append(q(targetRoot)).append("; ");
-        c.append("mkdir -p ").append(q(backupRoot)).append("; ");
+        c.append("set -e; mkdir -p ").append(q(targetRoot)).append("; mkdir -p ").append(q(backupRoot)).append("; ");
         for (String rel : entries) {
             String src = srcRoot + "/" + rel;
             String dst = targetRoot + rel;
@@ -467,7 +480,26 @@ public class MainActivity extends Activity {
             c.append("if [ -e ").append(q(dst)).append(" ]; then mkdir -p ").append(q(backupDir)).append("; cp -af ").append(q(dst)).append(" ").append(q(backupDst)).append("; fi; ");
             c.append("cp -af ").append(q(src)).append(" ").append(q(dst)).append("; ");
         }
+        c.append("echo 'Applied ").append(entries.size()).append(" file(s)';");
         return c.toString();
+    }
+
+    private void restoreBackup() {
+        appendLog("Memulai restore backup...");
+        io.execute(() -> {
+            try {
+                String backup = prefs.getString(KEY_LAST_BACKUP, "");
+                String target = prefs.getString(KEY_LAST_TARGET, "/sdcard/Android/data/com.ea.gp.fifaworld/");
+                if (backup == null || backup.trim().isEmpty()) throw new IllegalStateException("Belum ada backup terakhir.");
+                if (!target.endsWith("/")) target += "/";
+                String cmd = "set -e; if [ ! -d " + q(backup) + " ]; then echo 'Backup tidak ditemukan'; exit 2; fi; mkdir -p " + q(target) + "; cp -af " + q(backup + "/.") + " " + q(target) + "; echo 'Restore backup selesai';";
+                ShellResult r = runPrivileged(cmd);
+                appendLog(r.output.trim().isEmpty() ? "Restore selesai." : r.output.trim());
+                if (r.code != 0) throw new IllegalStateException("Restore gagal, exit code " + r.code);
+            } catch (Throwable t) {
+                appendLog("Restore gagal: " + t.getMessage());
+            }
+        });
     }
 
     private ShellResult runPrivileged(String command) throws Exception {
@@ -594,13 +626,10 @@ public class MainActivity extends Activity {
 
     private void launchGame() {
         Intent i = getPackageManager().getLaunchIntentForPackage(GAME_PACKAGE);
-        if (i != null) {
-            startActivity(i);
-        } else {
+        if (i != null) startActivity(i);
+        else {
             appendLog("FIFA 16 tidak ditemukan: " + GAME_PACKAGE);
-            try {
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + GAME_PACKAGE)));
-            } catch (Throwable ignored) { }
+            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + GAME_PACKAGE))); } catch (Throwable ignored) { }
         }
     }
 
