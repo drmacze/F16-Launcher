@@ -29,15 +29,15 @@
 
         <activity
             android:name=".CommunityActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:configChanges="keyboardHidden|orientation|screenSize" />
+            android:exported="false" />
 
         <activity
             android:name=".GameHubActivity"
-            android:exported="true"
-            android:screenOrientation="landscape"
-            android:configChanges="keyboardHidden|orientation|screenSize">
+            android:exported="false" />
+
+        <activity
+            android:name=".ModernLauncherActivity"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
