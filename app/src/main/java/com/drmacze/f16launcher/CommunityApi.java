@@ -1,0 +1,210 @@
+package com.drmacze.f16launcher;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URLEncoder;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class CommunityApi {
+    public static final String SUPABASE_URL = "https://dlbayuearegnpmgbxgcf.supabase.co";
+    public static final String SUPABASE_KEY = "sb_publishable_WTcSMf6hCutn5x-Ewd1iOQ_Qc8_dOq4";
+
+    private final SharedPreferences prefs;
+
+    public CommunityApi(Context ctx) {
+        prefs = ctx.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE);
+    }
+
+    public boolean loggedIn() {
+        return !prefs.getString("access_token", "").isEmpty() && !prefs.getString("user_id", "").isEmpty();
+    }
+
+    public String userId() { return prefs.getString("user_id", ""); }
+    public String token() { return prefs.getString("access_token", ""); }
+    public String username() { return prefs.getString("username", ""); }
+    public String displayName() { return prefs.getString("display_name", ""); }
+
+    public void logout() {
+        prefs.edit().clear().apply();
+    }
+
+    public JSONObject register(String email, String password, String username, String displayName, String avatarUrl) throws Exception {
+        JSONObject data = new JSONObject();
+        data.put("username", username.trim());
+        data.put("display_name", displayName.trim());
+        if (avatarUrl != null && !avatarUrl.trim().isEmpty()) data.put("avatar_url", avatarUrl.trim());
+        JSONObject body = new JSONObject();
+        body.put("email", email.trim());
+        body.put("password", password);
+        body.put("data", data);
+        JSONObject res = new JSONObject(request("POST", "/auth/v1/signup", body, false, false));
+        storeSessionIfPresent(res);
+        return res;
+    }
+
+    public JSONObject login(String email, String password) throws Exception {
+        JSONObject body = new JSONObject();
+        body.put("email", email.trim());
+        body.put("password", password);
+        JSONObject res = new JSONObject(request("POST", "/auth/v1/token?grant_type=password", body, false, false));
+        storeSessionIfPresent(res);
+        loadMyProfile();
+        return res;
+    }
+
+    private void storeSessionIfPresent(JSONObject res) {
+        String access = res.optString("access_token", "");
+        String refresh = res.optString("refresh_token", "");
+        JSONObject user = res.optJSONObject("user");
+        if (!access.isEmpty() && user != null) {
+            prefs.edit()
+                    .putString("access_token", access)
+                    .putString("refresh_token", refresh)
+                    .putString("user_id", user.optString("id", ""))
+                    .apply();
+        }
+    }
+
+    public JSONObject loadMyProfile() throws Exception {
+        String id = userId();
+        if (id.isEmpty()) throw new IllegalStateException("Belum login.");
+        JSONArray arr = new JSONArray(request("GET", "/rest/v1/profiles?id=eq." + enc(id) + "&select=*", null, true, false));
+        if (arr.length() == 0) throw new IllegalStateException("Profile belum tersedia. Coba login ulang atau cek email verification.");
+        JSONObject p = arr.getJSONObject(0);
+        prefs.edit()
+                .putString("username", p.optString("username", ""))
+                .putString("display_name", p.optString("display_name", ""))
+                .putString("avatar_url", p.optString("avatar_url", ""))
+                .putString("role", p.optString("role", "member"))
+                .apply();
+        return p;
+    }
+
+    public JSONArray categories() throws Exception {
+        return new JSONArray(request("GET", "/rest/v1/community_categories?select=id,slug,name,description&order=sort_order.asc", null, false, false));
+    }
+
+    public JSONArray topics(String categoryId) throws Exception {
+        String path = "/rest/v1/topics?select=id,category_id,author_id,title,body,reply_count,last_post_at,created_at,is_pinned&order=last_post_at.desc&limit=40";
+        if (categoryId != null && !categoryId.isEmpty()) path = "/rest/v1/topics?category_id=eq." + enc(categoryId) + "&select=id,category_id,author_id,title,body,reply_count,last_post_at,created_at,is_pinned&order=last_post_at.desc&limit=40";
+        return new JSONArray(request("GET", path, null, false, false));
+    }
+
+    public JSONObject createTopic(String categoryId, String title, String bodyText) throws Exception {
+        JSONObject body = new JSONObject();
+        body.put("category_id", categoryId);
+        body.put("author_id", userId());
+        body.put("title", title.trim());
+        body.put("body", bodyText.trim());
+        JSONArray arr = new JSONArray(request("POST", "/rest/v1/topics", body, true, true));
+        if (arr.length() == 0) throw new IllegalStateException("Topic tidak dibuat.");
+        return arr.getJSONObject(0);
+    }
+
+    public JSONArray posts(String topicId) throws Exception {
+        return new JSONArray(request("GET", "/rest/v1/posts?topic_id=eq." + enc(topicId) + "&select=id,topic_id,author_id,reply_to_id,body,created_at&order=created_at.asc&limit=120", null, false, false));
+    }
+
+    public JSONObject createPost(String topicId, String replyToId, String bodyText) throws Exception {
+        JSONObject body = new JSONObject();
+        body.put("topic_id", topicId);
+        body.put("author_id", userId());
+        if (replyToId != null && !replyToId.isEmpty()) body.put("reply_to_id", replyToId);
+        body.put("body", bodyText.trim());
+        JSONArray arr = new JSONArray(request("POST", "/rest/v1/posts", body, true, true));
+        if (arr.length() == 0) throw new IllegalStateException("Reply tidak dibuat.");
+        JSONObject post = arr.getJSONObject(0);
+        createMentions(post.optString("id"), bodyText);
+        return post;
+    }
+
+    private void createMentions(String postId, String bodyText) {
+        try {
+            ArrayList<String> names = mentionsFrom(bodyText);
+            if (names.isEmpty()) return;
+            StringBuilder in = new StringBuilder();
+            for (int i = 0; i < names.size(); i++) {
+                if (i > 0) in.append(',');
+                in.append(names.get(i));
+            }
+            JSONArray users = new JSONArray(request("GET", "/rest/v1/profiles?username=in.(" + in + ")&select=id,username", null, true, false));
+            JSONArray payload = new JSONArray();
+            for (int i = 0; i < users.length(); i++) {
+                JSONObject u = users.getJSONObject(i);
+                JSONObject m = new JSONObject();
+                m.put("post_id", postId);
+                m.put("mentioned_user_id", u.getString("id"));
+                payload.put(m);
+            }
+            if (payload.length() > 0) request("POST", "/rest/v1/mentions", payload, true, false);
+        } catch (Throwable ignored) { }
+    }
+
+    private ArrayList<String> mentionsFrom(String s) {
+        LinkedHashSet<String> set = new LinkedHashSet<>();
+        Matcher m = Pattern.compile("@([a-zA-Z0-9_]{3,24})").matcher(s == null ? "" : s);
+        while (m.find()) set.add(m.group(1));
+        return new ArrayList<>(set);
+    }
+
+    private String request(String method, String path, Object body, boolean auth, boolean preferReturn) throws Exception {
+        URL url = new URL(SUPABASE_URL + path);
+        HttpURLConnection c = (HttpURLConnection) url.openConnection();
+        c.setRequestMethod(method);
+        c.setConnectTimeout(20000);
+        c.setReadTimeout(30000);
+        c.setRequestProperty("apikey", SUPABASE_KEY);
+        c.setRequestProperty("Authorization", "Bearer " + (auth && !token().isEmpty() ? token() : SUPABASE_KEY));
+        c.setRequestProperty("Accept", "application/json");
+        if (preferReturn) c.setRequestProperty("Prefer", "return=representation");
+        if (body != null) {
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/json");
+            try (OutputStream os = c.getOutputStream()) {
+                os.write(body.toString().getBytes("UTF-8"));
+            }
+        }
+        int code = c.getResponseCode();
+        String text = read(code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream());
+        c.disconnect();
+        if (code < 200 || code >= 300) throw new IllegalStateException(cleanError(text, code));
+        if (text == null || text.trim().isEmpty()) return "{}";
+        return text;
+    }
+
+    private static String cleanError(String text, int code) {
+        try {
+            JSONObject o = new JSONObject(text == null ? "{}" : text);
+            String msg = o.optString("msg", o.optString("message", text));
+            return String.format(Locale.US, "HTTP %d: %s", code, msg);
+        } catch (Throwable t) {
+            return "HTTP " + code + ": " + text;
+        }
+    }
+
+    private static String read(InputStream in) throws Exception {
+        if (in == null) return "";
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(in))) {
+            String line;
+            while ((line = br.readLine()) != null) sb.append(line).append('\n');
+        }
+        return sb.toString();
+    }
+
+    private static String enc(String s) throws Exception { return URLEncoder.encode(s, "UTF-8"); }
+}
