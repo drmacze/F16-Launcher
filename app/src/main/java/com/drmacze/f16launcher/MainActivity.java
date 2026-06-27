@@ -4,11 +4,14 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -48,6 +51,16 @@ public class MainActivity extends Activity {
     private static final String GAME_PACKAGE = "com.ea.gp.fifaworld";
     private static final String DEFAULT_MANIFEST = "https://raw.githubusercontent.com/drmacze/F16/main/updates/latest.json";
 
+    private static final int BG = Color.rgb(7, 10, 18);
+    private static final int CARD = Color.rgb(19, 24, 38);
+    private static final int CARD_2 = Color.rgb(25, 31, 48);
+    private static final int TEXT = Color.rgb(245, 247, 255);
+    private static final int MUTED = Color.rgb(158, 170, 195);
+    private static final int ACCENT = Color.rgb(108, 99, 255);
+    private static final int ACCENT_2 = Color.rgb(0, 209, 255);
+    private static final int SUCCESS = Color.rgb(27, 215, 137);
+    private static final int WARNING = Color.rgb(255, 193, 7);
+
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private SharedPreferences prefs;
@@ -55,12 +68,16 @@ public class MainActivity extends Activity {
     private TextView logView;
     private EditText manifestUrl;
     private Button updateButton;
+    private Button shizukuButton;
+    private Button rootBadge;
 
     private JSONObject lastManifest;
 
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        getWindow().setStatusBarColor(BG);
+        getWindow().setNavigationBarColor(BG);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         if (!prefs.contains(KEY_VERSION)) prefs.edit().putInt(KEY_VERSION, 1).apply();
         buildUi();
@@ -69,73 +86,199 @@ public class MainActivity extends Activity {
 
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(BG);
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(18), dp(18), dp(18));
+        root.setPadding(dp(18), dp(18), dp(18), dp(24));
         scroll.addView(root);
 
-        TextView title = new TextView(this);
-        title.setText("F16 Launcher");
-        title.setTextSize(26);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        root.addView(title);
+        LinearLayout hero = new LinearLayout(this);
+        hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setPadding(dp(18), dp(18), dp(18), dp(18));
+        hero.setBackground(roundGradient(22, Color.rgb(41, 47, 75), Color.rgb(13, 16, 28)));
+        root.addView(hero, matchWrap());
 
-        statusView = new TextView(this);
-        statusView.setTextSize(14);
-        statusView.setPadding(0, dp(10), 0, dp(10));
-        root.addView(statusView);
+        TextView brand = text("DLavie", 34, TEXT, true);
+        hero.addView(brand);
+
+        TextView subtitle = text("FIFA 16 Mobile Mod Launcher", 15, MUTED, false);
+        setMargins(subtitle, 0, dp(2), 0, 0);
+        hero.addView(subtitle);
+
+        TextView tagline = text("Update patch kecil, apply otomatis, lalu langsung launch game.", 13, MUTED, false);
+        setMargins(tagline, 0, dp(10), 0, 0);
+        hero.addView(tagline);
+
+        LinearLayout badgeRow = new LinearLayout(this);
+        badgeRow.setOrientation(LinearLayout.HORIZONTAL);
+        setMargins(badgeRow, 0, dp(14), 0, 0);
+        hero.addView(badgeRow);
+
+        shizukuButton = pill("Shizuku: cek", CARD_2, MUTED);
+        badgeRow.addView(shizukuButton);
+        setMargins(shizukuButton, 0, 0, dp(8), 0);
+        shizukuButton.setOnClickListener(v -> requestShizuku());
+
+        rootBadge = pill("Root: cek", CARD_2, MUTED);
+        badgeRow.addView(rootBadge);
+
+        LinearLayout statusCard = card();
+        setMargins(statusCard, 0, dp(14), 0, 0);
+        root.addView(statusCard);
+        TextView statusTitle = text("Status", 12, MUTED, true);
+        statusTitle.setLetterSpacing(0.08f);
+        statusCard.addView(statusTitle);
+        statusView = text("Memuat status...", 15, TEXT, false);
+        setMargins(statusView, 0, dp(8), 0, 0);
+        statusCard.addView(statusView);
+
+        LinearLayout updateCard = card();
+        setMargins(updateCard, 0, dp(14), 0, 0);
+        root.addView(updateCard);
+
+        TextView updateTitle = text("Update Source", 12, MUTED, true);
+        updateTitle.setLetterSpacing(0.08f);
+        updateCard.addView(updateTitle);
 
         manifestUrl = new EditText(this);
         manifestUrl.setSingleLine(false);
+        manifestUrl.setMinLines(2);
         manifestUrl.setText(prefs.getString(KEY_URL, DEFAULT_MANIFEST));
-        manifestUrl.setHint("Manifest update URL");
-        root.addView(manifestUrl);
+        manifestUrl.setTextColor(TEXT);
+        manifestUrl.setHintTextColor(MUTED);
+        manifestUrl.setTextSize(13);
+        manifestUrl.setPadding(dp(12), dp(10), dp(12), dp(10));
+        manifestUrl.setBackground(roundStroke(14, Color.rgb(12, 16, 28), Color.rgb(55, 64, 92)));
+        setMargins(manifestUrl, 0, dp(8), 0, 0);
+        updateCard.addView(manifestUrl, matchWrap());
 
-        Button saveUrl = button("Simpan URL Update");
+        Button saveUrl = actionButton("Simpan URL Update", CARD_2, TEXT);
         saveUrl.setOnClickListener(v -> {
             prefs.edit().putString(KEY_URL, manifestUrl.getText().toString().trim()).apply();
             appendLog("URL update disimpan.");
         });
-        root.addView(saveUrl);
+        updateCard.addView(saveUrl);
 
-        Button shizuku = button("Aktifkan / Cek Shizuku");
-        shizuku.setOnClickListener(v -> requestShizuku());
-        root.addView(shizuku);
-
-        Button check = button("Check Update");
+        Button check = actionButton("Check Update", ACCENT, Color.WHITE);
         check.setOnClickListener(v -> checkUpdate());
-        root.addView(check);
+        updateCard.addView(check);
 
-        updateButton = button("Update Now");
+        updateButton = actionButton("Update Now", ACCENT_2, Color.rgb(5, 12, 20));
         updateButton.setEnabled(false);
+        updateButton.setAlpha(0.45f);
         updateButton.setOnClickListener(v -> applyUpdates());
-        root.addView(updateButton);
+        updateCard.addView(updateButton);
 
-        Button markBase = button("Tandai Data Sekarang = Base v1");
+        LinearLayout toolsCard = card();
+        setMargins(toolsCard, 0, dp(14), 0, 0);
+        root.addView(toolsCard);
+
+        TextView toolsTitle = text("Tools", 12, MUTED, true);
+        toolsTitle.setLetterSpacing(0.08f);
+        toolsCard.addView(toolsTitle);
+
+        Button shizuku = actionButton("Aktifkan / Cek Shizuku", CARD_2, TEXT);
+        shizuku.setOnClickListener(v -> requestShizuku());
+        toolsCard.addView(shizuku);
+
+        Button markBase = actionButton("Tandai Data Sekarang = Base v1", CARD_2, TEXT);
         markBase.setOnClickListener(v -> {
             prefs.edit().putInt(KEY_VERSION, 1).apply();
             appendLog("Versi lokal diset ke v1. Update berikutnya akan mulai dari patch v1 -> v2.");
             refreshStatus();
         });
-        root.addView(markBase);
+        toolsCard.addView(markBase);
 
-        Button launch = button("Launch FIFA 16");
+        Button launch = actionButton("Launch FIFA 16", SUCCESS, Color.rgb(2, 20, 12));
         launch.setOnClickListener(v -> launchGame());
-        root.addView(launch);
+        toolsCard.addView(launch);
 
-        logView = new TextView(this);
-        logView.setTextSize(13);
-        logView.setPadding(0, dp(14), 0, 0);
-        root.addView(logView);
+        LinearLayout logCard = card();
+        setMargins(logCard, 0, dp(14), 0, 0);
+        root.addView(logCard);
+        TextView logTitle = text("Activity Log", 12, MUTED, true);
+        logTitle.setLetterSpacing(0.08f);
+        logCard.addView(logTitle);
+        logView = text("Siap digunakan.", 13, MUTED, false);
+        setMargins(logView, 0, dp(8), 0, 0);
+        logCard.addView(logView);
 
         setContentView(scroll);
     }
 
-    private Button button(String text) {
+    private TextView text(String value, int sp, int color, boolean bold) {
+        TextView v = new TextView(this);
+        v.setText(value);
+        v.setTextSize(sp);
+        v.setTextColor(color);
+        if (bold) v.setTypeface(Typeface.DEFAULT_BOLD);
+        return v;
+    }
+
+    private LinearLayout card() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(14), dp(14), dp(14), dp(14));
+        layout.setBackground(round(20, CARD));
+        return layout;
+    }
+
+    private Button actionButton(String text, int bg, int fg) {
         Button b = new Button(this);
         b.setAllCaps(false);
         b.setText(text);
+        b.setTextSize(15);
+        b.setTextColor(fg);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setPadding(dp(12), dp(10), dp(12), dp(10));
+        b.setBackground(round(16, bg));
+        setMargins(b, 0, dp(10), 0, 0);
         return b;
+    }
+
+    private Button pill(String text, int bg, int fg) {
+        Button b = new Button(this);
+        b.setAllCaps(false);
+        b.setText(text);
+        b.setTextSize(12);
+        b.setTextColor(fg);
+        b.setPadding(dp(10), 0, dp(10), 0);
+        b.setMinHeight(dp(34));
+        b.setMinimumHeight(dp(34));
+        b.setBackground(round(999, bg));
+        return b;
+    }
+
+    private GradientDrawable round(int radius, int color) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(dp(radius));
+        return d;
+    }
+
+    private GradientDrawable roundStroke(int radius, int color, int stroke) {
+        GradientDrawable d = round(radius, color);
+        d.setStroke(dp(1), stroke);
+        return d;
+    }
+
+    private GradientDrawable roundGradient(int radius, int start, int end) {
+        GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{start, end});
+        d.setCornerRadius(dp(radius));
+        return d;
+    }
+
+    private LinearLayout.LayoutParams matchWrap() {
+        return new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+    }
+
+    private void setMargins(View view, int l, int t, int r, int b) {
+        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) view.getLayoutParams();
+        if (lp == null) lp = matchWrap();
+        lp.setMargins(l, t, r, b);
+        view.setLayoutParams(lp);
     }
 
     private int dp(int v) {
@@ -148,10 +291,15 @@ public class MainActivity extends Activity {
             boolean shizuku = isShizukuReady();
             int version = prefs.getInt(KEY_VERSION, 1);
             String s = "Versi lokal: v" + version + "\n"
-                    + "Shizuku: " + (shizuku ? "aktif" : "belum aktif") + "\n"
-                    + "Root: " + (root ? "aktif" : "tidak terdeteksi") + "\n"
+                    + "Mode akses: " + (shizuku ? "Shizuku aktif" : (root ? "Root aktif" : "belum aktif")) + "\n"
                     + "Target game: " + GAME_PACKAGE;
-            main.post(() -> statusView.setText(s));
+            main.post(() -> {
+                statusView.setText(s);
+                shizukuButton.setText("Shizuku: " + (shizuku ? "aktif" : "off"));
+                shizukuButton.setTextColor(shizuku ? SUCCESS : WARNING);
+                rootBadge.setText("Root: " + (root ? "aktif" : "off"));
+                rootBadge.setTextColor(root ? SUCCESS : MUTED);
+            });
         });
     }
 
@@ -200,6 +348,7 @@ public class MainActivity extends Activity {
 
     private void checkUpdate() {
         updateButton.setEnabled(false);
+        updateButton.setAlpha(0.45f);
         appendLog("Mengecek update...");
         io.execute(() -> {
             try {
@@ -214,6 +363,7 @@ public class MainActivity extends Activity {
                     if (latest > local) {
                         appendLog("Update tersedia: lokal v" + local + " -> " + name);
                         updateButton.setEnabled(true);
+                        updateButton.setAlpha(1.0f);
                     } else {
                         appendLog("Sudah versi terbaru: v" + local);
                     }
@@ -227,6 +377,7 @@ public class MainActivity extends Activity {
 
     private void applyUpdates() {
         updateButton.setEnabled(false);
+        updateButton.setAlpha(0.45f);
         appendLog("Mulai update...");
         io.execute(() -> {
             try {
@@ -250,7 +401,10 @@ public class MainActivity extends Activity {
                 refreshStatus();
             } catch (Throwable t) {
                 appendLog("Update gagal: " + t.getMessage());
-                updateButton.setEnabled(true);
+                main.post(() -> {
+                    updateButton.setEnabled(true);
+                    updateButton.setAlpha(1.0f);
+                });
             }
         });
     }
