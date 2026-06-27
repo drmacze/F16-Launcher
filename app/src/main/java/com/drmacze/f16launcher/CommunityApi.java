@@ -25,24 +25,17 @@ public class CommunityApi {
 
     private final SharedPreferences prefs;
 
-    public CommunityApi(Context ctx) {
-        prefs = ctx.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE);
-    }
+    public CommunityApi(Context ctx) { prefs = ctx.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE); }
 
-    public boolean loggedIn() {
-        return !prefs.getString("access_token", "").isEmpty() && !prefs.getString("user_id", "").isEmpty();
-    }
-
+    public boolean loggedIn() { return !prefs.getString("access_token", "").isEmpty() && !prefs.getString("user_id", "").isEmpty(); }
     public String userId() { return prefs.getString("user_id", ""); }
     public String token() { return prefs.getString("access_token", ""); }
     public String username() { return prefs.getString("username", ""); }
     public String displayName() { return prefs.getString("display_name", ""); }
-
-    public void logout() {
-        prefs.edit().clear().apply();
-    }
+    public void logout() { prefs.edit().clear().apply(); }
 
     public JSONObject register(String email, String password, String username, String displayName, String avatarUrl) throws Exception {
+        validateProfile(username, displayName);
         JSONObject data = new JSONObject();
         data.put("username", username.trim());
         data.put("display_name", displayName.trim());
@@ -53,17 +46,58 @@ public class CommunityApi {
         body.put("data", data);
         JSONObject res = new JSONObject(request("POST", "/auth/v1/signup", body, false, false));
         storeSessionIfPresent(res);
+        if (loggedIn()) ensureMyProfile(username, displayName, avatarUrl);
         return res;
     }
 
     public JSONObject login(String email, String password) throws Exception {
+        return login(email, password, "", "", "");
+    }
+
+    public JSONObject login(String email, String password, String username, String displayName, String avatarUrl) throws Exception {
         JSONObject body = new JSONObject();
         body.put("email", email.trim());
         body.put("password", password);
         JSONObject res = new JSONObject(request("POST", "/auth/v1/token?grant_type=password", body, false, false));
         storeSessionIfPresent(res);
-        loadMyProfile();
+        try {
+            loadMyProfile();
+        } catch (Throwable missingProfile) {
+            if (username != null && !username.trim().isEmpty() && displayName != null && !displayName.trim().isEmpty()) {
+                ensureMyProfile(username, displayName, avatarUrl);
+            } else {
+                throw new IllegalStateException("Login berhasil, tapi profile community belum ada. Isi username + display name lalu tekan Login lagi.");
+            }
+        }
         return res;
+    }
+
+    private void validateProfile(String username, String displayName) {
+        String u = username == null ? "" : username.trim();
+        String d = displayName == null ? "" : displayName.trim();
+        if (!u.matches("[a-zA-Z0-9_]{3,24}")) throw new IllegalStateException("Username wajib 3-24 karakter: huruf, angka, underscore.");
+        if (d.length() < 2 || d.length() > 40) throw new IllegalStateException("Display name wajib 2-40 karakter.");
+    }
+
+    public JSONObject ensureMyProfile(String username, String displayName, String avatarUrl) throws Exception {
+        if (userId().isEmpty()) throw new IllegalStateException("Belum login.");
+        validateProfile(username, displayName);
+        JSONObject body = new JSONObject();
+        body.put("id", userId());
+        body.put("username", username.trim());
+        body.put("display_name", displayName.trim());
+        if (avatarUrl != null && !avatarUrl.trim().isEmpty()) body.put("avatar_url", avatarUrl.trim());
+        JSONArray arr = new JSONArray(request("POST", "/rest/v1/profiles?on_conflict=id", body, true, "resolution=merge-duplicates,return=representation"));
+        try {
+            JSONObject setting = new JSONObject();
+            setting.put("user_id", userId());
+            request("POST", "/rest/v1/user_settings?on_conflict=user_id", setting, true, "resolution=merge-duplicates,return=minimal");
+        } catch (Throwable ignored) { }
+        if (arr.length() > 0) {
+            saveProfile(arr.getJSONObject(0));
+            return arr.getJSONObject(0);
+        }
+        return loadMyProfile();
     }
 
     private void storeSessionIfPresent(JSONObject res) {
@@ -71,11 +105,7 @@ public class CommunityApi {
         String refresh = res.optString("refresh_token", "");
         JSONObject user = res.optJSONObject("user");
         if (!access.isEmpty() && user != null) {
-            prefs.edit()
-                    .putString("access_token", access)
-                    .putString("refresh_token", refresh)
-                    .putString("user_id", user.optString("id", ""))
-                    .apply();
+            prefs.edit().putString("access_token", access).putString("refresh_token", refresh).putString("user_id", user.optString("id", "")).apply();
         }
     }
 
@@ -83,15 +113,14 @@ public class CommunityApi {
         String id = userId();
         if (id.isEmpty()) throw new IllegalStateException("Belum login.");
         JSONArray arr = new JSONArray(request("GET", "/rest/v1/profiles?id=eq." + enc(id) + "&select=*", null, true, false));
-        if (arr.length() == 0) throw new IllegalStateException("Profile belum tersedia. Coba login ulang atau cek email verification.");
+        if (arr.length() == 0) throw new IllegalStateException("Profile community belum tersedia.");
         JSONObject p = arr.getJSONObject(0);
-        prefs.edit()
-                .putString("username", p.optString("username", ""))
-                .putString("display_name", p.optString("display_name", ""))
-                .putString("avatar_url", p.optString("avatar_url", ""))
-                .putString("role", p.optString("role", "member"))
-                .apply();
+        saveProfile(p);
         return p;
+    }
+
+    private void saveProfile(JSONObject p) {
+        prefs.edit().putString("username", p.optString("username", "")).putString("display_name", p.optString("display_name", "")).putString("avatar_url", p.optString("avatar_url", "")).putString("role", p.optString("role", "member")).apply();
     }
 
     public JSONArray categories() throws Exception {
@@ -137,10 +166,7 @@ public class CommunityApi {
             ArrayList<String> names = mentionsFrom(bodyText);
             if (names.isEmpty()) return;
             StringBuilder in = new StringBuilder();
-            for (int i = 0; i < names.size(); i++) {
-                if (i > 0) in.append(',');
-                in.append(names.get(i));
-            }
+            for (int i = 0; i < names.size(); i++) { if (i > 0) in.append(','); in.append(names.get(i)); }
             JSONArray users = new JSONArray(request("GET", "/rest/v1/profiles?username=in.(" + in + ")&select=id,username", null, true, false));
             JSONArray payload = new JSONArray();
             for (int i = 0; i < users.length(); i++) {
@@ -162,6 +188,10 @@ public class CommunityApi {
     }
 
     private String request(String method, String path, Object body, boolean auth, boolean preferReturn) throws Exception {
+        return request(method, path, body, auth, preferReturn ? "return=representation" : null);
+    }
+
+    private String request(String method, String path, Object body, boolean auth, String prefer) throws Exception {
         URL url = new URL(SUPABASE_URL + path);
         HttpURLConnection c = (HttpURLConnection) url.openConnection();
         c.setRequestMethod(method);
@@ -170,13 +200,11 @@ public class CommunityApi {
         c.setRequestProperty("apikey", SUPABASE_KEY);
         c.setRequestProperty("Authorization", "Bearer " + (auth && !token().isEmpty() ? token() : SUPABASE_KEY));
         c.setRequestProperty("Accept", "application/json");
-        if (preferReturn) c.setRequestProperty("Prefer", "return=representation");
+        if (prefer != null && !prefer.trim().isEmpty()) c.setRequestProperty("Prefer", prefer);
         if (body != null) {
             c.setDoOutput(true);
             c.setRequestProperty("Content-Type", "application/json");
-            try (OutputStream os = c.getOutputStream()) {
-                os.write(body.toString().getBytes("UTF-8"));
-            }
+            try (OutputStream os = c.getOutputStream()) { os.write(body.toString().getBytes("UTF-8")); }
         }
         int code = c.getResponseCode();
         String text = read(code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream());
@@ -190,10 +218,9 @@ public class CommunityApi {
         try {
             JSONObject o = new JSONObject(text == null ? "{}" : text);
             String msg = o.optString("msg", o.optString("message", text));
+            if (msg == null || msg.trim().isEmpty()) msg = o.optString("hint", text);
             return String.format(Locale.US, "HTTP %d: %s", code, msg);
-        } catch (Throwable t) {
-            return "HTTP " + code + ": " + text;
-        }
+        } catch (Throwable t) { return "HTTP " + code + ": " + text; }
     }
 
     private static String read(InputStream in) throws Exception {
