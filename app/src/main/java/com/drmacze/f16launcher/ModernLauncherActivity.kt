@@ -24,8 +24,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -71,9 +69,9 @@ data class PostItem(val id: String, val authorId: String, val body: String, val 
 
 enum class Page(val label: String, val icon: String) {
     Home("Home", "⌂"),
-    Community("Community", "◉"),
+    Community("Chat", "◉"),
     Plan("Plan", "◇"),
-    Profile("Profile", "☻")
+    Profile("Me", "☻")
 }
 
 class ModernLauncherActivity : ComponentActivity() {
@@ -101,16 +99,8 @@ fun DLavieModernApp() {
         val api = remember { CommunityApi(context) }
         var loggedIn by remember { mutableStateOf(api.loggedIn()) }
         Surface(Modifier.fillMaxSize(), color = Carbon) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Brush.linearGradient(listOf(Carbon, Color(0xFF071B2C), Carbon)))
-            ) {
-                if (!loggedIn) {
-                    AuthScreen(api) { loggedIn = true }
-                } else {
-                    MainShell(api) { api.logout(); loggedIn = false }
-                }
+            Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Carbon, Color(0xFF071B2C), Carbon)))) {
+                if (!loggedIn) AuthScreen(api) { loggedIn = true } else MainShell(api) { api.logout(); loggedIn = false }
             }
         }
     }
@@ -134,7 +124,7 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
                 Text("DLavie", fontSize = if (compact) 34.sp else 42.sp, fontWeight = FontWeight.Black, color = Color.White)
                 Text("Modern Mod Hub", fontSize = 18.sp, color = CandyCyan)
                 Spacer(Modifier.height(14.dp))
-                Text("Login page berada di awal. Setelah login, baru masuk Home, Community, Plan, dan Profile.", color = SoftText, fontSize = 15.sp)
+                Text("Login page berada di awal. Setelah login, baru masuk Home, Chat, Plan, dan Profile.", color = SoftText, fontSize = 15.sp)
                 InfoLine("Username", "Wajib saat register, 3-24 karakter: huruf, angka, underscore.")
                 InfoLine("Display name", "Wajib saat register. Ini nama tampil di community.")
                 InfoLine("Avatar", "Opsional. Bisa dikosongkan dulu.")
@@ -162,10 +152,8 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
                                 status = "Login berhasil."
                                 onSuccess()
                             } catch (t: Throwable) {
-                                status = "Login gagal: ${t.message}. Jika akun belum dibuat, tekan Register."
-                            } finally {
-                                loading = false
-                            }
+                                status = "Login gagal: ${t.message}. Kalau akun lama masih belum punya profile, tekan Register sekali lagi setelah backend repair ini."
+                            } finally { loading = false }
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -175,30 +163,17 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
                 Button(
                     enabled = !loading,
                     onClick = {
-                        if (!username.matches(Regex("[a-zA-Z0-9_]{3,24}"))) {
-                            status = "Username wajib 3-24 karakter: huruf, angka, underscore."
-                            return@Button
-                        }
-                        if (displayName.trim().length < 2) {
-                            status = "Display name wajib minimal 2 karakter."
-                            return@Button
-                        }
+                        if (!username.matches(Regex("[a-zA-Z0-9_]{3,24}"))) { status = "Username wajib 3-24 karakter: huruf, angka, underscore."; return@Button }
+                        if (displayName.trim().length < 2) { status = "Display name wajib minimal 2 karakter."; return@Button }
                         loading = true
                         status = "Register..."
                         scope.launch {
                             try {
                                 withContext(Dispatchers.IO) { api.register(email, password, username, displayName, avatarUrl) }
-                                if (api.loggedIn()) {
-                                    status = "Register berhasil."
-                                    onSuccess()
-                                } else {
-                                    status = "Register berhasil. Jika email confirmation aktif, cek email lalu login."
-                                }
+                                if (api.loggedIn()) { status = "Register berhasil."; onSuccess() } else status = "Register berhasil. Jika email confirmation aktif, cek email lalu login."
                             } catch (t: Throwable) {
                                 status = "Register gagal: ${t.message}"
-                            } finally {
-                                loading = false
-                            }
+                            } finally { loading = false }
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -207,9 +182,7 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
             }
         }
         if (compact) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                hero(); form()
-            }
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) { hero(); form() }
         } else {
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Box(Modifier.weight(1f)) { hero() }
@@ -252,10 +225,7 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
                     onClick = { onPage(item) },
                     modifier = Modifier.weight(1f).height(if (selected) 52.dp else 46.dp),
                     shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (selected) CandyBlue else Color.Transparent,
-                        contentColor = if (selected) Color.White else SoftText
-                    ),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (selected) CandyBlue else Color.Transparent, contentColor = if (selected) Color.White else SoftText),
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = if (selected) 8.dp else 0.dp)
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -281,17 +251,16 @@ fun HomeScreen() {
             Button(
                 onClick = {
                     val launch = context.packageManager.getLaunchIntentForPackage(GAME_PACKAGE)
-                    if (launch != null) context.startActivity(launch)
-                    else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$GAME_PACKAGE")))
+                    if (launch != null) context.startActivity(launch) else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$GAME_PACKAGE")))
                 },
                 modifier = Modifier.fillMaxWidth().height(54.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B))
             ) { Text("Launch FIFA 16", fontWeight = FontWeight.Bold) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            SmallGlassStat("Community", "Online", Modifier.weight(1f))
-            SmallGlassStat("Backend", "Supabase", Modifier.weight(1f))
-            SmallGlassStat("APK", "0.5.0", Modifier.weight(1f))
+            SmallGlassStat("Chat", "Online", Modifier.weight(1f))
+            SmallGlassStat("Cloud", "Ready", Modifier.weight(1f))
+            SmallGlassStat("APK", "0.5.1", Modifier.weight(1f))
         }
         GlassCard {
             Text("Patch Engine", fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -308,56 +277,24 @@ fun CommunityScreen(api: CommunityApi) {
     var topics by remember { mutableStateOf<List<TopicItem>>(emptyList()) }
     var selectedTopic by remember { mutableStateOf<TopicItem?>(null) }
     var posts by remember { mutableStateOf<List<PostItem>>(emptyList()) }
-    var status by remember { mutableStateOf("Loading community...") }
+    var status by remember { mutableStateOf("Loading chat...") }
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
     var reply by remember { mutableStateOf("") }
 
-    fun loadTopics() {
-        scope.launch {
-            try {
-                topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
-                status = if (topics.isEmpty()) "Belum ada topic." else "${topics.size} topic loaded."
-            } catch (t: Throwable) { status = "Gagal load topic: ${t.message}" }
-        }
-    }
-
+    fun loadPosts(topic: TopicItem) { scope.launch { try { posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) } } catch (t: Throwable) { status = "Gagal load thread: ${t.message}" } } }
+    fun loadTopics() { scope.launch { try { topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }; status = if (topics.isEmpty()) "Belum ada topic." else "${topics.size} topic loaded." } catch (t: Throwable) { status = "Gagal load topic: ${t.message}" } } }
     fun createTopic() {
         val cat = selectedCategory
-        if (cat == null) {
-            status = "Pilih channel dulu."
-            return
-        }
-        if (title.trim().length < 4 || body.trim().isEmpty()) {
-            status = "Judul minimal 4 karakter dan isi wajib diisi."
-            return
-        }
-        scope.launch {
-            try {
-                val newTopic = withContext(Dispatchers.IO) { api.createTopic(cat.id, title, body) }
-                title = ""; body = ""
-                topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(cat.id)) }
-                selectedTopic = topics.firstOrNull { it.id == newTopic.optString("id") }
-                status = "Topic dibuat."
-            } catch (t: Throwable) { status = "Gagal membuat topic: ${t.message}" }
-        }
+        if (cat == null) { status = "Pilih channel dulu."; return }
+        if (title.trim().length < 4 || body.trim().isEmpty()) { status = "Judul minimal 4 karakter dan isi wajib diisi."; return }
+        scope.launch { try { val newTopic = withContext(Dispatchers.IO) { api.createTopic(cat.id, title, body) }; title = ""; body = ""; topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(cat.id)) }; selectedTopic = topics.firstOrNull { it.id == newTopic.optString("id") }; status = "Topic dibuat." } catch (t: Throwable) { status = "Gagal membuat topic: ${t.message}" } }
     }
-
     fun sendReply() {
         val topic = selectedTopic
-        if (topic == null) {
-            status = "Pilih topic dulu."
-            return
-        }
+        if (topic == null) { status = "Pilih topic dulu."; return }
         if (reply.trim().isEmpty()) return
-        scope.launch {
-            try {
-                withContext(Dispatchers.IO) { api.createPost(topic.id, "", reply) }
-                reply = ""
-                posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) }
-                topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
-            } catch (t: Throwable) { status = "Gagal reply: ${t.message}" }
-        }
+        scope.launch { try { withContext(Dispatchers.IO) { api.createPost(topic.id, "", reply) }; reply = ""; posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) }; topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) } } catch (t: Throwable) { status = "Gagal reply: ${t.message}" } }
     }
 
     LaunchedEffect(Unit) {
@@ -365,7 +302,7 @@ fun CommunityScreen(api: CommunityApi) {
             categories = withContext(Dispatchers.IO) { jsonCategories(api.categories()) }
             selectedCategory = categories.firstOrNull()
             topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
-            status = "Community ready."
+            status = "Chat ready."
         } catch (t: Throwable) { status = "Community error: ${t.message}" }
     }
 
@@ -374,19 +311,13 @@ fun CommunityScreen(api: CommunityApi) {
         if (compact) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ChannelPanel(categories, selectedCategory) { selectedCategory = it; selectedTopic = null; posts = emptyList(); loadTopics() }
-                TopicPanel(status, title, body, topics, selectedTopic, onTitle = { title = it }, onBody = { body = it }, onCreate = { createTopic() }, onSelect = { topic ->
-                    selectedTopic = topic
-                    scope.launch { try { posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) } } catch (t: Throwable) { status = "Gagal load thread: ${t.message}" } }
-                })
+                TopicPanel(status, title, body, topics, selectedTopic, onTitle = { title = it }, onBody = { body = it }, onCreate = { createTopic() }, onSelect = { topic -> selectedTopic = topic; loadPosts(topic) })
                 ThreadPanel(selectedTopic, posts, reply, onReply = { reply = it }, onSend = { sendReply() })
             }
         } else {
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 ChannelPanel(categories, selectedCategory, Modifier.width(210.dp).fillMaxHeight()) { selectedCategory = it; selectedTopic = null; posts = emptyList(); loadTopics() }
-                TopicPanel(status, title, body, topics, selectedTopic, Modifier.weight(1f).fillMaxHeight(), { title = it }, { body = it }, { createTopic() }, { topic ->
-                    selectedTopic = topic
-                    scope.launch { try { posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) } } catch (t: Throwable) { status = "Gagal load thread: ${t.message}" } }
-                })
+                TopicPanel(status, title, body, topics, selectedTopic, Modifier.weight(1f).fillMaxHeight(), { title = it }, { body = it }, { createTopic() }, { topic -> selectedTopic = topic; loadPosts(topic) })
                 ThreadPanel(selectedTopic, posts, reply, Modifier.weight(1f).fillMaxHeight(), { reply = it }) { sendReply() }
             }
         }
@@ -398,9 +329,7 @@ fun ChannelPanel(categories: List<CategoryItem>, selected: CategoryItem?, modifi
     GlassCard(modifier) {
         Text("Channels", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        categories.forEach { c ->
-            OutlinedButton(onClick = { onSelect(c) }, modifier = Modifier.fillMaxWidth(), border = BorderStroke(1.dp, if (selected?.id == c.id) CandyCyan else GlassStroke)) { Text(c.name) }
-        }
+        categories.forEach { c -> OutlinedButton(onClick = { onSelect(c) }, modifier = Modifier.fillMaxWidth(), border = BorderStroke(1.dp, if (selected?.id == c.id) CandyCyan else GlassStroke)) { Text(c.name) } }
     }
 }
 
@@ -413,9 +342,7 @@ fun TopicPanel(status: String, title: String, body: String, topics: List<TopicIt
         ModernField("Isi topic baru, bisa tag @username", body, onChange = onBody)
         Button(onClick = onCreate, colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D)), modifier = Modifier.fillMaxWidth()) { Text("New Topic") }
         Spacer(Modifier.height(8.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(topics) { topic -> GlassListItem(topic.title, "${topic.replyCount} replies • ${topic.createdAt.take(10)}", selected?.id == topic.id) { onSelect(topic) } }
-        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { topics.forEach { topic -> GlassListItem(topic.title, "${topic.replyCount} replies • ${topic.createdAt.take(10)}", selected?.id == topic.id) { onSelect(topic) } } }
     }
 }
 
@@ -425,9 +352,7 @@ fun ThreadPanel(topic: TopicItem?, posts: List<PostItem>, reply: String, modifie
         Text(topic?.title ?: "Thread", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Text(topic?.body ?: "Pilih topic untuk membaca dan membalas.", color = SoftText)
         Spacer(Modifier.height(10.dp))
-        LazyColumn(modifier = Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(posts) { p -> GlassListItem("user:${p.authorId.take(8)}", p.body, false) {} }
-        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { posts.forEach { p -> GlassListItem("user:${p.authorId.take(8)}", p.body, false) {} } }
         ModernField("Reply, bisa tag @username", reply, onChange = onReply)
         Button(onClick = onSend, colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B)), modifier = Modifier.fillMaxWidth()) { Text("Send Reply") }
         Text("Upload file/screenshot: next step setelah Storage bucket aktif.", color = SoftText, fontSize = 12.sp)
@@ -435,16 +360,7 @@ fun ThreadPanel(topic: TopicItem?, posts: List<PostItem>, reply: String, modifie
 }
 
 @Composable
-fun PlanScreen() {
-    Column(Modifier.fillMaxSize().padding(18.dp)) {
-        GlassCard {
-            Text("Upgrade Plan", fontSize = 34.sp, fontWeight = FontWeight.Black)
-            Text("Coming Soon", fontSize = 22.sp, color = CandyCyan, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
-            Text("Subscription dikosongkan dulu. Tidak ada checkout palsu, benefit palsu, atau tombol pembayaran dummy.", color = SoftText)
-        }
-    }
-}
+fun PlanScreen() { Column(Modifier.fillMaxSize().padding(18.dp)) { GlassCard { Text("Upgrade Plan", fontSize = 34.sp, fontWeight = FontWeight.Black); Text("Coming Soon", fontSize = 22.sp, color = CandyCyan, fontWeight = FontWeight.Bold); Spacer(Modifier.height(10.dp)); Text("Subscription dikosongkan dulu. Tidak ada checkout palsu, benefit palsu, atau tombol pembayaran dummy.", color = SoftText) } } }
 
 @Composable
 fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
@@ -455,10 +371,7 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(70.dp).background(Brush.linearGradient(listOf(CandyCyan, CandyBlue)), CircleShape), contentAlignment = Alignment.Center) { Text("DL", fontSize = 24.sp, fontWeight = FontWeight.Black, color = Color.White) }
                 Spacer(Modifier.width(14.dp))
-                Column {
-                    Text(api.displayName().ifEmpty { "DLavie User" }, fontSize = 26.sp, fontWeight = FontWeight.Black)
-                    Text("@${api.username().ifEmpty { "unknown" }}", color = SoftText)
-                }
+                Column { Text(api.displayName().ifEmpty { "DLavie User" }, fontSize = 26.sp, fontWeight = FontWeight.Black); Text("@${api.username().ifEmpty { "unknown" }}", color = SoftText) }
             }
             Spacer(Modifier.height(14.dp))
             InfoLine("Profile avatar", "Opsional. Avatar upload akan aktif setelah Storage bucket aktif.")
@@ -477,31 +390,15 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
 }
 
 @Composable
-fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = modifier, shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Color(0xCC101827)), border = BorderStroke(1.dp, GlassStroke)) {
-        Column(modifier = Modifier.padding(18.dp), content = content)
-    }
-}
-
+fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) { Card(modifier = modifier, shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Color(0xCC101827)), border = BorderStroke(1.dp, GlassStroke)) { Column(modifier = Modifier.padding(18.dp), content = content) } }
 @Composable
-fun ModernField(label: String, value: String, password: Boolean = false, onChange: (String) -> Unit) {
-    OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) }, visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), singleLine = false)
-    Spacer(Modifier.height(8.dp))
-}
-
+fun ModernField(label: String, value: String, password: Boolean = false, onChange: (String) -> Unit) { OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) }, visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), singleLine = false); Spacer(Modifier.height(8.dp)) }
 @Composable
 fun InfoLine(title: String, body: String) { Spacer(Modifier.height(10.dp)); Text(title, color = SoftText, fontWeight = FontWeight.Bold, fontSize = 13.sp); Text(body, color = Color.White, fontSize = 14.sp) }
-
 @Composable
 fun SmallGlassStat(title: String, value: String, modifier: Modifier = Modifier) { GlassCard(modifier = modifier) { Text(title, color = SoftText, fontSize = 12.sp); Text(value, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) } }
-
 @Composable
-fun GlassListItem(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(shape = RoundedCornerShape(18.dp), color = if (selected) Color(0x5539D8FF) else Color(0x66172132), border = BorderStroke(1.dp, if (selected) CandyCyan else GlassStroke), modifier = Modifier.fillMaxWidth().clickable { onClick() }) {
-        Column(Modifier.padding(12.dp)) { Text(title, color = Color.White, fontWeight = FontWeight.Bold); Text(subtitle, color = SoftText, fontSize = 12.sp) }
-    }
-}
-
+fun GlassListItem(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) { Surface(shape = RoundedCornerShape(18.dp), color = if (selected) Color(0x5539D8FF) else Color(0x66172132), border = BorderStroke(1.dp, if (selected) CandyCyan else GlassStroke), modifier = Modifier.fillMaxWidth().clickable { onClick() }) { Column(Modifier.padding(12.dp)) { Text(title, color = Color.White, fontWeight = FontWeight.Bold); Text(subtitle, color = SoftText, fontSize = 12.sp) } } }
 @Composable
 fun SettingRow(title: String, value: Boolean, onChange: (Boolean) -> Unit) { Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) { Text(title, modifier = Modifier.weight(1f), color = Color.White); Switch(checked = value, onCheckedChange = onChange) } }
 
