@@ -1,0 +1,15 @@
+{
+  "latestVersionCode": 2,
+  "latestVersionName": "v2 - Career Mode Update",
+  "gamePackage": "com.ea.gp.fifaworld",
+  "patches": [
+    {
+      "from": 1,
+      "to": 2,
+      "name": "Career Mode Update",
+      "url": "https://github.com/drmacze/F16/releases/download/v2/patch-v2-career.zip",
+      "sha256": "",
+      "target": "/sdcard/Android/data/com.ea.gp.fifaworld/"
+    }
+  ]
+}
