@@ -39,7 +39,7 @@ class DevLauncherActivity : ComponentActivity() {
                             .fillMaxSize()
                             .background(Brush.linearGradient(listOf(Carbon, Color(0xFF071B2C), Carbon)))
                     ) {
-                        MainShell(api) { api.logout() }
+                        DevelopmentMainShell(api)
                     }
                 }
             }
