@@ -1,17 +1,14 @@
 package com.drmacze.f16launcher;
 
-import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -322,7 +319,7 @@ public class MainActivity extends Activity {
     private ShellResult runPrivileged(String command) throws Exception {
         if (isShizukuReady()) {
             appendLog("Apply menggunakan Shizuku...");
-            Process p = Shizuku.newProcess(new String[]{"sh", "-c", command}, null, null);
+            Process p = startShizukuShell(new String[]{"sh", "-c", command});
             return readProcess(p);
         }
         if (isRootAvailable()) {
@@ -330,6 +327,12 @@ public class MainActivity extends Activity {
             return runNormal(new String[]{"su", "-c", command});
         }
         throw new IllegalStateException("Shizuku/root belum aktif. Aktifkan Shizuku atau root dulu.");
+    }
+
+    private Process startShizukuShell(String[] cmd) throws Exception {
+        java.lang.reflect.Method method = Shizuku.class.getDeclaredMethod("newProcess", String[].class, String[].class, String.class);
+        method.setAccessible(true);
+        return (Process) method.invoke(null, new Object[]{cmd, null, null});
     }
 
     private String downloadText(String urlString) throws Exception {
