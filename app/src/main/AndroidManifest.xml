@@ -35,20 +35,20 @@
 
         <activity
             android:name=".GameHubActivity"
-            android:exported="true"
-            android:icon="@drawable/dlavie_launcher_icon"
-            android:label="DLavie Updater">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:exported="false"
+            android:label="DLavie Advanced Updater" />
 
         <activity
             android:name=".ModernLauncherActivity"
+            android:exported="false"
+            android:label="DLavie Hub"
+            android:theme="@style/AppTheme.Splash" />
+
+        <activity
+            android:name=".DevLauncherActivity"
             android:exported="true"
             android:icon="@drawable/dlavie_launcher_icon"
-            android:label="DLavie Hub"
+            android:label="DLavie Launcher"
             android:theme="@style/AppTheme.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
