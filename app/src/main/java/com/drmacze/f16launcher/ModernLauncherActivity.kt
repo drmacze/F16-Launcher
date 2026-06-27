@@ -60,8 +60,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
 
 private const val GAME_PACKAGE = "com.ea.gp.fifaworld"
+private const val DEFAULT_MANIFEST = "https://raw.githubusercontent.com/drmacze/F16/main/updates/latest.json"
 
 data class CategoryItem(val id: String, val name: String, val description: String)
 data class TopicItem(val id: String, val title: String, val body: String, val replyCount: Int, val createdAt: String)
@@ -69,6 +75,7 @@ data class PostItem(val id: String, val authorId: String, val body: String, val 
 
 enum class Page(val label: String, val icon: String) {
     Home("Home", "⌂"),
+    Update("Update", "↻"),
     Community("Chat", "◉"),
     Plan("Plan", "◇"),
     Profile("Me", "☻")
@@ -124,9 +131,9 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
                 Text("DLavie", fontSize = if (compact) 34.sp else 42.sp, fontWeight = FontWeight.Black, color = Color.White)
                 Text("Modern Mod Hub", fontSize = 18.sp, color = CandyCyan)
                 Spacer(Modifier.height(14.dp))
-                Text("Login page berada di awal. Setelah login, baru masuk Home, Chat, Plan, dan Profile.", color = SoftText, fontSize = 15.sp)
-                InfoLine("Username", "Wajib saat register, 3-24 karakter: huruf, angka, underscore.")
-                InfoLine("Display name", "Wajib saat register. Ini nama tampil di community.")
+                Text("Login page berada di awal. Setelah login, semua fitur terbuka: Home, Update, Chat, Plan, dan Profile.", color = SoftText, fontSize = 15.sp)
+                InfoLine("Auto update", "Update Center memakai GitHub manifest dan Advanced Updater tetap memakai Shizuku/root.")
+                InfoLine("Username", "Wajib saat register/login pertama, 3-24 karakter.")
                 InfoLine("Avatar", "Opsional. Bisa dikosongkan dulu.")
             }
         }
@@ -136,8 +143,8 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
                 Spacer(Modifier.height(10.dp))
                 ModernField("Email", email) { email = it }
                 ModernField("Password", password, password = true) { password = it }
-                ModernField("Username wajib untuk register", username) { username = it }
-                ModernField("Display name wajib untuk register", displayName) { displayName = it }
+                ModernField("Username wajib untuk register/login pertama", username) { username = it }
+                ModernField("Display name wajib untuk register/login pertama", displayName) { displayName = it }
                 ModernField("Avatar URL opsional", avatarUrl) { avatarUrl = it }
                 Text(status, color = SoftText, fontSize = 13.sp)
                 Spacer(Modifier.height(12.dp))
@@ -148,11 +155,11 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
                         status = "Login..."
                         scope.launch {
                             try {
-                                withContext(Dispatchers.IO) { api.login(email, password) }
+                                withContext(Dispatchers.IO) { api.login(email, password, username, displayName, avatarUrl) }
                                 status = "Login berhasil."
                                 onSuccess()
                             } catch (t: Throwable) {
-                                status = "Login gagal: ${t.message}. Kalau akun lama masih belum punya profile, tekan Register sekali lagi setelah backend repair ini."
+                                status = "Login gagal: ${t.message}"
                             } finally { loading = false }
                         }
                     },
@@ -171,9 +178,8 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
                             try {
                                 withContext(Dispatchers.IO) { api.register(email, password, username, displayName, avatarUrl) }
                                 if (api.loggedIn()) { status = "Register berhasil."; onSuccess() } else status = "Register berhasil. Jika email confirmation aktif, cek email lalu login."
-                            } catch (t: Throwable) {
-                                status = "Register gagal: ${t.message}"
-                            } finally { loading = false }
+                            } catch (t: Throwable) { status = "Register gagal: ${t.message}" }
+                            finally { loading = false }
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -181,14 +187,8 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
                 ) { Text("Register", fontWeight = FontWeight.Bold) }
             }
         }
-        if (compact) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) { hero(); form() }
-        } else {
-            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Box(Modifier.weight(1f)) { hero() }
-                Box(Modifier.weight(1f)) { form() }
-            }
-        }
+        if (compact) Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) { hero(); form() }
+        else Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) { Box(Modifier.weight(1f)) { hero() }; Box(Modifier.weight(1f)) { form() } }
     }
 }
 
@@ -198,7 +198,8 @@ fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         AnimatedContent(targetState = page, label = "page", modifier = Modifier.fillMaxSize().padding(bottom = 92.dp)) { target ->
             when (target) {
-                Page.Home -> HomeScreen()
+                Page.Home -> HomeScreen { page = Page.Update }
+                Page.Update -> UpdateScreen()
                 Page.Community -> CommunityScreen(api)
                 Page.Plan -> PlanScreen()
                 Page.Profile -> ProfileScreen(api, onLogout)
@@ -210,28 +211,12 @@ fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
 
 @Composable
 fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.widthIn(max = 560.dp).padding(horizontal = 12.dp),
-        shape = RoundedCornerShape(32.dp),
-        color = Color(0xD80E1728),
-        border = BorderStroke(1.dp, GlassStroke),
-        shadowElevation = 16.dp,
-        tonalElevation = 0.dp
-    ) {
+    Surface(modifier = modifier.widthIn(max = 640.dp).padding(horizontal = 12.dp), shape = RoundedCornerShape(32.dp), color = Color(0xD80E1728), border = BorderStroke(1.dp, GlassStroke), shadowElevation = 16.dp, tonalElevation = 0.dp) {
         Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Page.values().forEach { item ->
                 val selected = page == item
-                Button(
-                    onClick = { onPage(item) },
-                    modifier = Modifier.weight(1f).height(if (selected) 52.dp else 46.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = if (selected) CandyBlue else Color.Transparent, contentColor = if (selected) Color.White else SoftText),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = if (selected) 8.dp else 0.dp)
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(item.icon, fontSize = if (selected) 17.sp else 15.sp)
-                        Text(item.label, fontSize = if (selected) 11.sp else 10.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-                    }
+                Button(onClick = { onPage(item) }, modifier = Modifier.weight(1f).height(if (selected) 52.dp else 46.dp), shape = RoundedCornerShape(24.dp), colors = ButtonDefaults.buttonColors(containerColor = if (selected) CandyBlue else Color.Transparent, contentColor = if (selected) Color.White else SoftText), elevation = ButtonDefaults.buttonElevation(defaultElevation = if (selected) 8.dp else 0.dp)) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(item.icon, fontSize = if (selected) 17.sp else 15.sp); Text(item.label, fontSize = if (selected) 11.sp else 10.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) }
                 }
             }
         }
@@ -239,34 +224,85 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
 }
 
 @Composable
-fun HomeScreen() {
+fun HomeScreen(onUpdateClick: () -> Unit) {
     val context = LocalContext.current
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         GlassCard {
             Text("DLavie Hub", fontSize = 38.sp, fontWeight = FontWeight.Black, color = Color.White)
             Text("FIFA 16 Mobile Mod Center", fontSize = 16.sp, color = CandyCyan)
             Spacer(Modifier.height(14.dp))
-            Text("Launcher baru tidak memaksa landscape. Navbar sekarang floating interactive seperti app modern.", color = SoftText)
+            Text("Semua fitur utama disatukan lagi: update GitHub, Shizuku/root updater, community, dan profile.", color = SoftText)
             Spacer(Modifier.height(18.dp))
-            Button(
-                onClick = {
-                    val launch = context.packageManager.getLaunchIntentForPackage(GAME_PACKAGE)
-                    if (launch != null) context.startActivity(launch) else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$GAME_PACKAGE")))
-                },
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B))
-            ) { Text("Launch FIFA 16", fontWeight = FontWeight.Bold) }
+            Button(onClick = { launchGame(context) }, modifier = Modifier.fillMaxWidth().height(54.dp), colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B))) { Text("Launch FIFA 16", fontWeight = FontWeight.Bold) }
+            Spacer(Modifier.height(10.dp))
+            Button(onClick = onUpdateClick, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = CandyBlue)) { Text("Open Update Center", fontWeight = FontWeight.Bold) }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            SmallGlassStat("Chat", "Online", Modifier.weight(1f))
-            SmallGlassStat("Cloud", "Ready", Modifier.weight(1f))
-            SmallGlassStat("APK", "0.5.1", Modifier.weight(1f))
-        }
-        GlassCard {
-            Text("Patch Engine", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text("Fitur update patch lama masih ada di codebase. Setelah UI stabil, patch engine akan dipindah penuh ke Compose agar seluruh app konsisten.", color = SoftText)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) { SmallGlassStat("Update", "GitHub", Modifier.weight(1f)); SmallGlassStat("Access", "Shizuku", Modifier.weight(1f)); SmallGlassStat("APK", "0.6.0", Modifier.weight(1f)) }
+        GlassCard { Text("Auto Patch Manager", fontSize = 20.sp, fontWeight = FontWeight.Bold); Text("Update Center akan cek manifest modern. Advanced Updater tetap menangani apply file via Shizuku/root, backup, restore, dan launch game.", color = SoftText) }
+    }
+}
+
+@Composable
+fun UpdateScreen() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val prefs = remember { context.getSharedPreferences("f16_launcher", 0) }
+    val manifestUrl = remember { prefs.getString("manifest_url", DEFAULT_MANIFEST) ?: DEFAULT_MANIFEST }
+    var localVersion by remember { mutableStateOf(prefs.getInt("local_version_code", 1)) }
+    var latestVersion by remember { mutableStateOf("Belum dicek") }
+    var latestName by remember { mutableStateOf("-") }
+    var updateStatus by remember { mutableStateOf("Ready. Tekan Check Update untuk membaca manifest GitHub.") }
+    var releaseNotes by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    fun checkManifest() {
+        updateStatus = "Mengecek GitHub manifest..."
+        scope.launch {
+            try {
+                val json = withContext(Dispatchers.IO) { fetchJson(manifestUrl) }
+                val latestCode = json.optInt("latestVersionCode", localVersion)
+                latestVersion = "v$latestCode"
+                latestName = json.optString("latestVersionName", "v$latestCode")
+                val notes = json.optJSONArray("releaseNotes")
+                releaseNotes = if (notes != null) List(notes.length()) { i -> notes.optString(i) } else emptyList()
+                updateStatus = if (latestCode > localVersion) "Update tersedia: v$localVersion → $latestName" else "Sudah versi terbaru: v$localVersion"
+            } catch (t: Throwable) {
+                updateStatus = "Check update gagal: ${t.message}"
+            }
         }
     }
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        GlassCard {
+            Text("DLavie Update Center", fontSize = 32.sp, fontWeight = FontWeight.Black, color = Color.White)
+            Text("GitHub manifest + Shizuku/root Advanced Updater", fontSize = 15.sp, color = CandyCyan)
+            Spacer(Modifier.height(12.dp))
+            Text(updateStatus, color = SoftText)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            SmallGlassStat("Local", "v$localVersion", Modifier.weight(1f))
+            SmallGlassStat("Latest", latestVersion, Modifier.weight(1f))
+            SmallGlassStat("Channel", "Stable", Modifier.weight(1f))
+        }
+        GlassCard {
+            Text("Quick Actions", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Button(onClick = { checkManifest() }, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D))) { Text("Check Update", fontWeight = FontWeight.Bold) }
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = { context.startActivity(Intent(context, GameHubActivity::class.java)) }, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = CandyBlue)) { Text("Open Advanced Shizuku Updater", fontWeight = FontWeight.Bold) }
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = { launchGame(context) }, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B))) { Text("Launch FIFA 16", fontWeight = FontWeight.Bold) }
+        }
+        GlassCard {
+            Text("Patch Flow", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            InfoLine("1. Check", "Baca latest.json dari GitHub.")
+            InfoLine("2. Verify", "Advanced Updater memverifikasi SHA-256 jika tersedia.")
+            InfoLine("3. Backup", "File lama dibackup sebelum patch.")
+            InfoLine("4. Apply", "Patch dicopy via Shizuku/root ke Android/data atau Android/obb.")
+            InfoLine("5. Restore", "Restore backup tersedia kalau patch gagal.")
+        }
+        if (releaseNotes.isNotEmpty()) GlassCard { Text("Release Notes", fontSize = 20.sp, fontWeight = FontWeight.Bold); releaseNotes.forEach { Text("• $it", color = SoftText) } }
+        GlassCard { Text("Manifest URL", fontSize = 20.sp, fontWeight = FontWeight.Bold); Text(manifestUrl, color = SoftText, fontSize = 12.sp) }
+    }
+    LaunchedEffect(Unit) { localVersion = prefs.getInt("local_version_code", 1) }
 }
 
 @Composable
@@ -281,113 +317,24 @@ fun CommunityScreen(api: CommunityApi) {
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
     var reply by remember { mutableStateOf("") }
-
     fun loadPosts(topic: TopicItem) { scope.launch { try { posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) } } catch (t: Throwable) { status = "Gagal load thread: ${t.message}" } } }
     fun loadTopics() { scope.launch { try { topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }; status = if (topics.isEmpty()) "Belum ada topic." else "${topics.size} topic loaded." } catch (t: Throwable) { status = "Gagal load topic: ${t.message}" } } }
-    fun createTopic() {
-        val cat = selectedCategory
-        if (cat == null) { status = "Pilih channel dulu."; return }
-        if (title.trim().length < 4 || body.trim().isEmpty()) { status = "Judul minimal 4 karakter dan isi wajib diisi."; return }
-        scope.launch { try { val newTopic = withContext(Dispatchers.IO) { api.createTopic(cat.id, title, body) }; title = ""; body = ""; topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(cat.id)) }; selectedTopic = topics.firstOrNull { it.id == newTopic.optString("id") }; status = "Topic dibuat." } catch (t: Throwable) { status = "Gagal membuat topic: ${t.message}" } }
-    }
-    fun sendReply() {
-        val topic = selectedTopic
-        if (topic == null) { status = "Pilih topic dulu."; return }
-        if (reply.trim().isEmpty()) return
-        scope.launch { try { withContext(Dispatchers.IO) { api.createPost(topic.id, "", reply) }; reply = ""; posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) }; topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) } } catch (t: Throwable) { status = "Gagal reply: ${t.message}" } }
-    }
-
-    LaunchedEffect(Unit) {
-        try {
-            categories = withContext(Dispatchers.IO) { jsonCategories(api.categories()) }
-            selectedCategory = categories.firstOrNull()
-            topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
-            status = "Chat ready."
-        } catch (t: Throwable) { status = "Community error: ${t.message}" }
-    }
-
-    BoxWithConstraints(Modifier.fillMaxSize().padding(14.dp)) {
-        val compact = maxWidth < 900.dp
-        if (compact) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                ChannelPanel(categories, selectedCategory) { selectedCategory = it; selectedTopic = null; posts = emptyList(); loadTopics() }
-                TopicPanel(status, title, body, topics, selectedTopic, onTitle = { title = it }, onBody = { body = it }, onCreate = { createTopic() }, onSelect = { topic -> selectedTopic = topic; loadPosts(topic) })
-                ThreadPanel(selectedTopic, posts, reply, onReply = { reply = it }, onSend = { sendReply() })
-            }
-        } else {
-            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ChannelPanel(categories, selectedCategory, Modifier.width(210.dp).fillMaxHeight()) { selectedCategory = it; selectedTopic = null; posts = emptyList(); loadTopics() }
-                TopicPanel(status, title, body, topics, selectedTopic, Modifier.weight(1f).fillMaxHeight(), { title = it }, { body = it }, { createTopic() }, { topic -> selectedTopic = topic; loadPosts(topic) })
-                ThreadPanel(selectedTopic, posts, reply, Modifier.weight(1f).fillMaxHeight(), { reply = it }) { sendReply() }
-            }
-        }
-    }
+    fun createTopic() { val cat = selectedCategory; if (cat == null) { status = "Pilih channel dulu."; return }; if (title.trim().length < 4 || body.trim().isEmpty()) { status = "Judul minimal 4 karakter dan isi wajib diisi."; return }; scope.launch { try { val newTopic = withContext(Dispatchers.IO) { api.createTopic(cat.id, title, body) }; title = ""; body = ""; topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(cat.id)) }; selectedTopic = topics.firstOrNull { it.id == newTopic.optString("id") }; status = "Topic dibuat." } catch (t: Throwable) { status = "Gagal membuat topic: ${t.message}" } } }
+    fun sendReply() { val topic = selectedTopic; if (topic == null) { status = "Pilih topic dulu."; return }; if (reply.trim().isEmpty()) return; scope.launch { try { withContext(Dispatchers.IO) { api.createPost(topic.id, "", reply) }; reply = ""; posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) }; topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) } } catch (t: Throwable) { status = "Gagal reply: ${t.message}" } } }
+    LaunchedEffect(Unit) { try { categories = withContext(Dispatchers.IO) { jsonCategories(api.categories()) }; selectedCategory = categories.firstOrNull(); topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }; status = "Chat ready." } catch (t: Throwable) { status = "Community error: ${t.message}" } }
+    BoxWithConstraints(Modifier.fillMaxSize().padding(14.dp)) { val compact = maxWidth < 900.dp; if (compact) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) { ChannelPanel(categories, selectedCategory) { selectedCategory = it; selectedTopic = null; posts = emptyList(); loadTopics() }; TopicPanel(status, title, body, topics, selectedTopic, onTitle = { title = it }, onBody = { body = it }, onCreate = { createTopic() }, onSelect = { topic -> selectedTopic = topic; loadPosts(topic) }); ThreadPanel(selectedTopic, posts, reply, onReply = { reply = it }, onSend = { sendReply() }) } } else { Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { ChannelPanel(categories, selectedCategory, Modifier.width(210.dp).fillMaxHeight()) { selectedCategory = it; selectedTopic = null; posts = emptyList(); loadTopics() }; TopicPanel(status, title, body, topics, selectedTopic, Modifier.weight(1f).fillMaxHeight(), { title = it }, { body = it }, { createTopic() }, { topic -> selectedTopic = topic; loadPosts(topic) }); ThreadPanel(selectedTopic, posts, reply, Modifier.weight(1f).fillMaxHeight(), { reply = it }) { sendReply() } } } }
 }
 
 @Composable
-fun ChannelPanel(categories: List<CategoryItem>, selected: CategoryItem?, modifier: Modifier = Modifier, onSelect: (CategoryItem) -> Unit) {
-    GlassCard(modifier) {
-        Text("Channels", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        categories.forEach { c -> OutlinedButton(onClick = { onSelect(c) }, modifier = Modifier.fillMaxWidth(), border = BorderStroke(1.dp, if (selected?.id == c.id) CandyCyan else GlassStroke)) { Text(c.name) } }
-    }
-}
-
+fun ChannelPanel(categories: List<CategoryItem>, selected: CategoryItem?, modifier: Modifier = Modifier, onSelect: (CategoryItem) -> Unit) { GlassCard(modifier) { Text("Channels", fontSize = 20.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); categories.forEach { c -> OutlinedButton(onClick = { onSelect(c) }, modifier = Modifier.fillMaxWidth(), border = BorderStroke(1.dp, if (selected?.id == c.id) CandyCyan else GlassStroke)) { Text(c.name) } } } }
 @Composable
-fun TopicPanel(status: String, title: String, body: String, topics: List<TopicItem>, selected: TopicItem?, modifier: Modifier = Modifier, onTitle: (String) -> Unit, onBody: (String) -> Unit, onCreate: () -> Unit, onSelect: (TopicItem) -> Unit) {
-    GlassCard(modifier) {
-        Text("Topics", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text(status, color = SoftText, fontSize = 12.sp)
-        ModernField("Judul topic baru", title, onChange = onTitle)
-        ModernField("Isi topic baru, bisa tag @username", body, onChange = onBody)
-        Button(onClick = onCreate, colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D)), modifier = Modifier.fillMaxWidth()) { Text("New Topic") }
-        Spacer(Modifier.height(8.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { topics.forEach { topic -> GlassListItem(topic.title, "${topic.replyCount} replies • ${topic.createdAt.take(10)}", selected?.id == topic.id) { onSelect(topic) } } }
-    }
-}
-
+fun TopicPanel(status: String, title: String, body: String, topics: List<TopicItem>, selected: TopicItem?, modifier: Modifier = Modifier, onTitle: (String) -> Unit, onBody: (String) -> Unit, onCreate: () -> Unit, onSelect: (TopicItem) -> Unit) { GlassCard(modifier) { Text("Topics", fontSize = 20.sp, fontWeight = FontWeight.Bold); Text(status, color = SoftText, fontSize = 12.sp); ModernField("Judul topic baru", title, onChange = onTitle); ModernField("Isi topic baru, bisa tag @username", body, onChange = onBody); Button(onClick = onCreate, colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D)), modifier = Modifier.fillMaxWidth()) { Text("New Topic") }; Spacer(Modifier.height(8.dp)); Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { topics.forEach { topic -> GlassListItem(topic.title, "${topic.replyCount} replies • ${topic.createdAt.take(10)}", selected?.id == topic.id) { onSelect(topic) } } } } }
 @Composable
-fun ThreadPanel(topic: TopicItem?, posts: List<PostItem>, reply: String, modifier: Modifier = Modifier, onReply: (String) -> Unit, onSend: () -> Unit) {
-    GlassCard(modifier) {
-        Text(topic?.title ?: "Thread", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text(topic?.body ?: "Pilih topic untuk membaca dan membalas.", color = SoftText)
-        Spacer(Modifier.height(10.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { posts.forEach { p -> GlassListItem("user:${p.authorId.take(8)}", p.body, false) {} } }
-        ModernField("Reply, bisa tag @username", reply, onChange = onReply)
-        Button(onClick = onSend, colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B)), modifier = Modifier.fillMaxWidth()) { Text("Send Reply") }
-        Text("Upload file/screenshot: next step setelah Storage bucket aktif.", color = SoftText, fontSize = 12.sp)
-    }
-}
-
+fun ThreadPanel(topic: TopicItem?, posts: List<PostItem>, reply: String, modifier: Modifier = Modifier, onReply: (String) -> Unit, onSend: () -> Unit) { GlassCard(modifier) { Text(topic?.title ?: "Thread", fontSize = 20.sp, fontWeight = FontWeight.Bold); Text(topic?.body ?: "Pilih topic untuk membaca dan membalas.", color = SoftText); Spacer(Modifier.height(10.dp)); Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { posts.forEach { p -> GlassListItem("user:${p.authorId.take(8)}", p.body, false) {} } }; ModernField("Reply, bisa tag @username", reply, onChange = onReply); Button(onClick = onSend, colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B)), modifier = Modifier.fillMaxWidth()) { Text("Send Reply") }; Text("Upload file/screenshot: next step setelah Storage bucket aktif.", color = SoftText, fontSize = 12.sp) } }
 @Composable
 fun PlanScreen() { Column(Modifier.fillMaxSize().padding(18.dp)) { GlassCard { Text("Upgrade Plan", fontSize = 34.sp, fontWeight = FontWeight.Black); Text("Coming Soon", fontSize = 22.sp, color = CandyCyan, fontWeight = FontWeight.Bold); Spacer(Modifier.height(10.dp)); Text("Subscription dikosongkan dulu. Tidak ada checkout palsu, benefit palsu, atau tombol pembayaran dummy.", color = SoftText) } } }
-
 @Composable
-fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
-    var autoCheck by remember { mutableStateOf(false) }
-    var autoLaunch by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(70.dp).background(Brush.linearGradient(listOf(CandyCyan, CandyBlue)), CircleShape), contentAlignment = Alignment.Center) { Text("DL", fontSize = 24.sp, fontWeight = FontWeight.Black, color = Color.White) }
-                Spacer(Modifier.width(14.dp))
-                Column { Text(api.displayName().ifEmpty { "DLavie User" }, fontSize = 26.sp, fontWeight = FontWeight.Black); Text("@${api.username().ifEmpty { "unknown" }}", color = SoftText) }
-            }
-            Spacer(Modifier.height(14.dp))
-            InfoLine("Profile avatar", "Opsional. Avatar upload akan aktif setelah Storage bucket aktif.")
-            InfoLine("Backend", CommunityApi.SUPABASE_URL)
-            InfoLine("Target game", GAME_PACKAGE)
-        }
-        GlassCard {
-            Text("Settings", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            SettingRow("Auto check update", autoCheck) { autoCheck = it }
-            SettingRow("Auto launch after patch", autoLaunch) { autoLaunch = it }
-            Text("Theme toggle light/dark akan saya aktifkan penuh setelah patch engine selesai dipindah ke Compose.", color = SoftText, fontSize = 13.sp)
-            Spacer(Modifier.height(10.dp))
-            Button(onClick = onLogout, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5269)), modifier = Modifier.fillMaxWidth()) { Text("Logout", fontWeight = FontWeight.Bold) }
-        }
-    }
-}
+fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) { var autoCheck by remember { mutableStateOf(false) }; var autoLaunch by remember { mutableStateOf(false) }; Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { GlassCard { Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(70.dp).background(Brush.linearGradient(listOf(CandyCyan, CandyBlue)), CircleShape), contentAlignment = Alignment.Center) { Text("DL", fontSize = 24.sp, fontWeight = FontWeight.Black, color = Color.White) }; Spacer(Modifier.width(14.dp)); Column { Text(api.displayName().ifEmpty { "DLavie User" }, fontSize = 26.sp, fontWeight = FontWeight.Black); Text("@${api.username().ifEmpty { "unknown" }}", color = SoftText) } }; Spacer(Modifier.height(14.dp)); InfoLine("Profile avatar", "Opsional. Avatar upload akan aktif setelah Storage bucket aktif."); InfoLine("Backend", CommunityApi.SUPABASE_URL); InfoLine("Target game", GAME_PACKAGE) }; GlassCard { Text("Settings", fontSize = 22.sp, fontWeight = FontWeight.Bold); SettingRow("Auto check update", autoCheck) { autoCheck = it }; SettingRow("Auto launch after patch", autoLaunch) { autoLaunch = it }; Text("Theme toggle light/dark akan saya aktifkan penuh setelah patch engine selesai dipindah ke Compose.", color = SoftText, fontSize = 13.sp); Spacer(Modifier.height(10.dp)); Button(onClick = onLogout, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5269)), modifier = Modifier.fillMaxWidth()) { Text("Logout", fontWeight = FontWeight.Bold) } } } }
 
 @Composable
 fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) { Card(modifier = modifier, shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Color(0xCC101827)), border = BorderStroke(1.dp, GlassStroke)) { Column(modifier = Modifier.padding(18.dp), content = content) } }
@@ -402,6 +349,8 @@ fun GlassListItem(title: String, subtitle: String, selected: Boolean, onClick: (
 @Composable
 fun SettingRow(title: String, value: Boolean, onChange: (Boolean) -> Unit) { Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) { Text(title, modifier = Modifier.weight(1f), color = Color.White); Switch(checked = value, onCheckedChange = onChange) } }
 
+fun launchGame(context: android.content.Context) { val launch = context.packageManager.getLaunchIntentForPackage(GAME_PACKAGE); if (launch != null) context.startActivity(launch) else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$GAME_PACKAGE"))) }
+fun fetchJson(url: String): JSONObject { val c = URL(url).openConnection() as HttpURLConnection; c.connectTimeout = 20000; c.readTimeout = 30000; return try { BufferedReader(InputStreamReader(c.inputStream)).use { JSONObject(it.readText()) } } finally { c.disconnect() } }
 fun jsonCategories(arr: JSONArray): List<CategoryItem> = List(arr.length()) { i -> val o = arr.getJSONObject(i); CategoryItem(o.optString("id"), o.optString("name"), o.optString("description")) }
 fun jsonTopics(arr: JSONArray): List<TopicItem> = List(arr.length()) { i -> val o = arr.getJSONObject(i); TopicItem(o.optString("id"), o.optString("title"), o.optString("body"), o.optInt("reply_count"), o.optString("created_at")) }
 fun jsonPosts(arr: JSONArray): List<PostItem> = List(arr.length()) { i -> val o = arr.getJSONObject(i); PostItem(o.optString("id"), o.optString("author_id"), o.optString("body"), o.optString("created_at")) }
