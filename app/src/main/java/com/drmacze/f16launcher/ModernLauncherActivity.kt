@@ -8,10 +8,12 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -68,7 +70,10 @@ data class TopicItem(val id: String, val title: String, val body: String, val re
 data class PostItem(val id: String, val authorId: String, val body: String, val createdAt: String)
 
 enum class Page(val label: String, val icon: String) {
-    Home("Home", "⌂"), Community("Community", "◉"), Plan("Plan", "◇"), Profile("Profile", "☻")
+    Home("Home", "⌂"),
+    Community("Community", "◉"),
+    Plan("Plan", "◇"),
+    Profile("Profile", "☻")
 }
 
 class ModernLauncherActivity : ComponentActivity() {
@@ -80,17 +85,18 @@ class ModernLauncherActivity : ComponentActivity() {
 
 @Composable
 fun DLavieModernApp() {
-    val scheme = darkColorScheme(
-        background = Carbon,
-        surface = GlassBase,
-        primary = CandyCyan,
-        secondary = CandyBlue,
-        onPrimary = Color(0xFF00111D),
-        onSecondary = Color.White,
-        onBackground = Color.White,
-        onSurface = Color.White
-    )
-    MaterialTheme(colorScheme = scheme) {
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            background = Carbon,
+            surface = GlassBase,
+            primary = CandyCyan,
+            secondary = CandyBlue,
+            onPrimary = Color(0xFF00111D),
+            onSecondary = Color.White,
+            onBackground = Color.White,
+            onSurface = Color.White
+        )
+    ) {
         val context = LocalContext.current
         val api = remember { CommunityApi(context) }
         var loggedIn by remember { mutableStateOf(api.loggedIn()) }
@@ -100,7 +106,11 @@ fun DLavieModernApp() {
                     .fillMaxSize()
                     .background(Brush.linearGradient(listOf(Carbon, Color(0xFF071B2C), Carbon)))
             ) {
-                if (!loggedIn) AuthScreen(api) { loggedIn = true } else MainShell(api) { api.logout(); loggedIn = false }
+                if (!loggedIn) {
+                    AuthScreen(api) { loggedIn = true }
+                } else {
+                    MainShell(api) { api.logout(); loggedIn = false }
+                }
             }
         }
     }
@@ -153,7 +163,9 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
                                 onSuccess()
                             } catch (t: Throwable) {
                                 status = "Login gagal: ${t.message}. Jika akun belum dibuat, tekan Register."
-                            } finally { loading = false }
+                            } finally {
+                                loading = false
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -176,11 +188,17 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
                         scope.launch {
                             try {
                                 withContext(Dispatchers.IO) { api.register(email, password, username, displayName, avatarUrl) }
-                                if (api.loggedIn()) { status = "Register berhasil."; onSuccess() }
-                                else status = "Register berhasil. Jika email confirmation aktif, cek email lalu login."
+                                if (api.loggedIn()) {
+                                    status = "Register berhasil."
+                                    onSuccess()
+                                } else {
+                                    status = "Register berhasil. Jika email confirmation aktif, cek email lalu login."
+                                }
                             } catch (t: Throwable) {
                                 status = "Register gagal: ${t.message}"
-                            } finally { loading = false }
+                            } finally {
+                                loading = false
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -189,7 +207,9 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
             }
         }
         if (compact) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) { hero(); form() }
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                hero(); form()
+            }
         } else {
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Box(Modifier.weight(1f)) { hero() }
@@ -203,11 +223,7 @@ fun AuthScreen(api: CommunityApi, onSuccess: () -> Unit) {
 fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
     var page by remember { mutableStateOf(Page.Home) }
     Box(Modifier.fillMaxSize()) {
-        AnimatedContent(
-            targetState = page,
-            label = "page",
-            modifier = Modifier.fillMaxSize().padding(bottom = 92.dp)
-        ) { target ->
+        AnimatedContent(targetState = page, label = "page", modifier = Modifier.fillMaxSize().padding(bottom = 92.dp)) { target ->
             when (target) {
                 Page.Home -> HomeScreen()
                 Page.Community -> CommunityScreen(api)
@@ -215,11 +231,7 @@ fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
                 Page.Profile -> ProfileScreen(api, onLogout)
             }
         }
-        FloatingNav(
-            page = page,
-            onPage = { page = it },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp)
-        )
+        FloatingNav(page = page, onPage = { page = it }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp))
     }
 }
 
@@ -241,7 +253,7 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
                     modifier = Modifier.weight(1f).height(if (selected) 52.dp else 46.dp),
                     shape = RoundedCornerShape(24.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (selected) CandyBlue else Color(0x00101827),
+                        containerColor = if (selected) CandyBlue else Color.Transparent,
                         contentColor = if (selected) Color.White else SoftText
                     ),
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = if (selected) 8.dp else 0.dp)
@@ -310,6 +322,44 @@ fun CommunityScreen(api: CommunityApi) {
         }
     }
 
+    fun createTopic() {
+        val cat = selectedCategory
+        if (cat == null) {
+            status = "Pilih channel dulu."
+            return
+        }
+        if (title.trim().length < 4 || body.trim().isEmpty()) {
+            status = "Judul minimal 4 karakter dan isi wajib diisi."
+            return
+        }
+        scope.launch {
+            try {
+                val newTopic = withContext(Dispatchers.IO) { api.createTopic(cat.id, title, body) }
+                title = ""; body = ""
+                topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(cat.id)) }
+                selectedTopic = topics.firstOrNull { it.id == newTopic.optString("id") }
+                status = "Topic dibuat."
+            } catch (t: Throwable) { status = "Gagal membuat topic: ${t.message}" }
+        }
+    }
+
+    fun sendReply() {
+        val topic = selectedTopic
+        if (topic == null) {
+            status = "Pilih topic dulu."
+            return
+        }
+        if (reply.trim().isEmpty()) return
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) { api.createPost(topic.id, "", reply) }
+                reply = ""
+                posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) }
+                topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
+            } catch (t: Throwable) { status = "Gagal reply: ${t.message}" }
+        }
+    }
+
     LaunchedEffect(Unit) {
         try {
             categories = withContext(Dispatchers.IO) { jsonCategories(api.categories()) }
@@ -324,30 +374,20 @@ fun CommunityScreen(api: CommunityApi) {
         if (compact) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ChannelPanel(categories, selectedCategory) { selectedCategory = it; selectedTopic = null; posts = emptyList(); loadTopics() }
-                TopicPanel(status, title, body, topics, selectedTopic, onTitle = { title = it }, onBody = { body = it }, onCreate = {
-                    val cat = selectedCategory ?: return@TopicPanel
-                    if (title.trim().length < 4 || body.trim().isEmpty()) { status = "Judul minimal 4 karakter dan isi wajib diisi."; return@TopicPanel }
-                    scope.launch { try { val nt = withContext(Dispatchers.IO) { api.createTopic(cat.id, title, body) }; title = ""; body = ""; topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(cat.id)) }; selectedTopic = topics.firstOrNull { it.id == nt.optString("id") }; status = "Topic dibuat." } catch (t: Throwable) { status = "Gagal membuat topic: ${t.message}" } }
-                }, onSelect = { topic -> selectedTopic = topic; scope.launch { try { posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) } } catch (t: Throwable) { status = "Gagal load thread: ${t.message}" } } })
-                ThreadPanel(selectedTopic, posts, reply, onReply = { reply = it }, onSend = {
-                    val topic = selectedTopic ?: return@ThreadPanel
-                    if (reply.trim().isEmpty()) return@ThreadPanel
-                    scope.launch { try { withContext(Dispatchers.IO) { api.createPost(topic.id, "", reply) }; reply = ""; posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) }; topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) } } catch (t: Throwable) { status = "Gagal reply: ${t.message}" } }
+                TopicPanel(status, title, body, topics, selectedTopic, onTitle = { title = it }, onBody = { body = it }, onCreate = { createTopic() }, onSelect = { topic ->
+                    selectedTopic = topic
+                    scope.launch { try { posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) } } catch (t: Throwable) { status = "Gagal load thread: ${t.message}" } }
                 })
+                ThreadPanel(selectedTopic, posts, reply, onReply = { reply = it }, onSend = { sendReply() })
             }
         } else {
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 ChannelPanel(categories, selectedCategory, Modifier.width(210.dp).fillMaxHeight()) { selectedCategory = it; selectedTopic = null; posts = emptyList(); loadTopics() }
-                TopicPanel(status, title, body, topics, selectedTopic, Modifier.weight(1f).fillMaxHeight(), { title = it }, { body = it }, {
-                    val cat = selectedCategory ?: return@TopicPanel
-                    if (title.trim().length < 4 || body.trim().isEmpty()) { status = "Judul minimal 4 karakter dan isi wajib diisi."; return@TopicPanel }
-                    scope.launch { try { val nt = withContext(Dispatchers.IO) { api.createTopic(cat.id, title, body) }; title = ""; body = ""; topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(cat.id)) }; selectedTopic = topics.firstOrNull { it.id == nt.optString("id") }; status = "Topic dibuat." } catch (t: Throwable) { status = "Gagal membuat topic: ${t.message}" } }
-                }, { topic -> selectedTopic = topic; scope.launch { try { posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) } } catch (t: Throwable) { status = "Gagal load thread: ${t.message}" } } })
-                ThreadPanel(selectedTopic, posts, reply, Modifier.weight(1f).fillMaxHeight(), { reply = it }) {
-                    val topic = selectedTopic ?: return@ThreadPanel
-                    if (reply.trim().isEmpty()) return@ThreadPanel
-                    scope.launch { try { withContext(Dispatchers.IO) { api.createPost(topic.id, "", reply) }; reply = ""; posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) }; topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) } } catch (t: Throwable) { status = "Gagal reply: ${t.message}" } }
-                }
+                TopicPanel(status, title, body, topics, selectedTopic, Modifier.weight(1f).fillMaxHeight(), { title = it }, { body = it }, { createTopic() }, { topic ->
+                    selectedTopic = topic
+                    scope.launch { try { posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) } } catch (t: Throwable) { status = "Gagal load thread: ${t.message}" } }
+                })
+                ThreadPanel(selectedTopic, posts, reply, Modifier.weight(1f).fillMaxHeight(), { reply = it }) { sendReply() }
             }
         }
     }
@@ -415,7 +455,10 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(70.dp).background(Brush.linearGradient(listOf(CandyCyan, CandyBlue)), CircleShape), contentAlignment = Alignment.Center) { Text("DL", fontSize = 24.sp, fontWeight = FontWeight.Black, color = Color.White) }
                 Spacer(Modifier.width(14.dp))
-                Column { Text(api.displayName().ifEmpty { "DLavie User" }, fontSize = 26.sp, fontWeight = FontWeight.Black); Text("@${api.username().ifEmpty { "unknown" }}", color = SoftText) }
+                Column {
+                    Text(api.displayName().ifEmpty { "DLavie User" }, fontSize = 26.sp, fontWeight = FontWeight.Black)
+                    Text("@${api.username().ifEmpty { "unknown" }}", color = SoftText)
+                }
             }
             Spacer(Modifier.height(14.dp))
             InfoLine("Profile avatar", "Opsional. Avatar upload akan aktif setelah Storage bucket aktif.")
@@ -434,8 +477,10 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
 }
 
 @Composable
-fun GlassCard(modifier: Modifier = Modifier, content: @Composable Column.() -> Unit) {
-    Card(modifier = modifier, shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Color(0xCC101827)), border = BorderStroke(1.dp, GlassStroke)) { Column(modifier = Modifier.padding(18.dp), content = content) }
+fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Card(modifier = modifier, shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Color(0xCC101827)), border = BorderStroke(1.dp, GlassStroke)) {
+        Column(modifier = Modifier.padding(18.dp), content = content)
+    }
 }
 
 @Composable
@@ -452,7 +497,7 @@ fun SmallGlassStat(title: String, value: String, modifier: Modifier = Modifier) 
 
 @Composable
 fun GlassListItem(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(18.dp), color = if (selected) Color(0x5539D8FF) else Color(0x66172132), border = BorderStroke(1.dp, if (selected) CandyCyan else GlassStroke), modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = RoundedCornerShape(18.dp), color = if (selected) Color(0x5539D8FF) else Color(0x66172132), border = BorderStroke(1.dp, if (selected) CandyCyan else GlassStroke), modifier = Modifier.fillMaxWidth().clickable { onClick() }) {
         Column(Modifier.padding(12.dp)) { Text(title, color = Color.White, fontWeight = FontWeight.Bold); Text(subtitle, color = SoftText, fontSize = 12.sp) }
     }
 }
