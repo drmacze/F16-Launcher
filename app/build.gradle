@@ -15,5 +15,9 @@ android {
     }
 }
 
+def shizukuVersion = '13.1.5'
+
 dependencies {
+    implementation "dev.rikka.shizuku:api:$shizukuVersion"
+    implementation "dev.rikka.shizuku:provider:$shizukuVersion"
 }
