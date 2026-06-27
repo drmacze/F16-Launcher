@@ -254,7 +254,22 @@ public class CommunityActivity extends Activity {
             String text = reply.getText().toString();
             if (text.trim().isEmpty()) { toast("Reply tidak boleh kosong."); return; }
             toast("Mengirim reply...");
-            io.execute(() -> { try { api.createPost(selectedTopicId, "", text); main.post(() -> { reply.setText(""); loadTopics(); JSONObject t = new JSONObject(); t.put("id", selectedTopicId); t.put("title", selectedTopicTitle); t.put("body", ""); loadThread(t); }); } catch (Throwable e) { toast("Gagal reply: " + e.getMessage()); } });
+            io.execute(() -> {
+                try {
+                    api.createPost(selectedTopicId, "", text);
+                    JSONObject t = new JSONObject();
+                    t.put("id", selectedTopicId);
+                    t.put("title", selectedTopicTitle);
+                    t.put("body", "");
+                    main.post(() -> {
+                        reply.setText("");
+                        loadTopics();
+                        loadThread(t);
+                    });
+                } catch (Throwable e) {
+                    toast("Gagal reply: " + e.getMessage());
+                }
+            });
         });
     }
 
