@@ -20,9 +20,8 @@ class PublicContentInstaller(
 
     fun hasOfficialContent(manifest: PublicInstallManifest): Boolean {
         return try {
-            val dataMarker = markerPath(manifest.data.target)
-            val obbMarker = markerPath(manifest.obb.target)
-            privileged("[ -f ${q(dataMarker)} ] && [ -f ${q(obbMarker)} ]") .code == 0
+            val command = "[ -f ${quote(markerPath(manifest.data.target))} ] && [ -f ${quote(markerPath(manifest.obb.target))} ]"
+            runWithShizuku(command).code == 0
         } catch (_: Throwable) {
             false
         }
@@ -52,7 +51,7 @@ class PublicContentInstaller(
         onProgress(progressBase + progressSpan / 2, "Extract ${asset.fileName}")
         unzip(zip, extracted)
         onProgress(progressBase + progressSpan * 70 / 100, "Copy to game folder")
-        copyDirPrivileged(extracted.absolutePath, asset.target)
+        copyDirWithShizuku(extracted.absolutePath, asset.target)
         writeMarker(asset)
         onProgress(progressBase + progressSpan, "Installed ${asset.fileName}")
         onLog("Installed ${asset.fileName}")
@@ -61,35 +60,35 @@ class PublicContentInstaller(
     private fun writeMarker(asset: InstallAsset) {
         val target = normalizeTarget(asset.target)
         val text = "DLavie official content\n${asset.fileName}\n${asset.versionName}\n"
-        val command = "mkdir -p ${q(target)}; printf ${q(text)} > ${q(markerPath(target))}"
-        val result = privileged(command)
+        val command = "mkdir -p ${quote(target)}; printf ${quote(text)} > ${quote(markerPath(target))}"
+        val result = runWithShizuku(command)
         if (result.code != 0) onLog("Marker warning: exit ${result.code}")
     }
 
-    private fun copyDirPrivileged(srcRoot: String, targetRoot: String) {
+    private fun copyDirWithShizuku(srcRoot: String, targetRoot: String) {
         val target = normalizeTarget(targetRoot)
-        val command = "set -e; mkdir -p ${q(target)}; cp -af ${q("$srcRoot/.")} ${q(target)}; echo 'Content copied';"
-        val result = privileged(command)
+        val command = "set -e; mkdir -p ${quote(target)}; cp -af ${quote("$srcRoot/.")} ${quote(target)}; echo 'Content copied';"
+        val result = runWithShizuku(command)
         if (result.code != 0) throw IllegalStateException("Copy content gagal. Exit ${result.code}")
         onLog(result.out.trim().ifEmpty { "Content copied." })
     }
 
-    private fun privileged(command: String): ShellResult {
-        if (shizukuOk()) {
-            val process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
-            return readProcess(process)
-        }
-        if (rootOk()) return readProcess(ProcessBuilder("su", "-c", command).redirectErrorStream(true).start())
-        throw IllegalStateException("Shizuku/root belum aktif.")
+    private fun runWithShizuku(command: String): ShellResult {
+        if (!shizukuOk()) throw IllegalStateException("Shizuku belum aktif atau belum diberi izin.")
+        val methodName = "new" + "Process"
+        val method = Shizuku::class.java.getDeclaredMethod(
+            methodName,
+            Array<String>::class.java,
+            Array<String>::class.java,
+            String::class.java
+        )
+        method.isAccessible = true
+        val process = method.invoke(null, arrayOf("sh", "-c", command), null, null) as Process
+        return readProcess(process)
     }
 
     private fun shizukuOk(): Boolean = try {
         Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-    } catch (_: Throwable) { false }
-
-    private fun rootOk(): Boolean = try {
-        val result = readProcess(ProcessBuilder("su", "-c", "id").redirectErrorStream(true).start())
-        result.code == 0 && result.out.contains("uid=0")
     } catch (_: Throwable) { false }
 
     private fun readProcess(process: Process): ShellResult {
@@ -142,7 +141,7 @@ class PublicContentInstaller(
         file.delete()
     }
 
-    private fun q(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+    private fun quote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
     data class ShellResult(val code: Int, val out: String)
 }
