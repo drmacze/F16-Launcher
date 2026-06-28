@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
@@ -38,6 +39,7 @@ class DevLauncherActivity : ComponentActivity() {
                         Modifier
                             .fillMaxSize()
                             .background(Brush.linearGradient(listOf(Carbon, Color(0xFF071B2C), Carbon)))
+                            .systemBarsPadding()
                     ) {
                         Phase3MainShell(api)
                     }
