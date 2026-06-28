@@ -88,6 +88,7 @@ private fun P40AutoSetup() {
     val prefs = remember { context.getSharedPreferences("f16_launcher", 0) }
     val engine = remember { DevPatchEngine(context) {} }
     val installer = remember { PublicInstallManager(context) }
+    val crashReporter = remember { GameCrashReporter(context) }
     var manifest by remember { mutableStateOf<PublicInstallManifest?>(null) }
     var state by remember { mutableStateOf(P40State.Checking) }
     var message by remember { mutableStateOf("Mengecek DLavie setup...") }
@@ -117,6 +118,12 @@ private fun P40AutoSetup() {
         P40State.Offline -> "Retry Check"
         P40State.Working -> "Working..."
         P40State.Checking -> "Checking..."
+    }
+
+    fun playGameGuarded() {
+        crashReporter.prepareLaunch()
+        log("Membuka FIFA 16...")
+        launchGame(context)
     }
 
     fun refresh(silent: Boolean = false) {
@@ -186,7 +193,7 @@ private fun P40AutoSetup() {
                 state = P40State.Ready
                 pct(100, "Ready")
                 log("DATA/OBB DLavie selesai. Siap main.")
-                if (autoLaunch) launchGame(context)
+                if (autoLaunch) playGameGuarded()
             } catch (t: Throwable) { state = P40State.NeedContent; pct(progress, "Content install failed"); log("Install DATA/OBB gagal: ${t.message}") }
         }
     }
@@ -198,7 +205,7 @@ private fun P40AutoSetup() {
         updateState = "running"
         pct(15, "Updating data")
         log("Update data DLavie dimulai...")
-        scope.launch { try { withContext(Dispatchers.IO) { engine.applyAvailableUpdates() }; local = engine.localVersion(); prefs.edit().putString("update_state", "done").remove("update_last_error").apply(); updateState = "done"; state = P40State.Ready; pct(100, "Ready"); log("Update selesai. Siap main."); if (autoLaunch) launchGame(context) } catch (t: Throwable) { prefs.edit().putString("update_state", "failed").putString("update_last_error", t.message ?: "unknown").apply(); updateState = "failed"; state = P40State.Recovery; pct(progress, "Failed"); log("Update gagal: ${t.message}") } }
+        scope.launch { try { withContext(Dispatchers.IO) { engine.applyAvailableUpdates() }; local = engine.localVersion(); prefs.edit().putString("update_state", "done").remove("update_last_error").apply(); updateState = "done"; state = P40State.Ready; pct(100, "Ready"); log("Update selesai. Siap main."); if (autoLaunch) playGameGuarded() } catch (t: Throwable) { prefs.edit().putString("update_state", "failed").putString("update_last_error", t.message ?: "unknown").apply(); updateState = "failed"; state = P40State.Recovery; pct(progress, "Failed"); log("Update gagal: ${t.message}") } }
     }
 
     fun mainAction() {
@@ -208,7 +215,7 @@ private fun P40AutoSetup() {
             P40State.NeedShizuku -> { ShizukuSetup.openApp(context); log("Buka Shizuku, start service, lalu kembali ke DLavie.") }
             P40State.NeedPermission -> { ShizukuSetup.requestPermission(); log("Pilih Allow di dialog Shizuku, lalu tekan tombol utama lagi.") }
             P40State.UpdateAvailable -> applyUpdate()
-            P40State.Ready -> launchGame(context)
+            P40State.Ready -> playGameGuarded()
             P40State.Recovery -> recoverOrClear()
             P40State.Offline, P40State.Checking -> refresh(false)
             P40State.Working -> log("Proses sedang berjalan. Tunggu selesai.")
@@ -218,9 +225,16 @@ private fun P40AutoSetup() {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                val waitingApkInstall = prefs.getBoolean("awaiting_apk_install", false)
-                val installedNow = isPackageInstalled(context, DevPatchEngine.GAME_PACKAGE)
-                if (waitingApkInstall || state == P40State.Working || installedNow != gameInstalled) refresh(true)
+                val crashReason = crashReporter.consumeFastReturn()
+                if (crashReason != null) {
+                    state = P40State.Recovery
+                    pct(0, "Game crash detected")
+                    log("FIFA 16 crash: $crashReason. Report: ${crashReporter.reportFile().absolutePath}")
+                } else {
+                    val waitingApkInstall = prefs.getBoolean("awaiting_apk_install", false)
+                    val installedNow = isPackageInstalled(context, DevPatchEngine.GAME_PACKAGE)
+                    if (waitingApkInstall || state == P40State.Working || installedNow != gameInstalled) refresh(true)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -243,7 +257,7 @@ private fun P40AutoSetup() {
 @Composable
 private fun P40StatusPill(state: P40State) { val color = when (state) { P40State.Ready -> NeonGreen; P40State.UpdateAvailable -> CandyCyan; P40State.NeedApk, P40State.NeedContent, P40State.NeedShizuku, P40State.NeedPermission -> Color(0xFFFFB84D); P40State.Recovery, P40State.Offline -> Color(0xFFFF5269); P40State.Working, P40State.Checking -> CandyBlue }; Surface(shape = RoundedCornerShape(22.dp), color = Color(0x33101827), border = BorderStroke(1.dp, color)) { Text(state.title, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp), color = color, fontWeight = FontWeight.Bold) } }
 @Composable
-private fun P40Readiness(game: Boolean, content: Boolean, shizuku: String, access: String, local: Int, latest: Int, updateState: String, backup: Boolean, autoLaunch: Boolean) = P40Card { Text("Setup Readiness", fontSize = 20.sp, fontWeight = FontWeight.Bold); InfoLine("Game", if (game) "Installed" else "Need download"); InfoLine("DATA/OBB", if (content) "Official DLavie" else "Need install"); InfoLine("Data update", if (latest > 0 && local >= latest) "Ready" else "Check required"); InfoLine("Shizuku", shizuku); InfoLine("Access", access); InfoLine("Version", if (latest > 0) "v$local / latest v$latest" else "v$local"); InfoLine("Backup", if (backup) "Ready" else "None yet"); InfoLine("Auto launch", if (autoLaunch) "On" else "Off"); InfoLine("Community", "After production launch") }
+private fun P40Readiness(game: Boolean, content: Boolean, shizuku: String, access: String, local: Int, latest: Int, updateState: String, backup: Boolean, autoLaunch: Boolean) = P40Card { Text("Setup Readiness", fontSize = 20.sp, fontWeight = FontWeight.Bold); InfoLine("Game", if (game) "Installed" else "Need download"); InfoLine("DATA/OBB", if (content) "Official DLavie" else "Need install"); InfoLine("Data update", if (content) "Ready" else if (latest > 0 && local >= latest) "Ready" else "Check required"); InfoLine("Shizuku", shizuku); InfoLine("Access", access); InfoLine("Version", if (latest > 0) "v$local / latest v$latest" else "v$local"); InfoLine("Backup", if (backup) "Ready" else "None yet"); InfoLine("Auto launch", if (autoLaunch) "On" else "Off"); InfoLine("Community", "After production launch") }
 @Composable
 private fun P40ContentCard(manifest: PublicInstallManifest?) = P40Card { Text("DLavie Content Source", fontSize = 20.sp, fontWeight = FontWeight.Bold); if (manifest == null) Text("Manifest belum terbaca.", color = SoftText) else { InfoLine("Product", manifest.productName); InfoLine("APK", manifest.apk.versionName); InfoLine("DATA", manifest.data.versionName); InfoLine("OBB", manifest.obb.versionName); Text("Semua file wajib berasal dari manifest DLavie dan diverifikasi SHA-256.", color = SoftText, fontSize = 13.sp) } }
 @Composable
