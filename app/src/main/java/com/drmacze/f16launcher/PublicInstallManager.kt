@@ -16,15 +16,20 @@ import java.net.URL
 import java.security.MessageDigest
 import java.util.Locale
 
-private const val INSTALL_MANIFEST_URL = "https://raw.githubusercontent.com/drmacze/F16/main/updates/install.json"
+const val INSTALL_MANIFEST_URL = "https://raw.githubusercontent.com/drmacze/F16/main/updates/install.json"
 
 data class InstallAsset(
     val fileName: String,
     val url: String,
     val sha256: String,
     val sizeBytes: Long,
-    val versionName: String
-)
+    val versionName: String,
+    val target: String = "",
+    val required: Boolean = true,
+    val published: Boolean = false
+) {
+    fun isPublished(): Boolean = published && url.isNotBlank()
+}
 
 data class PublicInstallManifest(
     val productName: String,
@@ -45,7 +50,10 @@ class PublicInstallManager(private val context: Context) {
                 url = obj.optString("url", ""),
                 sha256 = obj.optString("sha256", ""),
                 sizeBytes = obj.optLong("sizeBytes", 0L),
-                versionName = obj.optString("versionName", "-")
+                versionName = obj.optString("versionName", "-"),
+                target = obj.optString("target", ""),
+                required = obj.optBoolean("required", true),
+                published = obj.optBoolean("published", obj.optString("url", "").isNotBlank())
             )
         }
         return PublicInstallManifest(
@@ -59,7 +67,7 @@ class PublicInstallManager(private val context: Context) {
     }
 
     fun downloadAsset(asset: InstallAsset, onProgress: (Int) -> Unit): File {
-        if (asset.url.isBlank()) throw IllegalStateException("URL asset belum diisi di install.json: ${asset.fileName}")
+        if (!asset.isPublished()) throw IllegalStateException("Konten belum dipublish: ${asset.fileName}")
         val dir = File(context.getExternalFilesDir(null), "public-install")
         dir.mkdirs()
         val out = File(dir, asset.fileName)
@@ -108,7 +116,7 @@ class PublicInstallManager(private val context: Context) {
         return try { BufferedReader(InputStreamReader(conn.inputStream)).use { it.readText() } } finally { conn.disconnect() }
     }
 
-    private fun sha256(file: File): String {
+    fun sha256(file: File): String {
         val md = MessageDigest.getInstance("SHA-256")
         FileInputStream(file).use { input ->
             val buffer = ByteArray(131072)
