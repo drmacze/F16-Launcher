@@ -16,6 +16,12 @@ class PublicContentInstaller(
     private val onLog: (String) -> Unit,
     private val onProgress: (Int, String) -> Unit
 ) {
+    constructor(
+        context: Context,
+        onLog: (String) -> Unit,
+        onProgress: () -> Unit
+    ) : this(context, onLog, { _, _ -> onProgress() })
+
     private val manager = PublicInstallManager(context)
 
     fun hasOfficialContent(manifest: PublicInstallManifest): Boolean {
