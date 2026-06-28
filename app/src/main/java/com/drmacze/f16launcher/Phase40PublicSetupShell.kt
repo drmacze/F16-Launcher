@@ -1,6 +1,5 @@
 package com.drmacze.f16launcher
 
-import android.provider.Settings
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -24,6 +23,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,10 +34,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -80,6 +83,7 @@ private fun P40Nav(page: P40Page, onPage: (P40Page) -> Unit, modifier: Modifier 
 @Composable
 private fun P40AutoSetup() {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("f16_launcher", 0) }
     val engine = remember { DevPatchEngine(context) {} }
@@ -125,6 +129,7 @@ private fun P40AutoSetup() {
             local = engine.localVersion()
             backupReady = engine.latestBackupRoot().isNotBlank()
             updateState = prefs.getString("update_state", "idle") ?: "idle"
+            if (gameInstalled) prefs.edit().putBoolean("awaiting_apk_install", false).apply()
             if (!gameInstalled) { state = P40State.NeedApk; pct(20, "Need APK"); log("FIFA 16 DLavie belum terinstall. Download dari DLavie Launcher."); return@launch }
             if (updateState == "failed") { state = P40State.Recovery; pct(progress, "Recovery needed"); log("Update sebelumnya gagal. Jalankan recovery."); return@launch }
             if (shizuku == "Not Installed" || shizuku == "Need Start") { state = P40State.NeedShizuku; pct(30, "Need Shizuku"); log(ShizukuSetup.shortHint(context)); return@launch }
@@ -151,7 +156,8 @@ private fun P40AutoSetup() {
             try {
                 val apk = withContext(Dispatchers.IO) { installer.downloadAsset(current.apk) { pct(it, "Downloading APK") } }
                 pct(100, "Open installer")
-                log("APK selesai. Membuka installer Android...")
+                prefs.edit().putBoolean("awaiting_apk_install", true).apply()
+                log("APK selesai. Installer Android dibuka. Setelah install selesai, kembali ke DLavie; status akan dicek otomatis.")
                 installer.openApkInstaller(apk)
             } catch (t: Throwable) { state = P40State.NeedApk; pct(0, "APK download failed"); log("Download APK gagal: ${t.message}") }
         }
@@ -176,8 +182,22 @@ private fun P40AutoSetup() {
             P40State.Ready -> launchGame(context)
             P40State.Recovery -> recoverOrClear()
             P40State.Offline, P40State.Checking -> refresh(false)
-            P40State.Working -> log("Proses sedang berjalan. Tunggu selesai.")
+            P40State.Working -> log("Proses sedang berjalan. Kalau installer Android sudah selesai, kembali ke DLavie; status akan refresh otomatis.")
         }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val waitingApkInstall = prefs.getBoolean("awaiting_apk_install", false)
+                val installedNow = isPackageInstalled(context, DevPatchEngine.GAME_PACKAGE)
+                if (waitingApkInstall || state == P40State.Working || installedNow != gameInstalled) {
+                    refresh(true)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(Unit) { refresh(true) }
