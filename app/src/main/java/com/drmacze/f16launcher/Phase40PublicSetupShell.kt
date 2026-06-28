@@ -137,7 +137,7 @@ private fun P40AutoSetup() {
             if (updateState == "failed") { state = P40State.Recovery; pct(progress, "Recovery needed"); log("Update sebelumnya gagal. Jalankan recovery."); return@launch }
             if (shizuku == "Not Installed" || shizuku == "Need Start") { state = P40State.NeedShizuku; pct(30, "Need Shizuku"); log(ShizukuSetup.shortHint(context)); return@launch }
             if (shizuku == "Need Permission") { state = P40State.NeedPermission; pct(40, "Need permission"); log(ShizukuSetup.shortHint(context)); return@launch }
-            contentInstalled = withContext(Dispatchers.IO) { PublicContentInstaller(context, {}, {}).hasOfficialContent(current) }
+            contentInstalled = withContext(Dispatchers.IO) { PublicContentInstaller(context, {}, { _, _ -> }).hasOfficialContent(current) }
             if (!contentInstalled) { state = P40State.NeedContent; pct(50, "Need DATA/OBB"); log("DATA/OBB resmi DLavie belum terpasang. Tekan Install DLavie Data."); return@launch }
             try {
                 pct(70, "Checking data update")
