@@ -41,7 +41,7 @@ class DevLauncherActivity : ComponentActivity() {
                             .background(Brush.linearGradient(listOf(Carbon, Color(0xFF071B2C), Carbon)))
                             .systemBarsPadding()
                     ) {
-                        Phase3MainShell(api)
+                        Phase3PolishedShell(api)
                     }
                 }
             }
