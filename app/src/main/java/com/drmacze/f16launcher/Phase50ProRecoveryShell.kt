@@ -36,7 +36,7 @@ fun Phase50ProRecoveryShell(api: CommunityApi) {
     val manager = remember { PublicInstallManager(context) }
     val prefs = remember { context.getSharedPreferences("f16_launcher", 0) }
     var manifest by remember { mutableStateOf<PublicInstallManifest?>(null) }
-    var message by remember { mutableStateOf("Mode recovery lengkap: install APK, pasang OBB stabil, first setup, lalu DATA final.") }
+    var message by remember { mutableStateOf("Mode recovery lengkap: APK, OBB, first setup, DATA, finalize APK, lalu play.") }
     var step by remember { mutableStateOf("Ready") }
     var progress by remember { mutableStateOf(0) }
     var working by remember { mutableStateOf(false) }
@@ -110,24 +110,38 @@ fun Phase50ProRecoveryShell(api: CommunityApi) {
         }
     }
 
-    fun installApkGame() {
+    fun openApkInstallerWithLabel(label: String, doneMessage: String) {
         val current = manifest ?: return
-        runNormalJob("Menyiapkan APK game DLavie 26...") {
-            step = "Download APK"
+        runNormalJob(label) {
+            step = "Prepare APK"
             progress = 1
             val apk = withContext(Dispatchers.IO) {
                 manager.downloadAsset(current.apk) { p ->
                     scope.launch(Dispatchers.Main) {
                         progress = p
-                        step = "Download APK"
+                        step = "Prepare APK"
                     }
                 }
             }
             progress = 100
             step = "Open APK installer"
-            message = "APK siap. Android Package Installer dibuka. Setelah install selesai, kembali ke launcher. Jangan buka game dulu."
+            message = doneMessage
             manager.openApkInstaller(apk)
         }
+    }
+
+    fun installApkGame() {
+        openApkInstallerWithLabel(
+            label = "Menyiapkan APK game DLavie 26...",
+            doneMessage = "APK siap. Android Package Installer dibuka. Setelah install selesai, kembali ke launcher. Jangan buka game dulu."
+        )
+    }
+
+    fun finalizeApkUpdate() {
+        openApkInstallerWithLabel(
+            label = "Menyiapkan finalize APK update setelah DATA...",
+            doneMessage = "Finalize APK dibuka sebagai update. Setelah selesai, kembali ke launcher lalu Play/Test FIFA 16."
+        )
     }
 
     fun cleanRuntimeOnly() {
@@ -173,8 +187,8 @@ fun Phase50ProRecoveryShell(api: CommunityApi) {
             withContext(Dispatchers.IO) { content.installDataOnly(current) }
             prefs.edit().putBoolean("first_run_done", true).putBoolean("dlavie_data_installed", true).apply()
             progress = 100
-            step = "Ready"
-            message = "DATA final selesai. Sekarang Play/Test FIFA 16. Jika masih gagal, tekan Collect Doctor Report."
+            step = "DATA ready"
+            message = "DATA final selesai. Sekarang wajib Finalize APK Update, baru Play/Test FIFA 16."
         }
     }
 
@@ -184,14 +198,14 @@ fun Phase50ProRecoveryShell(api: CommunityApi) {
             report = text.takeLast(6000)
             progress = 100
             step = "Report ready"
-            message = "Doctor Report sudah diambil. Kirim isi report/log ini kalau game masih gagal."
+            message = "Doctor Report sudah diambil. Kirim isi report/log ini kalau game crash di main menu."
         }
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         GlassCard(Modifier.fillMaxWidth()) {
             Text("DLavie Pro Recovery", fontSize = 34.sp, fontWeight = FontWeight.Black, color = Color.White)
-            Text("APK + clean runtime + OBB + DATA final", fontSize = 15.sp, color = CandyCyan)
+            Text("Android 12+ staged flow with APK finalize", fontSize = 15.sp, color = CandyCyan)
             Spacer(Modifier.height(12.dp))
             Text(message, color = SoftText)
             Spacer(Modifier.height(16.dp))
@@ -219,8 +233,12 @@ fun Phase50ProRecoveryShell(api: CommunityApi) {
                 Text("5. Install DATA Final", fontWeight = FontWeight.Black, fontSize = 16.sp)
             }
             Spacer(Modifier.height(8.dp))
+            Button(enabled = !working && manifest != null, onClick = { finalizeApkUpdate() }, modifier = Modifier.fillMaxWidth().height(58.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB84D), contentColor = Color(0xFF1A1200), disabledContainerColor = Color(0x55303B4B), disabledContentColor = SoftText)) {
+                Text("6. Finalize APK Update", fontWeight = FontWeight.Black, fontSize = 16.sp)
+            }
+            Spacer(Modifier.height(8.dp))
             Button(enabled = !working && gameInstalled, onClick = { launchGame(context) }, modifier = Modifier.fillMaxWidth().height(54.dp), colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D), disabledContainerColor = Color(0x55303B4B), disabledContentColor = SoftText)) {
-                Text("6. Play / Test FIFA 16", fontWeight = FontWeight.Bold)
+                Text("7. Play / Test FIFA 16", fontWeight = FontWeight.Bold)
             }
         }
 
@@ -229,6 +247,7 @@ fun Phase50ProRecoveryShell(api: CommunityApi) {
             InfoLine("Game APK", if (gameInstalled) "Installed" else "Not installed")
             InfoLine("Shizuku", shizuku)
             InfoLine("Manifest", if (manifest != null) "Ready" else "Loading/failed")
+            InfoLine("Rule", "DATA -> Finalize APK -> Play")
         }
 
         GlassCard(Modifier.fillMaxWidth()) {
@@ -250,7 +269,7 @@ fun Phase50ProRecoveryShell(api: CommunityApi) {
 
         GlassCard(Modifier.fillMaxWidth()) {
             Text("Doctor", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text("Kalau masih gagal, ambil report untuk melihat error asli.", color = SoftText)
+            Text("Kalau masih crash di main menu, ambil report untuk membedakan crash installer vs crash DATA/mod.", color = SoftText)
             Spacer(Modifier.height(10.dp))
             Button(enabled = !working, onClick = { collectDoctorReport() }, modifier = Modifier.fillMaxWidth().height(54.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5269))) { Text("Collect Doctor Report", fontWeight = FontWeight.Bold) }
             if (report.isNotBlank()) {
