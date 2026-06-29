@@ -25,6 +25,27 @@ class PublicContentInstaller(
 
     fun hasOfficialObb(manifest: PublicInstallManifest): Boolean = hasMarker(manifest.obb.target)
 
+    fun cleanRuntime(manifest: PublicInstallManifest) {
+        val dataTarget = normalizeTarget(manifest.data.target)
+        val obbTarget = normalizeTarget(manifest.obb.target)
+        onProgress(5, "Force-stop game")
+        val command = "set -e; " +
+            "am force-stop com.ea.gp.fifaworld >/dev/null 2>&1 || true; " +
+            "rm -rf ${quote(dataTarget)} ${quote(obbTarget)}; " +
+            "mkdir -p ${quote(dataTarget)} ${quote(obbTarget)}; " +
+            "echo 'Clean runtime complete';"
+        val result = runWithShizuku(command)
+        if (result.code != 0) throw IllegalStateException("Clean runtime gagal. Exit ${result.code}")
+        prefs.edit()
+            .putBoolean("dlavie_obb_installed", false)
+            .putBoolean("dlavie_data_installed", false)
+            .putBoolean("first_run_done", false)
+            .putBoolean("dlavie_content_installed", false)
+            .apply()
+        onProgress(15, "Runtime cleaned")
+        onLog(result.out.trim().ifEmpty { "Clean runtime complete." })
+    }
+
     fun installObbOnly(manifest: PublicInstallManifest) {
         installAsset(manifest.obb, 5, 90)
         prefs.edit()
@@ -53,6 +74,16 @@ class PublicContentInstaller(
             .apply()
         onProgress(100, "Content ready")
         onLog("DLavie DATA/OBB siap.")
+    }
+
+    fun doctorReport(): String {
+        val command = "echo '--- package ---'; " +
+            "dumpsys package com.ea.gp.fifaworld | grep -E 'versionCode|versionName|primaryCpuAbi|nativeLibraryPath' | head -40 || true; " +
+            "echo '--- data root ---'; ls -la /sdcard/Android/data/com.ea.gp.fifaworld 2>/dev/null | head -80 || true; " +
+            "echo '--- data files ---'; ls -la /sdcard/Android/data/com.ea.gp.fifaworld/files 2>/dev/null | head -80 || true; " +
+            "echo '--- obb root ---'; ls -la /sdcard/Android/obb/com.ea.gp.fifaworld 2>/dev/null | head -80 || true; " +
+            "echo '--- recent fifa log ---'; logcat -d -t 500 | grep -i -E 'com.ea.gp.fifaworld|fifa|easports|AndroidRuntime|FATAL EXCEPTION|SIGSEGV|signal 11|obb|asset|permission|denied|exception' | tail -160 || true"
+        return runWithShizuku(command).out
     }
 
     private fun hasMarker(target: String): Boolean {
