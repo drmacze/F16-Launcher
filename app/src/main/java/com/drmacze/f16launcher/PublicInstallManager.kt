@@ -113,7 +113,12 @@ class PublicInstallManager(private val context: Context) {
                 }
                 else -> {
                     onProgress(row.progress)
-                    try { Thread.sleep(1000L) } catch (_: InterruptedException) { Thread.currentThread().interrupt(); throw IllegalStateException("Download berjalan di background. Buka Setup lagi untuk melanjutkan.") }
+                    try {
+                        Thread.sleep(1000L)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw IllegalStateException("Download berjalan di background. Buka Setup lagi untuk melanjutkan.")
+                    }
                 }
             }
         }
@@ -133,6 +138,10 @@ class PublicInstallManager(private val context: Context) {
             else -> PublicDownloadStatus(active = true, done = false, progress = row.progress, label = "Downloading")
         }
     }
+
+    fun cachedAssetFile(asset: InstallAsset): File = assetFile(asset)
+
+    fun isAssetDownloaded(asset: InstallAsset): Boolean = isValidCachedFile(asset, assetFile(asset))
 
     fun openApkInstaller(apkFile: File) {
         val uri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apkFile)
