@@ -147,9 +147,10 @@ class PublicInstallManager(private val context: Context) {
 
         val key = PersistentDownloadService.key(asset.fileName)
         val serviceStatus = prefs.getString(PersistentDownloadService.statusKey(key), "") ?: ""
+        val serviceActive = prefs.getBoolean(PersistentDownloadService.activeKey(key), false)
         val serviceProgress = prefs.getInt(PersistentDownloadService.progressKey(key), 0).coerceIn(0, 100)
         when (serviceStatus) {
-            "downloading" -> return PublicDownloadStatus(active = true, done = false, progress = serviceProgress, label = "Downloading")
+            "downloading" -> if (serviceActive) return PublicDownloadStatus(active = true, done = false, progress = serviceProgress, label = "Downloading")
             "done" -> return PublicDownloadStatus(active = false, done = isValidCachedFile(asset, out), progress = 100, label = if (out.exists()) "Downloaded" else "Missing")
             "failed" -> return PublicDownloadStatus(active = false, done = false, progress = serviceProgress, label = "Failed ${prefs.getString(PersistentDownloadService.errorKey(key), "")}")
         }
@@ -190,10 +191,13 @@ class PublicInstallManager(private val context: Context) {
         val request = DownloadManager.Request(Uri.parse(asset.url))
             .setTitle(asset.fileName)
             .setDescription("DLavie download: ${asset.versionName}")
+            .setMimeType(if (asset.fileName.endsWith(".apk", true)) "application/vnd.android.package-archive" else "application/zip")
+            .addRequestHeader("User-Agent", "DLavie-Launcher")
+            .addRequestHeader("Accept", "application/octet-stream")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(true)
-            .setDestinationUri(Uri.fromFile(out))
+            .setDestinationInExternalFilesDir(context, null, "public-install/${asset.fileName}")
         val id = downloadManager.enqueue(request)
         prefs.edit()
             .putLong(downloadIdKey(asset), id)
