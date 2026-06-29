@@ -31,16 +31,7 @@ import kotlinx.coroutines.withContext
 
 @Composable
 fun Phase46RepairDataShell(api: CommunityApi) {
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("f16_launcher", 0) }
-    val repairMode = prefs.getBoolean("first_run_done", false) && !prefs.getBoolean("dlavie_data_installed", false)
-    val repairRequested = prefs.getString("phase44_stage", "") == "data_after_first_run"
-
-    if (repairMode || repairRequested) {
-        RepairDataOnlyScreen()
-    } else {
-        Phase44DataAfterFirstRunShell(api)
-    }
+    RepairDataOnlyScreen()
 }
 
 @Composable
@@ -49,7 +40,7 @@ private fun RepairDataOnlyScreen() {
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("f16_launcher", 0) }
     val manager = remember { PublicInstallManager(context) }
-    var message by remember { mutableStateOf("Mode repair aktif. OBB tidak akan di-download ulang.") }
+    var message by remember { mutableStateOf("Mode repair aktif. OBB dilewati. Pasang DATA DLavie terakhir.") }
     var progress by remember { mutableStateOf(0) }
     var step by remember { mutableStateOf("Ready") }
     var working by remember { mutableStateOf(false) }
