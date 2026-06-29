@@ -17,25 +17,52 @@ class PublicContentInstaller(
     private val onProgress: (Int, String) -> Unit
 ) {
     private val manager = PublicInstallManager(context)
+    private val prefs = context.getSharedPreferences("f16_launcher", 0)
 
-    fun hasOfficialContent(manifest: PublicInstallManifest): Boolean {
+    fun hasOfficialContent(manifest: PublicInstallManifest): Boolean = hasOfficialData(manifest) && hasOfficialObb(manifest)
+
+    fun hasOfficialData(manifest: PublicInstallManifest): Boolean = hasMarker(manifest.data.target)
+
+    fun hasOfficialObb(manifest: PublicInstallManifest): Boolean = hasMarker(manifest.obb.target)
+
+    fun installObbOnly(manifest: PublicInstallManifest) {
+        installAsset(manifest.obb, 5, 90)
+        prefs.edit()
+            .putBoolean("dlavie_obb_installed", true)
+            .putString("dlavie_content_product", manifest.productName)
+            .apply()
+        onProgress(100, "OBB ready")
+        onLog("DLavie OBB siap.")
+    }
+
+    fun installDataOnly(manifest: PublicInstallManifest) {
+        installAsset(manifest.data, 5, 90)
+        prefs.edit()
+            .putBoolean("dlavie_data_installed", true)
+            .putString("dlavie_content_product", manifest.productName)
+            .apply()
+        onProgress(100, "DATA ready")
+        onLog("DLavie DATA siap.")
+    }
+
+    fun installDataAndObb(manifest: PublicInstallManifest) {
+        installObbOnly(manifest)
+        installDataOnly(manifest)
+        prefs.edit()
+            .putBoolean("dlavie_content_installed", true)
+            .apply()
+        onProgress(100, "Content ready")
+        onLog("DLavie DATA/OBB siap.")
+    }
+
+    private fun hasMarker(target: String): Boolean {
         return try {
-            val command = "[ -f ${quote(markerPath(manifest.data.target))} ] && [ -f ${quote(markerPath(manifest.obb.target))} ]"
+            if (target.isBlank()) return false
+            val command = "[ -f ${quote(markerPath(target))} ]"
             runWithShizuku(command).code == 0
         } catch (_: Throwable) {
             false
         }
-    }
-
-    fun installDataAndObb(manifest: PublicInstallManifest) {
-        installAsset(manifest.data, 5, 45)
-        installAsset(manifest.obb, 52, 45)
-        context.getSharedPreferences("f16_launcher", 0).edit()
-            .putBoolean("dlavie_content_installed", true)
-            .putString("dlavie_content_product", manifest.productName)
-            .apply()
-        onProgress(100, "Content ready")
-        onLog("DLavie DATA/OBB siap.")
     }
 
     private fun installAsset(asset: InstallAsset, progressBase: Int, progressSpan: Int) {
@@ -51,7 +78,7 @@ class PublicContentInstaller(
         onProgress(progressBase + progressSpan / 2, "Extract ${asset.fileName}")
         unzip(zip, extracted)
         onProgress(progressBase + progressSpan * 70 / 100, "Copy to game folder")
-        copyDirWithShizuku(extracted.absolutePath, asset.target)
+        copyDirWithShizuku(extracted.absolutePath, asset.target, asset.fileName)
         writeMarker(asset)
         onProgress(progressBase + progressSpan, "Installed ${asset.fileName}")
         onLog("Installed ${asset.fileName}")
@@ -65,9 +92,14 @@ class PublicContentInstaller(
         if (result.code != 0) onLog("Marker warning: exit ${result.code}")
     }
 
-    private fun copyDirWithShizuku(srcRoot: String, targetRoot: String) {
+    private fun copyDirWithShizuku(srcRoot: String, targetRoot: String, fileName: String) {
         val target = normalizeTarget(targetRoot)
-        val command = "set -e; mkdir -p ${quote(target)}; cp -af ${quote("$srcRoot/.")} ${quote(target)}; echo 'Content copied';"
+        val clean = if (fileName.contains("obb", ignoreCase = true) || target.contains("/Android/obb/")) {
+            "rm -f ${quote(target)}main.*.com.ea.gp.fifaworld.obb ${quote(target)}patch.*.com.ea.gp.fifaworld.obb;"
+        } else {
+            ""
+        }
+        val command = "set -e; mkdir -p ${quote(target)}; $clean cp -af ${quote("$srcRoot/.")} ${quote(target)}; echo 'Content copied';"
         val result = runWithShizuku(command)
         if (result.code != 0) throw IllegalStateException("Copy content gagal. Exit ${result.code}")
         onLog(result.out.trim().ifEmpty { "Content copied." })
