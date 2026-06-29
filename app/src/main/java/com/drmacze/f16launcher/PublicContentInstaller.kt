@@ -36,13 +36,15 @@ class PublicContentInstaller(
     }
 
     fun installDataOnly(manifest: PublicInstallManifest) {
-        installAsset(manifest.data, 5, 90)
+        val extracted = installAsset(manifest.data, 5, 72)
+        onProgress(84, "Copy DATA to game files")
+        copyDataToFilesFolder(extracted.absolutePath, manifest.data.target)
         prefs.edit()
             .putBoolean("dlavie_data_installed", true)
             .putString("dlavie_content_product", manifest.productName)
             .apply()
         onProgress(100, "DATA ready")
-        onLog("DLavie DATA siap.")
+        onLog("DLavie DATA siap di root dan files game.")
     }
 
     fun installDataAndObb(manifest: PublicInstallManifest) {
@@ -65,7 +67,7 @@ class PublicContentInstaller(
         }
     }
 
-    private fun installAsset(asset: InstallAsset, progressBase: Int, progressSpan: Int) {
+    private fun installAsset(asset: InstallAsset, progressBase: Int, progressSpan: Int): File {
         if (asset.target.isBlank()) throw IllegalStateException("Target belum diisi untuk ${asset.fileName}")
         onProgress(progressBase, "Download ${asset.fileName}")
         val zip = manager.downloadAsset(asset) { p ->
@@ -82,6 +84,7 @@ class PublicContentInstaller(
         writeMarker(asset)
         onProgress(progressBase + progressSpan, "Installed ${asset.fileName}")
         onLog("Installed ${asset.fileName}")
+        return extracted
     }
 
     private fun writeMarker(asset: InstallAsset) {
@@ -90,6 +93,15 @@ class PublicContentInstaller(
         val command = "mkdir -p ${quote(target)}; printf ${quote(text)} > ${quote(markerPath(target))}"
         val result = runWithShizuku(command)
         if (result.code != 0) onLog("Marker warning: exit ${result.code}")
+    }
+
+    private fun copyDataToFilesFolder(srcRoot: String, targetRoot: String) {
+        val target = normalizeTarget(targetRoot)
+        val filesTarget = target + "files/"
+        val command = "set -e; mkdir -p ${quote(filesTarget)}; cp -af ${quote("$srcRoot/.")} ${quote(filesTarget)}; if [ -d ${quote("$srcRoot/files")} ]; then cp -af ${quote("$srcRoot/files/.")} ${quote(filesTarget)}; fi; printf ${quote("DLavie files overlay\n")} > ${quote(filesTarget + ".dlavie_files_marker")}; echo 'DATA copied to files folder';"
+        val result = runWithShizuku(command)
+        if (result.code != 0) throw IllegalStateException("Copy DATA ke folder files gagal. Exit ${result.code}")
+        onLog(result.out.trim().ifEmpty { "DATA copied to game files." })
     }
 
     private fun copyDirWithShizuku(srcRoot: String, targetRoot: String, fileName: String) {
