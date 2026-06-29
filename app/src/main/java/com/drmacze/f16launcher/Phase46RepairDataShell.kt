@@ -45,6 +45,18 @@ private fun RepairDataOnlyScreen() {
     var step by remember { mutableStateOf("Ready") }
     var working by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
+    var shizuku by remember { mutableStateOf(ShizukuSetup.status(context)) }
+
+    fun refreshShizuku() {
+        shizuku = ShizukuSetup.status(context)
+        message = when (shizuku) {
+            "Ready" -> "Shizuku siap. Sekarang tekan Install DATA DLavie."
+            "Need Permission" -> "Shizuku aktif, tapi izin launcher belum diberikan. Tekan Grant Shizuku."
+            "Need Start" -> "Shizuku belum start. Buka Shizuku lalu start service."
+            "Not Installed" -> "Shizuku belum terpasang. Install/buka Shizuku dulu."
+            else -> "Status Shizuku: $shizuku"
+        }
+    }
 
     LaunchedEffect(Unit) {
         prefs.edit()
@@ -53,9 +65,16 @@ private fun RepairDataOnlyScreen() {
             .putBoolean("dlavie_data_installed", false)
             .putString("phase44_stage", "data_after_first_run")
             .apply()
+        refreshShizuku()
     }
 
     fun installData() {
+        refreshShizuku()
+        if (shizuku != "Ready") {
+            step = "Need Shizuku"
+            progress = 0
+            return
+        }
         working = true
         progress = 1
         step = "Preparing DATA"
@@ -84,6 +103,7 @@ private fun RepairDataOnlyScreen() {
                 step = "Failed"
             } finally {
                 working = false
+                refreshShizuku()
             }
         }
     }
@@ -112,6 +132,23 @@ private fun RepairDataOnlyScreen() {
             InfoLine("OBB", "Skipped / already used by first setup")
             InfoLine("First setup", "Done")
             InfoLine("DATA DLavie", if (done) "Installed last" else "Need final install")
+            InfoLine("Shizuku", shizuku)
+        }
+        GlassCard(Modifier.fillMaxWidth()) {
+            Text("Shizuku Helper", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(ShizukuSetup.shortHint(context), color = SoftText)
+            Spacer(Modifier.height(10.dp))
+            Button(onClick = { ShizukuSetup.openApp(context) }, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = CandyBlue)) {
+                Text("Open Shizuku", fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = { ShizukuSetup.requestPermission(); refreshShizuku() }, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D))) {
+                Text("Grant Shizuku", fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = { refreshShizuku() }, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF24334E))) {
+                Text("Recheck Shizuku", fontWeight = FontWeight.Bold)
+            }
         }
         GlassCard(Modifier.fillMaxWidth()) {
             Text("Progress", fontSize = 20.sp, fontWeight = FontWeight.Bold)
