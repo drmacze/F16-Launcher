@@ -76,6 +76,23 @@ class PublicInstallManager(private val context: Context) {
         )
     }
 
+    fun startPersistentDownload(asset: InstallAsset) {
+        if (!asset.isPublished()) throw IllegalStateException("Konten belum dipublish: ${asset.fileName}")
+        val out = assetFile(asset)
+        out.parentFile?.mkdirs()
+        if (isValidCachedFile(asset, out)) {
+            val key = PersistentDownloadService.key(asset.fileName)
+            prefs.edit()
+                .putString(PersistentDownloadService.statusKey(key), "done")
+                .putBoolean(PersistentDownloadService.activeKey(key), false)
+                .putInt(PersistentDownloadService.progressKey(key), 100)
+                .putString(PersistentDownloadService.pathKey(key), out.absolutePath)
+                .apply()
+            return
+        }
+        PersistentDownloadService.start(context, asset)
+    }
+
     fun downloadAsset(asset: InstallAsset, onProgress: (Int) -> Unit): File {
         if (!asset.isPublished()) throw IllegalStateException("Konten belum dipublish: ${asset.fileName}")
         val out = assetFile(asset)
@@ -127,6 +144,16 @@ class PublicInstallManager(private val context: Context) {
     fun downloadStatus(asset: InstallAsset): PublicDownloadStatus {
         val out = assetFile(asset)
         if (isValidCachedFile(asset, out)) return PublicDownloadStatus(active = false, done = true, progress = 100, label = "Downloaded")
+
+        val key = PersistentDownloadService.key(asset.fileName)
+        val serviceStatus = prefs.getString(PersistentDownloadService.statusKey(key), "") ?: ""
+        val serviceProgress = prefs.getInt(PersistentDownloadService.progressKey(key), 0).coerceIn(0, 100)
+        when (serviceStatus) {
+            "downloading" -> return PublicDownloadStatus(active = true, done = false, progress = serviceProgress, label = "Downloading")
+            "done" -> return PublicDownloadStatus(active = false, done = isValidCachedFile(asset, out), progress = 100, label = if (out.exists()) "Downloaded" else "Missing")
+            "failed" -> return PublicDownloadStatus(active = false, done = false, progress = serviceProgress, label = "Failed ${prefs.getString(PersistentDownloadService.errorKey(key), "")}")
+        }
+
         val id = prefs.getLong(downloadIdKey(asset), -1L)
         if (id <= 0L) return PublicDownloadStatus(active = false, done = false, progress = 0, label = "Not started")
         val row = queryDownload(id) ?: return PublicDownloadStatus(active = false, done = false, progress = 0, label = "Missing")
