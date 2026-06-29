@@ -11,8 +11,8 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 35
-        versionCode 28
-        versionName '0.8.0-pro-recovery'
+        versionCode 29
+        versionName '0.8.1-pro-recovery'
     }
 
     compileOptions {
