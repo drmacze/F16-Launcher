@@ -33,9 +33,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,8 +54,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.File
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
 
 private const val HUB_GAME_PACKAGE = "com.ea.gp.fifaworld"
+private const val HUB_PREFS = "dlavie_update_state"
+private const val HUB_PREF_CODE = "installed_update_code"
+private const val HUB_PREF_NAME = "installed_update_name"
+private const val HUB_DEFAULT_CODE = 1
+private const val HUB_DEFAULT_NAME = "v1"
 
 private enum class HubTab(val label: String, val icon: HubMark) {
     Home("Home", HubMark.Home),
@@ -63,6 +79,17 @@ private enum class HubTab(val label: String, val icon: HubMark) {
 }
 
 private enum class HubMark { Home, Folder, Chat, User, Play, Shield, Check, Alert }
+
+private data class HubUpdateState(
+    val checking: Boolean = false,
+    val localName: String = HUB_DEFAULT_NAME,
+    val latestName: String = "Not checked",
+    val serviceState: String = "Unknown",
+    val dataMarker: String = "Unknown",
+    val shizukuState: String = "Unknown",
+    val badge: String = "CHECK",
+    val message: String = "Tap Check Update."
+)
 
 class DLavieHubActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -129,20 +156,8 @@ private fun HubHomeScreen(openData: () -> Unit, openChat: () -> Unit) {
             openChat = openChat
         )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            HubMiniStatus(
-                title = "Game",
-                value = if (installed) "Ready" else "Missing",
-                icon = if (installed) HubMark.Check else HubMark.Alert,
-                color = if (installed) HubGreen else HubRed,
-                modifier = Modifier.weight(1f)
-            )
-            HubMiniStatus(
-                title = "Update",
-                value = "Secure",
-                icon = HubMark.Shield,
-                color = HubCyan,
-                modifier = Modifier.weight(1f)
-            )
+            HubMiniStatus("Game", if (installed) "Ready" else "Missing", if (installed) HubMark.Check else HubMark.Alert, if (installed) HubGreen else HubRed, Modifier.weight(1f))
+            HubMiniStatus("Update", "Check", HubMark.Shield, HubCyan, Modifier.weight(1f))
         }
     }
 }
@@ -154,10 +169,7 @@ private fun HubHeroCard() {
             Box(
                 modifier = Modifier
                     .size(74.dp)
-                    .background(
-                        Brush.linearGradient(listOf(Color(0xFF0E3A22), Color(0xFF08100D))),
-                        RoundedCornerShape(24.dp)
-                    ),
+                    .background(Brush.linearGradient(listOf(Color(0xFF0E3A22), Color(0xFF08100D))), RoundedCornerShape(24.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Text("DL", color = HubGreen, fontSize = 25.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
@@ -208,6 +220,13 @@ private fun HubPrimaryActions(onPlay: () -> Unit, openData: () -> Unit, openChat
 private fun HubDataScreen() {
     val context = LocalContext.current
     val installed = remember { hubIsGameInstalled(context) }
+    var updateState by remember { mutableStateOf(hubInitialUpdateState(context)) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        updateState = withContext(Dispatchers.IO) { hubCheckUpdate(context) }
+    }
+
     Column(
         Modifier
             .fillMaxSize()
@@ -215,10 +234,75 @@ private fun HubDataScreen() {
             .padding(horizontal = 20.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        HubPageTitle("Data", "Status game dan update DLavie.")
+        HubPageTitle("Data", "Status game, update, dan Shizuku.")
         HubStatusCard(installed = installed, onPlay = { hubLaunchGame(context) })
+        HubUpdateCard(
+            state = updateState,
+            onCheck = {
+                scope.launch {
+                    updateState = updateState.copy(checking = true, message = "Checking update...")
+                    updateState = withContext(Dispatchers.IO) { hubCheckUpdate(context) }
+                }
+            }
+        )
         HubDataRow("FIFA 16 Mobile", if (installed) "Installed" else "Not found", if (installed) "READY" else "MISSING", if (installed) HubGreen else HubRed, if (installed) HubMark.Check else HubMark.Alert)
-        HubDataRow("Update Channel", "Managed by DLavie", "SECURE", HubGreen, HubMark.Shield)
+    }
+}
+
+@Composable
+private fun HubUpdateCard(state: HubUpdateState, onCheck: () -> Unit) {
+    val badgeColor = when (state.badge) {
+        "UPDATE" -> HubCyan
+        "LATEST" -> HubGreen
+        "OFFLINE" -> HubRed
+        else -> HubCyan
+    }
+    HubPanel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            HubIconTile(HubMark.Shield, badgeColor)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Update Check", color = HubWhite, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = HubFont, maxLines = 1)
+                Text(state.message, color = HubMuted, fontSize = 14.sp, fontFamily = HubFont, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            HubPill(if (state.checking) "WAIT" else state.badge, badgeColor)
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            HubInfoBox("Local", state.localName, Modifier.weight(1f))
+            HubInfoBox("Latest", state.latestName, Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            HubInfoBox("Shizuku", state.shizukuState, Modifier.weight(1f))
+            HubInfoBox("Data", state.dataMarker, Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(14.dp))
+        Button(
+            onClick = onCheck,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(18.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = HubCyan, contentColor = Color(0xFF001018)),
+            contentPadding = PaddingValues(0.dp),
+            enabled = !state.checking
+        ) {
+            Text("Check Update", fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
+        }
+    }
+}
+
+@Composable
+private fun HubInfoBox(title: String, value: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        color = Color(0xFF0B0F0E),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, HubBorder)
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(title, color = HubMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = HubFont, maxLines = 1)
+            Text(value, color = HubWhite, fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = HubFont, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
@@ -419,12 +503,7 @@ private fun HubIconMark(type: HubMark, tint: Color, modifier: Modifier = Modifie
                 drawArc(tint, 200f, 140f, false, p(0.25f, 0.52f), Size(s * 0.50f, s * 0.42f), style = Stroke(w, cap = StrokeCap.Round))
             }
             HubMark.Play -> {
-                val path = Path().apply {
-                    moveTo(s * 0.34f, s * 0.22f)
-                    lineTo(s * 0.34f, s * 0.78f)
-                    lineTo(s * 0.78f, s * 0.50f)
-                    close()
-                }
+                val path = Path().apply { moveTo(s * 0.34f, s * 0.22f); lineTo(s * 0.34f, s * 0.78f); lineTo(s * 0.78f, s * 0.50f); close() }
                 drawPath(path, tint)
             }
             HubMark.Shield -> {
@@ -446,6 +525,87 @@ private fun HubIconMark(type: HubMark, tint: Color, modifier: Modifier = Modifie
     }
 }
 
+private fun hubInitialUpdateState(context: Context): HubUpdateState {
+    val prefs = context.getSharedPreferences(HUB_PREFS, Context.MODE_PRIVATE)
+    return HubUpdateState(
+        localName = prefs.getString(HUB_PREF_NAME, HUB_DEFAULT_NAME) ?: HUB_DEFAULT_NAME,
+        shizukuState = hubShizukuState(),
+        dataMarker = hubReadDataMarker()
+    )
+}
+
+private fun hubCheckUpdate(context: Context): HubUpdateState {
+    val prefs = context.getSharedPreferences(HUB_PREFS, Context.MODE_PRIVATE)
+    val localCode = prefs.getInt(HUB_PREF_CODE, HUB_DEFAULT_CODE)
+    val localName = prefs.getString(HUB_PREF_NAME, HUB_DEFAULT_NAME) ?: HUB_DEFAULT_NAME
+    val shizuku = hubShizukuState()
+    val marker = hubReadDataMarker()
+    return try {
+        val json = hubFetchManifestJson()
+        val latestCode = json.optInt("latestVersionCode", 0)
+        val latestName = json.optString("latestVersionName", "Unknown")
+        val service = json.optJSONObject("status")?.optString("state", "online") ?: "online"
+        val needsUpdate = latestCode > localCode
+        HubUpdateState(
+            checking = false,
+            localName = localName,
+            latestName = latestName,
+            serviceState = service,
+            dataMarker = marker,
+            shizukuState = shizuku,
+            badge = if (needsUpdate) "UPDATE" else "LATEST",
+            message = if (needsUpdate) "Update tersedia. Install otomatis membutuhkan Shizuku/root." else "Versi kamu sudah terbaru."
+        )
+    } catch (_: Throwable) {
+        HubUpdateState(
+            checking = false,
+            localName = localName,
+            latestName = "Offline",
+            serviceState = "offline",
+            dataMarker = marker,
+            shizukuState = shizuku,
+            badge = "OFFLINE",
+            message = "Gagal cek update. Periksa koneksi internet."
+        )
+    }
+}
+
+private fun hubFetchManifestJson(): JSONObject {
+    val connection = URL(hubManifestUrl()).openConnection() as HttpURLConnection
+    connection.connectTimeout = 15000
+    connection.readTimeout = 25000
+    return try {
+        BufferedReader(InputStreamReader(connection.inputStream)).use { JSONObject(it.readText()) }
+    } finally {
+        connection.disconnect()
+    }
+}
+
+private fun hubManifestUrl(): String = arrayOf(
+    "https://raw.", "githubusercontent.com/", "drmacze/", "F16/", "main/", "updates/", "latest.json"
+).joinToString(separator = "")
+
+private fun hubShizukuState(): String {
+    return try {
+        val clazz = Class.forName("rikka.shizuku.Shizuku")
+        val active = clazz.getMethod("pingBinder").invoke(null) as? Boolean ?: false
+        if (!active) return "Inactive"
+        val permission = clazz.getMethod("checkSelfPermission").invoke(null) as? Int ?: -1
+        if (permission == PackageManager.PERMISSION_GRANTED) "Ready" else "Permission"
+    } catch (_: Throwable) {
+        "Missing"
+    }
+}
+
+private fun hubReadDataMarker(): String {
+    return try {
+        val marker = File("/sdcard/Android/data/$HUB_GAME_PACKAGE/.dlavie26_data_installed")
+        if (!marker.exists()) "Unknown" else marker.readText().trim().take(12).ifEmpty { "Unknown" }
+    } catch (_: Throwable) {
+        "Protected"
+    }
+}
+
 private fun hubIsGameInstalled(context: Context): Boolean = try {
     context.packageManager.getPackageInfo(HUB_GAME_PACKAGE, 0)
     true
@@ -455,9 +615,7 @@ private fun hubIsGameInstalled(context: Context): Boolean = try {
 
 private fun hubLaunchGame(context: Context) {
     val launch = context.packageManager.getLaunchIntentForPackage(HUB_GAME_PACKAGE)
-    if (launch != null) {
-        context.startActivity(launch)
-    }
+    if (launch != null) context.startActivity(launch)
 }
 
 private val HubFont = FontFamily.SansSerif
