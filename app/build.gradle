@@ -11,8 +11,8 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 35
-        versionCode 31
-        versionName '0.10.0-dlavie26-premium-hub'
+        versionCode 32
+        versionName '0.10.1-production-only'
     }
 
     compileOptions {
