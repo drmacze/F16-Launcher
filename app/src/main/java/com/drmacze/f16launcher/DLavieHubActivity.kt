@@ -1,7 +1,6 @@
 package com.drmacze.f16launcher
 
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -9,7 +8,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,63 +53,68 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private const val DL_GAME_PACKAGE = "com.ea.gp.fifaworld"
+private const val HUB_GAME_PACKAGE = "com.ea.gp.fifaworld"
 
-private enum class Tab(val label: String, val mark: Mark) {
-    Home("Home", Mark.Home),
-    Data("Data", Mark.Folder),
-    Chat("Chat", Mark.Chat),
-    Me("Me", Mark.User)
+private enum class HubTab(val label: String, val icon: HubMark) {
+    Home("Home", HubMark.Home),
+    Data("Data", HubMark.Folder),
+    Chat("Chat", HubMark.Chat),
+    Me("Me", HubMark.User)
 }
 
-private enum class Mark { Home, Folder, Chat, User, Play, Shield, Check, Alert }
+private enum class HubMark { Home, Folder, Chat, User, Play, Shield, Check, Alert }
 
 class DLavieHubActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { DLavieHub() }
+        setContent { DLavieHubApp() }
     }
 }
 
 @Composable
-private fun DLavieHub() {
+private fun DLavieHubApp() {
     MaterialTheme(
         colorScheme = darkColorScheme(
-            background = Dark,
-            surface = CardBg,
-            primary = Green,
-            secondary = Cyan,
+            background = HubDark,
+            surface = HubCard,
+            primary = HubGreen,
+            secondary = HubCyan,
             onPrimary = Color(0xFF001407),
             onSecondary = Color(0xFF001018),
-            onBackground = White,
-            onSurface = White
+            onBackground = HubWhite,
+            onSurface = HubWhite
         )
     ) {
-        var tab by remember { mutableStateOf(Tab.Home) }
-        Surface(color = Dark, modifier = Modifier.fillMaxSize()) {
+        var tab by remember { mutableStateOf(HubTab.Home) }
+        Surface(color = HubDark, modifier = Modifier.fillMaxSize()) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Brush.radialGradient(listOf(Color(0xFF0B2419), Dark, Color.Black), radius = 900f))
+                    .background(
+                        Brush.radialGradient(
+                            listOf(Color(0xFF0B2419), HubDark, Color.Black),
+                            radius = 900f
+                        )
+                    )
             ) {
                 Box(Modifier.fillMaxSize().padding(bottom = 104.dp)) {
                     when (tab) {
-                        Tab.Home -> HomeScreen(openData = { tab = Tab.Data }, openChat = { tab = Tab.Chat })
-                        Tab.Data -> DataScreen()
-                        Tab.Chat -> ComingSoonScreen("Chat", "Community real akan aktif setelah akun dan moderasi siap.", Mark.Chat)
-                        Tab.Me -> ComingSoonScreen("Profile", "Login, avatar, saved post, dan notifikasi akan hadir setelah backend aktif.", Mark.User)
+                        HubTab.Home -> HubHomeScreen(openData = { tab = HubTab.Data }, openChat = { tab = HubTab.Chat })
+                        HubTab.Data -> HubDataScreen()
+                        HubTab.Chat -> HubComingSoonScreen("Chat", "Community real akan aktif setelah akun dan moderasi siap.", HubMark.Chat)
+                        HubTab.Me -> HubComingSoonScreen("Profile", "Login, avatar, saved post, dan notifikasi akan hadir setelah backend aktif.", HubMark.User)
                     }
                 }
-                BottomNav(tab, onSelect = { tab = it }, modifier = Modifier.align(Alignment.BottomCenter))
+                HubBottomNav(tab, onSelect = { tab = it }, modifier = Modifier.align(Alignment.BottomCenter))
             }
         }
     }
 }
 
 @Composable
-private fun HomeScreen(openData: () -> Unit, openChat: () -> Unit) {
+private fun HubHomeScreen(openData: () -> Unit, openChat: () -> Unit) {
     val context = LocalContext.current
-    val installed = remember { isGameInstalled(context) }
+    val installed = remember { hubIsGameInstalled(context) }
     Column(
         Modifier
             .fillMaxSize()
@@ -119,25 +122,25 @@ private fun HomeScreen(openData: () -> Unit, openChat: () -> Unit) {
             .padding(horizontal = 20.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        HeroCard()
-        PrimaryActions(
-            onPlay = { launchGame(context) },
+        HubHeroCard()
+        HubPrimaryActions(
+            onPlay = { hubLaunchGame(context) },
             openData = openData,
             openChat = openChat
         )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            MiniStatus(
+            HubMiniStatus(
                 title = "Game",
                 value = if (installed) "Ready" else "Missing",
-                mark = if (installed) Mark.Check else Mark.Alert,
-                color = if (installed) Green else Red,
+                icon = if (installed) HubMark.Check else HubMark.Alert,
+                color = if (installed) HubGreen else HubRed,
                 modifier = Modifier.weight(1f)
             )
-            MiniStatus(
+            HubMiniStatus(
                 title = "Update",
                 value = "Secure",
-                mark = Mark.Shield,
-                color = Cyan,
+                icon = HubMark.Shield,
+                color = HubCyan,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -145,63 +148,66 @@ private fun HomeScreen(openData: () -> Unit, openChat: () -> Unit) {
 }
 
 @Composable
-private fun HeroCard() {
-    Panel {
+private fun HubHeroCard() {
+    HubPanel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(74.dp)
-                    .background(Brush.linearGradient(listOf(Color(0xFF0E3A22), Color(0xFF08100D))), RoundedCornerShape(24.dp)),
+                    .background(
+                        Brush.linearGradient(listOf(Color(0xFF0E3A22), Color(0xFF08100D))),
+                        RoundedCornerShape(24.dp)
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Text("DL", color = Green, fontSize = 25.sp, fontWeight = FontWeight.Black, fontFamily = AppFont)
+                Text("DL", color = HubGreen, fontSize = 25.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("DLavie 26", color = White, fontSize = 31.sp, fontWeight = FontWeight.Black, fontFamily = AppFont, maxLines = 1)
-                Text("FIFA 16 Mobile 2026", color = Muted, fontSize = 14.sp, fontFamily = AppFont, maxLines = 1)
+                Text("DLavie 26", color = HubWhite, fontSize = 31.sp, fontWeight = FontWeight.Black, fontFamily = HubFont, maxLines = 1)
+                Text("FIFA 16 Mobile 2026", color = HubMuted, fontSize = 14.sp, fontFamily = HubFont, maxLines = 1)
             }
-            Pill("PROD", Green)
+            HubPill("PROD", HubGreen)
         }
         Spacer(Modifier.height(18.dp))
-        Text("Football Reborn", color = White, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = AppFont, maxLines = 1)
-        Text("Play, update, and connect with DLavie.", color = Muted, fontSize = 14.sp, fontFamily = AppFont, maxLines = 2)
+        Text("Football Reborn", color = HubWhite, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = HubFont, maxLines = 1)
+        Text("Play, update, and connect with DLavie.", color = HubMuted, fontSize = 14.sp, fontFamily = HubFont, maxLines = 2)
     }
 }
 
 @Composable
-private fun PrimaryActions(onPlay: () -> Unit, openData: () -> Unit, openChat: () -> Unit) {
-    Panel {
+private fun HubPrimaryActions(onPlay: () -> Unit, openData: () -> Unit, openChat: () -> Unit) {
+    HubPanel {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconMark(Mark.Play, Green, Modifier.size(18.dp))
+            HubIconMark(HubMark.Play, HubGreen, Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
-            Text("Actions", color = White, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = AppFont)
+            Text("Actions", color = HubWhite, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
         }
         Spacer(Modifier.height(14.dp))
         Button(
             onClick = onPlay,
             modifier = Modifier.fillMaxWidth().height(58.dp),
             shape = RoundedCornerShape(22.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Color(0xFF001407)),
+            colors = ButtonDefaults.buttonColors(containerColor = HubGreen, contentColor = Color(0xFF001407)),
             contentPadding = PaddingValues(0.dp)
         ) {
-            IconMark(Mark.Play, Color(0xFF001407), Modifier.size(20.dp))
+            HubIconMark(HubMark.Play, Color(0xFF001407), Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Play", fontSize = 18.sp, fontWeight = FontWeight.Black, fontFamily = AppFont)
+            Text("Play", fontSize = 18.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
         }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            CompactButton("Data", Mark.Folder, openData, Modifier.weight(1f))
-            CompactButton("Update", Mark.Shield, openData, Modifier.weight(1f))
-            CompactButton("Chat", Mark.Chat, openChat, Modifier.weight(1f))
+            HubCompactButton("Data", openData, Modifier.weight(1f))
+            HubCompactButton("Update", openData, Modifier.weight(1f))
+            HubCompactButton("Chat", openChat, Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun DataScreen() {
+private fun HubDataScreen() {
     val context = LocalContext.current
-    val installed = remember { isGameInstalled(context) }
+    val installed = remember { hubIsGameInstalled(context) }
     Column(
         Modifier
             .fillMaxSize()
@@ -209,32 +215,32 @@ private fun DataScreen() {
             .padding(horizontal = 20.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        PageTitle("Data", "Status game dan update DLavie.")
-        StatusCard(installed = installed, onPlay = { launchGame(context) })
-        DataRow("FIFA 16 Mobile", if (installed) "Installed" else "Not found", if (installed) "READY" else "MISSING", if (installed) Green else Red, if (installed) Mark.Check else Mark.Alert)
-        DataRow("Update Channel", "Managed by DLavie", "SECURE", Green, Mark.Shield)
+        HubPageTitle("Data", "Status game dan update DLavie.")
+        HubStatusCard(installed = installed, onPlay = { hubLaunchGame(context) })
+        HubDataRow("FIFA 16 Mobile", if (installed) "Installed" else "Not found", if (installed) "READY" else "MISSING", if (installed) HubGreen else HubRed, if (installed) HubMark.Check else HubMark.Alert)
+        HubDataRow("Update Channel", "Managed by DLavie", "SECURE", HubGreen, HubMark.Shield)
     }
 }
 
 @Composable
-private fun PageTitle(title: String, subtitle: String) {
+private fun HubPageTitle(title: String, subtitle: String) {
     Column {
-        Text(title, color = White, fontSize = 38.sp, fontWeight = FontWeight.Black, fontFamily = AppFont, maxLines = 1)
-        Text(subtitle, color = Muted, fontSize = 14.sp, fontFamily = AppFont, maxLines = 1)
+        Text(title, color = HubWhite, fontSize = 38.sp, fontWeight = FontWeight.Black, fontFamily = HubFont, maxLines = 1)
+        Text(subtitle, color = HubMuted, fontSize = 14.sp, fontFamily = HubFont, maxLines = 1)
     }
 }
 
 @Composable
-private fun StatusCard(installed: Boolean, onPlay: () -> Unit) {
-    Panel {
+private fun HubStatusCard(installed: Boolean, onPlay: () -> Unit) {
+    HubPanel {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconTile(if (installed) Mark.Check else Mark.Alert, if (installed) Green else Red)
+            HubIconTile(if (installed) HubMark.Check else HubMark.Alert, if (installed) HubGreen else HubRed)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("DLavie 26", color = White, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = AppFont, maxLines = 1)
-                Text(if (installed) "Ready to play" else "Game not found", color = Muted, fontSize = 15.sp, fontFamily = AppFont, maxLines = 1)
+                Text("DLavie 26", color = HubWhite, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = HubFont, maxLines = 1)
+                Text(if (installed) "Ready to play" else "Game not found", color = HubMuted, fontSize = 15.sp, fontFamily = HubFont, maxLines = 1)
             }
-            Pill(if (installed) "READY" else "INSTALL", if (installed) Green else Red)
+            HubPill(if (installed) "READY" else "INSTALL", if (installed) HubGreen else HubRed)
         }
         if (installed) {
             Spacer(Modifier.height(14.dp))
@@ -242,31 +248,31 @@ private fun StatusCard(installed: Boolean, onPlay: () -> Unit) {
                 onClick = onPlay,
                 modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = RoundedCornerShape(18.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Color(0xFF001407)),
+                colors = ButtonDefaults.buttonColors(containerColor = HubGreen, contentColor = Color(0xFF001407)),
                 contentPadding = PaddingValues(0.dp)
             ) {
-                Text("Launch Game", fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = AppFont)
+                Text("Launch Game", fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
             }
         }
     }
 }
 
 @Composable
-private fun ComingSoonScreen(title: String, subtitle: String, mark: Mark) {
+private fun HubComingSoonScreen(title: String, subtitle: String, icon: HubMark) {
     Column(
         Modifier
             .fillMaxSize()
             .padding(horizontal = 20.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        PageTitle(title, subtitle)
-        Panel {
+        HubPageTitle(title, subtitle)
+        HubPanel {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconTile(mark, Green)
+                HubIconTile(icon, HubGreen)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Coming Soon", color = White, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = AppFont)
-                    Text("No dummy content.", color = Muted, fontSize = 14.sp, fontFamily = AppFont, maxLines = 1)
+                    Text("Coming Soon", color = HubWhite, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
+                    Text("No dummy content.", color = HubMuted, fontSize = 14.sp, fontFamily = HubFont, maxLines = 1)
                 }
             }
         }
@@ -274,41 +280,41 @@ private fun ComingSoonScreen(title: String, subtitle: String, mark: Mark) {
 }
 
 @Composable
-private fun MiniStatus(title: String, value: String, mark: Mark, color: Color, modifier: Modifier = Modifier) {
-    Panel(modifier = modifier) {
-        IconMark(mark, color, Modifier.size(24.dp))
+private fun HubMiniStatus(title: String, value: String, icon: HubMark, color: Color, modifier: Modifier = Modifier) {
+    HubPanel(modifier = modifier) {
+        HubIconMark(icon, color, Modifier.size(24.dp))
         Spacer(Modifier.height(10.dp))
-        Text(title, color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = AppFont, maxLines = 1)
-        Text(value, color = White, fontSize = 18.sp, fontWeight = FontWeight.Black, fontFamily = AppFont, maxLines = 1)
+        Text(title, color = HubMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = HubFont, maxLines = 1)
+        Text(value, color = HubWhite, fontSize = 18.sp, fontWeight = FontWeight.Black, fontFamily = HubFont, maxLines = 1)
     }
 }
 
 @Composable
-private fun DataRow(title: String, subtitle: String, status: String, statusColor: Color, mark: Mark) {
-    Panel {
+private fun HubDataRow(title: String, subtitle: String, status: String, statusColor: Color, icon: HubMark) {
+    HubPanel {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconTile(mark, statusColor)
+            HubIconTile(icon, statusColor)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, color = White, fontSize = 18.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = AppFont)
-                Text(subtitle, color = Muted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = AppFont)
+                Text(title, color = HubWhite, fontSize = 18.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = HubFont)
+                Text(subtitle, color = HubMuted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = HubFont)
             }
-            Pill(status, statusColor)
+            HubPill(status, statusColor)
         }
     }
 }
 
 @Composable
-private fun BottomNav(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier) {
+private fun HubBottomNav(selected: HubTab, onSelect: (HubTab) -> Unit, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier.widthIn(max = 680.dp).padding(horizontal = 16.dp, vertical = 12.dp),
         color = Color(0xF00B0C0C),
         shape = RoundedCornerShape(34.dp),
-        border = BorderStroke(1.dp, Border),
+        border = BorderStroke(1.dp, HubBorder),
         shadowElevation = 18.dp
     ) {
         Row(Modifier.padding(7.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Tab.values().forEach { item ->
+            HubTab.values().forEach { item ->
                 val active = selected == item
                 Button(
                     onClick = { onSelect(item) },
@@ -316,15 +322,15 @@ private fun BottomNav(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier
                     shape = RoundedCornerShape(26.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (active) Color(0xFF0E3A22) else Color.Transparent,
-                        contentColor = if (active) Green else Muted
+                        contentColor = if (active) HubGreen else HubMuted
                     ),
                     contentPadding = PaddingValues(0.dp),
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = if (active) 7.dp else 0.dp)
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        IconMark(item.mark, if (active) Green else Muted, Modifier.size(if (active) 22.dp else 19.dp))
+                        HubIconMark(item.icon, if (active) HubGreen else HubMuted, Modifier.size(if (active) 22.dp else 19.dp))
                         Spacer(Modifier.height(3.dp))
-                        Text(item.label, fontSize = 10.sp, fontWeight = if (active) FontWeight.Black else FontWeight.Bold, maxLines = 1, fontFamily = AppFont)
+                        Text(item.label, fontSize = 10.sp, fontWeight = if (active) FontWeight.Black else FontWeight.Bold, maxLines = 1, fontFamily = HubFont)
                     }
                 }
             }
@@ -333,66 +339,66 @@ private fun BottomNav(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier
 }
 
 @Composable
-private fun Panel(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+private fun HubPanel(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(30.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xDD101111)),
-        border = BorderStroke(1.dp, Border)
+        border = BorderStroke(1.dp, HubBorder)
     ) {
         Column(Modifier.padding(18.dp)) { content() }
     }
 }
 
 @Composable
-private fun CompactButton(label: String, mark: Mark, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun HubCompactButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Button(
         onClick = onClick,
         modifier = modifier.height(48.dp),
         shape = RoundedCornerShape(18.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF101814), contentColor = Green),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF101814), contentColor = HubGreen),
         contentPadding = PaddingValues(0.dp)
     ) {
-        Text(label, fontSize = 13.sp, fontWeight = FontWeight.Black, fontFamily = AppFont, maxLines = 1)
+        Text(label, fontSize = 13.sp, fontWeight = FontWeight.Black, fontFamily = HubFont, maxLines = 1)
     }
 }
 
 @Composable
-private fun IconTile(mark: Mark, tint: Color) {
+private fun HubIconTile(icon: HubMark, tint: Color) {
     Box(
         Modifier.size(54.dp).background(Color(0xFF071F1E), RoundedCornerShape(18.dp)),
         contentAlignment = Alignment.Center
     ) {
-        IconMark(mark, tint, Modifier.size(26.dp))
+        HubIconMark(icon, tint, Modifier.size(26.dp))
     }
 }
 
 @Composable
-private fun Pill(text: String, color: Color) {
+private fun HubPill(text: String, color: Color) {
     Surface(
         color = color.copy(alpha = 0.16f),
         border = BorderStroke(1.dp, color.copy(alpha = 0.55f)),
         shape = RoundedCornerShape(999.dp)
     ) {
-        Text(text, color = color, fontSize = 11.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), maxLines = 1, fontFamily = AppFont)
+        Text(text, color = color, fontSize = 11.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), maxLines = 1, fontFamily = HubFont)
     }
 }
 
 @Composable
-private fun IconMark(type: Mark, tint: Color, modifier: Modifier = Modifier) {
+private fun HubIconMark(type: HubMark, tint: Color, modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val s = size.minDimension
         val w = s * 0.09f
         fun p(x: Float, y: Float) = Offset(s * x, s * y)
         when (type) {
-            Mark.Home -> {
+            HubMark.Home -> {
                 drawLine(tint, p(0.16f, 0.50f), p(0.50f, 0.20f), w, cap = StrokeCap.Round)
                 drawLine(tint, p(0.50f, 0.20f), p(0.84f, 0.50f), w, cap = StrokeCap.Round)
                 drawLine(tint, p(0.28f, 0.46f), p(0.28f, 0.82f), w, cap = StrokeCap.Round)
                 drawLine(tint, p(0.72f, 0.46f), p(0.72f, 0.82f), w, cap = StrokeCap.Round)
                 drawLine(tint, p(0.28f, 0.82f), p(0.72f, 0.82f), w, cap = StrokeCap.Round)
             }
-            Mark.Folder -> {
+            HubMark.Folder -> {
                 drawLine(tint, p(0.18f, 0.36f), p(0.42f, 0.36f), w, cap = StrokeCap.Round)
                 drawLine(tint, p(0.42f, 0.36f), p(0.52f, 0.46f), w, cap = StrokeCap.Round)
                 drawLine(tint, p(0.18f, 0.46f), p(0.82f, 0.46f), w, cap = StrokeCap.Round)
@@ -400,7 +406,7 @@ private fun IconMark(type: Mark, tint: Color, modifier: Modifier = Modifier) {
                 drawLine(tint, p(0.82f, 0.46f), p(0.82f, 0.78f), w, cap = StrokeCap.Round)
                 drawLine(tint, p(0.18f, 0.78f), p(0.82f, 0.78f), w, cap = StrokeCap.Round)
             }
-            Mark.Chat -> {
+            HubMark.Chat -> {
                 drawLine(tint, p(0.20f, 0.28f), p(0.80f, 0.28f), w, cap = StrokeCap.Round)
                 drawLine(tint, p(0.20f, 0.28f), p(0.20f, 0.65f), w, cap = StrokeCap.Round)
                 drawLine(tint, p(0.80f, 0.28f), p(0.80f, 0.65f), w, cap = StrokeCap.Round)
@@ -408,11 +414,11 @@ private fun IconMark(type: Mark, tint: Color, modifier: Modifier = Modifier) {
                 drawLine(tint, p(0.42f, 0.65f), p(0.30f, 0.82f), w, cap = StrokeCap.Round)
                 drawLine(tint, p(0.42f, 0.65f), p(0.80f, 0.65f), w, cap = StrokeCap.Round)
             }
-            Mark.User -> {
+            HubMark.User -> {
                 drawCircle(tint, s * 0.15f, p(0.50f, 0.34f), style = Stroke(w))
                 drawArc(tint, 200f, 140f, false, p(0.25f, 0.52f), Size(s * 0.50f, s * 0.42f), style = Stroke(w, cap = StrokeCap.Round))
             }
-            Mark.Play -> {
+            HubMark.Play -> {
                 val path = Path().apply {
                     moveTo(s * 0.34f, s * 0.22f)
                     lineTo(s * 0.34f, s * 0.78f)
@@ -421,17 +427,17 @@ private fun IconMark(type: Mark, tint: Color, modifier: Modifier = Modifier) {
                 }
                 drawPath(path, tint)
             }
-            Mark.Shield -> {
+            HubMark.Shield -> {
                 drawCircle(tint, s * 0.32f, p(0.50f, 0.50f), style = Stroke(w))
                 drawLine(tint, p(0.50f, 0.26f), p(0.50f, 0.74f), w, cap = StrokeCap.Round)
                 drawLine(tint, p(0.26f, 0.50f), p(0.74f, 0.50f), w, cap = StrokeCap.Round)
             }
-            Mark.Check -> {
+            HubMark.Check -> {
                 drawCircle(tint, s * 0.34f, p(0.50f, 0.50f), style = Stroke(w))
                 drawLine(tint, p(0.34f, 0.52f), p(0.45f, 0.64f), w, cap = StrokeCap.Round)
                 drawLine(tint, p(0.45f, 0.64f), p(0.70f, 0.38f), w, cap = StrokeCap.Round)
             }
-            Mark.Alert -> {
+            HubMark.Alert -> {
                 drawCircle(tint, s * 0.34f, p(0.50f, 0.50f), style = Stroke(w))
                 drawLine(tint, p(0.50f, 0.28f), p(0.50f, 0.58f), w, cap = StrokeCap.Round)
                 drawCircle(tint, s * 0.025f, p(0.50f, 0.72f))
@@ -440,26 +446,26 @@ private fun IconMark(type: Mark, tint: Color, modifier: Modifier = Modifier) {
     }
 }
 
-private fun isGameInstalled(context: Context): Boolean = try {
-    context.packageManager.getPackageInfo(DL_GAME_PACKAGE, 0)
+private fun hubIsGameInstalled(context: Context): Boolean = try {
+    context.packageManager.getPackageInfo(HUB_GAME_PACKAGE, 0)
     true
 } catch (_: PackageManager.NameNotFoundException) {
     false
 }
 
-private fun launchGame(context: Context) {
-    val launch = context.packageManager.getLaunchIntentForPackage(DL_GAME_PACKAGE)
+private fun hubLaunchGame(context: Context) {
+    val launch = context.packageManager.getLaunchIntentForPackage(HUB_GAME_PACKAGE)
     if (launch != null) {
         context.startActivity(launch)
     }
 }
 
-private val AppFont = FontFamily.SansSerif
-private val Dark = Color(0xFF050606)
-private val CardBg = Color(0xFF101111)
-private val Border = Color(0xFF252A2C)
-private val White = Color(0xFFF7F7F7)
-private val Muted = Color(0xFF7A7F83)
-private val Green = Color(0xFF20E070)
-private val Cyan = Color(0xFF28D7FF)
-private val Red = Color(0xFFFF4D4D)
+private val HubFont = FontFamily.SansSerif
+private val HubDark = Color(0xFF050606)
+private val HubCard = Color(0xFF101111)
+private val HubBorder = Color(0xFF252A2C)
+private val HubWhite = Color(0xFFF7F7F7)
+private val HubMuted = Color(0xFF7A7F83)
+private val HubGreen = Color(0xFF20E070)
+private val HubCyan = Color(0xFF28D7FF)
+private val HubRed = Color(0xFFFF4D4D)
