@@ -86,7 +86,7 @@ private enum class HubTab(val title: String, val icon: HubIcon) {
     Profile("Profile", HubIcon.Profile)
 }
 
-private data class ManifestState(
+private data class HubManifestState(
     val loading: Boolean = true,
     val status: String = "Checking manifest...",
     val versionName: String = "-",
@@ -157,17 +157,17 @@ private fun DLavie26HubApp() {
 @Composable
 private fun FeedPage(onOpenLibrary: () -> Unit, onOpenCommunity: () -> Unit) {
     val context = LocalContext.current
-    var manifest by remember { mutableStateOf(ManifestState()) }
+    var manifest by remember { mutableStateOf(HubManifestState()) }
     val scope = rememberCoroutineScope()
 
     fun refreshManifest() {
-        manifest = ManifestState(loading = true, status = "Checking manifest...")
+        manifest = HubManifestState(loading = true, status = "Checking manifest...")
         scope.launch {
-            manifest = withContext(Dispatchers.IO) { loadManifestState() }
+            manifest = withContext(Dispatchers.IO) { loadHubManifestState() }
         }
     }
 
-    LaunchedEffect(Unit) { manifest = withContext(Dispatchers.IO) { loadManifestState() } }
+    LaunchedEffect(Unit) { manifest = withContext(Dispatchers.IO) { loadHubManifestState() } }
 
     Column(
         Modifier
@@ -239,7 +239,7 @@ private fun QuickActions(onPlay: () -> Unit, onLibrary: () -> Unit, onCommunity:
 }
 
 @Composable
-private fun ManifestCard(state: ManifestState, onRefresh: () -> Unit, onOpenUpdater: () -> Unit) {
+private fun ManifestCard(state: HubManifestState, onRefresh: () -> Unit, onOpenUpdater: () -> Unit) {
     GlassPanel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
@@ -256,8 +256,8 @@ private fun ManifestCard(state: ManifestState, onRefresh: () -> Unit, onOpenUpda
         Text(state.status, color = DlMuted, fontFamily = DlFont)
         if (state.versionName != "-") {
             Spacer(Modifier.height(10.dp))
-            InfoLine("Latest", state.versionName)
-            InfoLine("Version code", state.versionCode.toString())
+            HubInfoLine("Latest", state.versionName)
+            HubInfoLine("Version code", state.versionCode.toString())
         }
         if (state.releaseNotes.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
@@ -292,7 +292,7 @@ private fun ProductionPolicyCard() {
 @Composable
 private fun LibraryPage() {
     val context = LocalContext.current
-    val installed = remember { isPackageInstalled(context, GAME_PACKAGE) }
+    val installed = remember { hubIsPackageInstalled(context, GAME_PACKAGE) }
     Column(
         Modifier
             .fillMaxSize()
@@ -362,9 +362,9 @@ private fun CommunityPage() {
         }
         GlassPanel {
             SectionTitle(HubIcon.Settings, "Required backend features")
-            InfoLine("Auth", "Real user accounts, username, avatar, role, bans.")
-            InfoLine("Realtime", "Real community_messages table and realtime listener.")
-            InfoLine("Moderation", "Report, delete, mute, ban, audit log.")
+            HubInfoLine("Auth", "Real user accounts, username, avatar, role, bans.")
+            HubInfoLine("Realtime", "Real community_messages table and realtime listener.")
+            HubInfoLine("Moderation", "Report, delete, mute, ban, audit log.")
         }
     }
 }
@@ -582,17 +582,17 @@ private fun StatChip(title: String, value: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun InfoLine(title: String, body: String) {
+private fun HubInfoLine(title: String, body: String) {
     Spacer(Modifier.height(8.dp))
     Text(title, color = DlMuted, fontWeight = FontWeight.Bold, fontSize = 13.sp, fontFamily = DlFont)
     Text(body, color = DlWhite, fontSize = 14.sp, fontFamily = DlFont)
 }
 
-private fun loadManifestState(): ManifestState {
+private fun loadHubManifestState(): HubManifestState {
     return try {
-        val json = fetchJson(DEFAULT_MANIFEST)
+        val json = hubFetchJson(DEFAULT_MANIFEST)
         val notes = json.optJSONArray("releaseNotes")
-        ManifestState(
+        HubManifestState(
             loading = false,
             status = json.optJSONObject("status")?.optString("message") ?: "Manifest loaded from GitHub.",
             versionName = json.optString("latestVersionName", "-"),
@@ -600,11 +600,11 @@ private fun loadManifestState(): ManifestState {
             releaseNotes = if (notes != null) List(notes.length()) { i -> notes.optString(i) } else emptyList()
         )
     } catch (t: Throwable) {
-        ManifestState(loading = false, status = "Manifest check failed: ${t.message}")
+        HubManifestState(loading = false, status = "Manifest check failed: ${t.message}")
     }
 }
 
-private fun fetchJson(url: String): JSONObject {
+private fun hubFetchJson(url: String): JSONObject {
     val c = URL(url).openConnection() as HttpURLConnection
     c.connectTimeout = 20000
     c.readTimeout = 30000
@@ -615,7 +615,7 @@ private fun fetchJson(url: String): JSONObject {
     }
 }
 
-private fun isPackageInstalled(context: Context, packageName: String): Boolean {
+private fun hubIsPackageInstalled(context: Context, packageName: String): Boolean {
     return try {
         context.packageManager.getPackageInfo(packageName, 0)
         true
