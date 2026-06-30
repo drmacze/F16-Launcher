@@ -55,6 +55,12 @@
 
         <activity
             android:name=".ModernLauncherActivity"
+            android:exported="false"
+            android:label="DLavie Legacy Hub"
+            android:theme="@style/AppTheme.Splash" />
+
+        <activity
+            android:name=".DLavieHubActivity"
             android:exported="true"
             android:icon="@drawable/dlavie_launcher_icon"
             android:label="DLavie 26"
