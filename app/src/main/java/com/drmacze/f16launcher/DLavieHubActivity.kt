@@ -80,10 +80,10 @@ private const val DEFAULT_MANIFEST = "https://raw.githubusercontent.com/drmacze/
 private enum class HubIcon { Home, Library, Community, Profile, Play, Repair, Refresh, Info, Check, Error, Settings }
 
 private enum class HubTab(val title: String, val icon: HubIcon) {
-    Feed("Feed", HubIcon.Home),
-    Library("Library", HubIcon.Library),
-    Community("Community", HubIcon.Community),
-    Profile("Profile", HubIcon.Profile)
+    Feed("Home", HubIcon.Home),
+    Library("Data", HubIcon.Library),
+    Community("Chat", HubIcon.Community),
+    Profile("Me", HubIcon.Profile)
 }
 
 private data class HubManifestState(
@@ -210,14 +210,14 @@ private fun HeaderBlock() {
         }
         Spacer(Modifier.height(18.dp))
         Text("Football Reborn", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = DlFont)
-        Text("Public launcher tidak menampilkan source URL, manifest path, patch endpoint, atau developer tools.", color = DlMuted, fontSize = 14.sp, fontFamily = DlFont)
+        Text("Launcher resmi untuk bermain, update, dan komunitas DLavie.", color = DlMuted, fontSize = 14.sp, fontFamily = DlFont)
     }
 }
 
 @Composable
 private fun QuickActions(onPlay: () -> Unit, onLibrary: () -> Unit, onCommunity: () -> Unit, onRepair: () -> Unit) {
     GlassPanel {
-        SectionTitle(HubIcon.Play, "Quick Actions")
+        SectionTitle(HubIcon.Play, "Actions")
         Spacer(Modifier.height(12.dp))
         Button(
             onClick = onPlay,
@@ -227,13 +227,13 @@ private fun QuickActions(onPlay: () -> Unit, onLibrary: () -> Unit, onCommunity:
         ) {
             IconMark(HubIcon.Play, Color(0xFF001407), Modifier.size(21.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Play FIFA 16", fontWeight = FontWeight.Black, fontFamily = DlFont)
+            Text("Play", fontWeight = FontWeight.Black, fontFamily = DlFont)
         }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            ActionButton("Library", HubIcon.Library, onLibrary, Modifier.weight(1f))
-            ActionButton("Repair", HubIcon.Repair, onRepair, Modifier.weight(1f))
-            ActionButton("Community", HubIcon.Community, onCommunity, Modifier.weight(1f))
+            ActionButton("Data", HubIcon.Library, onLibrary, Modifier.weight(1f))
+            ActionButton("Update", HubIcon.Repair, onRepair, Modifier.weight(1f))
+            ActionButton("Chat", HubIcon.Community, onCommunity, Modifier.weight(1f))
         }
     }
 }
@@ -246,8 +246,8 @@ private fun ManifestCard(state: HubManifestState, onRefresh: () -> Unit, onOpenU
                 IconTile(HubIcon.Refresh, DlCyan)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Update Channel", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
-                    Text("Managed by DLavie service", color = DlMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = DlFont)
+                    Text("Update", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
+                    Text("Channel aman DLavie", color = DlMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = DlFont)
                 }
             }
             Pill(if (state.loading) "CHECK" else "LIVE", if (state.loading) DlMuted else DlGreen)
@@ -259,22 +259,17 @@ private fun ManifestCard(state: HubManifestState, onRefresh: () -> Unit, onOpenU
             HubInfoLine("Latest", state.versionName)
             HubInfoLine("Version code", state.versionCode.toString())
         }
-        if (state.releaseNotes.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            Text("Release Notes", color = DlWhite, fontWeight = FontWeight.Bold, fontFamily = DlFont)
-            state.releaseNotes.forEach { note -> Text("• $note", color = DlMuted, fontSize = 13.sp, fontFamily = DlFont) }
-        }
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             Button(onClick = onRefresh, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = DlCyan, contentColor = Color(0xFF001018))) {
                 IconMark(HubIcon.Refresh, Color(0xFF001018), Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Refresh", fontWeight = FontWeight.Bold, fontFamily = DlFont)
+                Text("Check", fontWeight = FontWeight.Bold, fontFamily = DlFont)
             }
             Button(onClick = onOpenUpdater, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = DlGreen, contentColor = Color(0xFF001407))) {
                 IconMark(HubIcon.Repair, Color(0xFF001407), Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Status", fontWeight = FontWeight.Bold, fontFamily = DlFont)
+                Text("Data", fontWeight = FontWeight.Bold, fontFamily = DlFont)
             }
         }
     }
@@ -300,24 +295,24 @@ private fun LibraryPage() {
             .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Library", color = DlWhite, fontSize = 42.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
-        Text("Game status dan update channel tanpa menampilkan alamat internal.", color = DlMuted, fontFamily = DlFont)
-        LibraryStatusHero(context, installed)
-        LibraryItem("Game package", GAME_PACKAGE, if (installed) "INSTALLED" else "MISSING", if (installed) DlGreen else DlRed, if (installed) HubIcon.Check else HubIcon.Error) { launchFifa(context) }
-        LibraryItem("Update channel", "Managed by DLavie service.", "SECURE", DlGreen, HubIcon.Repair) { }
+        Text("Data", color = DlWhite, fontSize = 42.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
+        Text("Status game dan update DLavie.", color = DlMuted, fontFamily = DlFont)
+        LibraryStatusHero(installed)
+        LibraryItem("FIFA 16 Mobile", if (installed) "Installed on device." else "Game not found.", if (installed) "READY" else "MISSING", if (installed) DlGreen else DlRed, if (installed) HubIcon.Check else HubIcon.Error) { launchFifa(context) }
+        LibraryItem("Update", "DLavie secure channel.", "SECURE", DlGreen, HubIcon.Repair) { }
     }
 }
 
 @Composable
-private fun LibraryStatusHero(context: Context, installed: Boolean) {
+private fun LibraryStatusHero(installed: Boolean) {
     GlassPanel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                 IconTile(if (installed) HubIcon.Check else HubIcon.Error, if (installed) DlGreen else DlRed)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("DLavie 26 Status", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
-                    Text(if (installed) "FIFA package detected." else "FIFA package is not detected on this device.", color = DlMuted, fontFamily = DlFont)
+                    Text("DLavie 26", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
+                    Text(if (installed) "Ready to play." else "Game not found.", color = DlMuted, fontFamily = DlFont)
                 }
             }
             Pill(if (installed) "READY" else "INSTALL", if (installed) DlGreen else DlRed)
@@ -325,20 +320,10 @@ private fun LibraryStatusHero(context: Context, installed: Boolean) {
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             StatChip("Package", if (installed) "Found" else "Missing", Modifier.weight(1f))
-            StatChip("Channel", "Stable", Modifier.weight(1f))
-            StatChip("Access", "Updater", Modifier.weight(1f))
+            StatChip("Channel", "Secure", Modifier.weight(1f))
+            StatChip("Access", "Locked", Modifier.weight(1f))
         }
-        Spacer(Modifier.height(14.dp))
-        Button(
-            onClick = { openAdvancedUpdater(context) },
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = DlCyan, contentColor = Color(0xFF001018)),
-            shape = RoundedCornerShape(20.dp)
-        ) {
-            IconMark(HubIcon.Repair, Color(0xFF001018), Modifier.size(19.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Open Real Update / Repair Center", fontWeight = FontWeight.Bold, fontFamily = DlFont)
-        }
+
     }
 }
 
@@ -351,18 +336,12 @@ private fun CommunityPage() {
             .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Community", color = DlWhite, fontSize = 42.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
-        Text("Chat will be enabled only after Supabase/Firebase backend is connected.", color = DlMuted, fontFamily = DlFont)
+        Text("Chat", color = DlWhite, fontSize = 42.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
+        Text("Community real akan aktif setelah backend siap.", color = DlMuted, fontFamily = DlFont)
         GlassPanel {
-            SectionTitle(HubIcon.Community, "No backend connected")
+            SectionTitle(HubIcon.Community, "Coming Soon")
             Spacer(Modifier.height(8.dp))
-            Text("This page does not show fake messages, fake online users, fake rooms, or fake activity. Real global chat requires authentication, database, moderation, reports, and anti-spam rules.", color = DlMuted, fontFamily = DlFont)
-        }
-        GlassPanel {
-            SectionTitle(HubIcon.Settings, "Required backend features")
-            HubInfoLine("Auth", "Real user accounts, username, avatar, role, bans.")
-            HubInfoLine("Realtime", "Real community_messages table and realtime listener.")
-            HubInfoLine("Moderation", "Report, delete, mute, ban, audit log.")
+            Text("Tidak ada chat palsu. Chat global akan aktif setelah akun dan moderation siap.", color = DlMuted, fontFamily = DlFont)
         }
     }
 }
@@ -397,12 +376,12 @@ private fun ProfilePage() {
         GlassPanel {
             SectionTitle(HubIcon.Profile, "Account Settings")
             Spacer(Modifier.height(8.dp))
-            Text("Profile, username, avatar, saved posts, comments, and notification settings will be enabled after real authentication is connected. This screen does not display fake user identity.", color = DlMuted, fontFamily = DlFont)
+            Text("Akun, avatar, saved post, dan notifikasi aktif setelah login tersedia.", color = DlMuted, fontFamily = DlFont)
         }
         GlassPanel {
             SectionTitle(HubIcon.Settings, "Developer Console")
             Spacer(Modifier.height(8.dp))
-            Text("Developer/admin tools are not exposed in this public launcher. Maintenance mode, push notification, publishing, banning, and moderation belong in private DLavie Console with backend role checks.", color = DlMuted, fontFamily = DlFont)
+            Text("Developer tools tidak tersedia di launcher publik.", color = DlMuted, fontFamily = DlFont)
         }
     }
 }
@@ -592,7 +571,7 @@ private fun loadHubManifestState(): HubManifestState {
         val notes = json.optJSONArray("releaseNotes")
         HubManifestState(
             loading = false,
-            status = json.optJSONObject("status")?.optString("message") ?: "Manifest loaded from GitHub.",
+            status = "Channel aktif.",
             versionName = json.optString("latestVersionName", "-"),
             versionCode = json.optInt("latestVersionCode", 0),
             releaseNotes = if (notes != null) List(notes.length()) { i -> notes.optString(i) } else emptyList()
@@ -631,9 +610,7 @@ private fun launchFifa(context: Context) {
     }
 }
 
-private fun openAdvancedUpdater(context: Context) {
-    context.startActivity(Intent(context, GameHubActivity::class.java))
-}
+private fun openAdvancedUpdater(context: Context) { }
 
 private val DlFont = FontFamily.SansSerif
 

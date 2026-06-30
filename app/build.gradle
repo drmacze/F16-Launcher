@@ -12,7 +12,7 @@ android {
         minSdk 24
         targetSdk 35
         versionCode 35
-        versionName '0.10.4-private-channel-ui'
+        versionName '0.10.5-unified-public-ui'
     }
 
     compileOptions {
