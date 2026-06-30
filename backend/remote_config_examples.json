@@ -1,0 +1,56 @@
+{
+  "maintenance": {
+    "enabled": false,
+    "scope": "none",
+    "title": "DLavie 26 Maintenance",
+    "message": "Kami sedang menyiapkan update baru.",
+    "allow_offline_play": true,
+    "estimated_end": null
+  },
+  "launcher": {
+    "minimum_version_code": 30,
+    "latest_version_code": 30,
+    "latest_version_name": "0.9.0-dlavie26-hub",
+    "stable": true,
+    "beta": false,
+    "developer": false,
+    "manifest_url": "https://raw.githubusercontent.com/drmacze/F16/main/updates/latest.json"
+  },
+  "home_notice": {
+    "enabled": true,
+    "title": "DLavie 26 Ready",
+    "message": "DLavie 26 Hub aktif untuk install, update, community, dan profile.",
+    "action": {
+      "type": "open_update"
+    }
+  },
+  "official_update_post": {
+    "type": "update",
+    "official": true,
+    "pinned": true,
+    "title": "DLavie 26 Gameplay Realism Patch v3",
+    "body": "Better AI defending, updated attribdb, realistic sprint, and cl.ini safety fix.",
+    "image_url": "",
+    "version_code": 3,
+    "version_name": "v3 - Gameplay Realism",
+    "channel": "stable",
+    "patch_url": "https://github.com/drmacze/F16/releases/download/v3/patch-v3-gameplay.zip",
+    "patch_sha256": "",
+    "patch_size_bytes": 0,
+    "critical": false,
+    "restart_game_required": true,
+    "actions": ["update_now", "like", "comment", "share", "save"]
+  },
+  "push_notification": {
+    "title": "DLavie 26 Update Available",
+    "body": "Gameplay realism patch v3 sudah tersedia.",
+    "target": {
+      "type": "channel",
+      "channel": "stable"
+    },
+    "action": {
+      "type": "open_update",
+      "update_id": ""
+    }
+  }
+}
