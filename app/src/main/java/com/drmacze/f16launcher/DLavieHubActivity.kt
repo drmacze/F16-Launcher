@@ -271,7 +271,12 @@ private fun HubDataScreen() {
 }
 
 @Composable
-private fun HubUpdateCard(state: HubUpdateState, onCheck: () -> Unit, onAllowShizuku: () -> Unit, onInstall: () -> Unit) {
+private fun HubUpdateCard(
+    state: HubUpdateState,
+    onCheck: () -> Unit,
+    onAllowShizuku: () -> Unit,
+    onInstall: () -> Unit
+) {
     val badgeColor = when (state.badge) {
         "UPDATE" -> HubCyan
         "LATEST" -> HubGreen
@@ -281,13 +286,14 @@ private fun HubUpdateCard(state: HubUpdateState, onCheck: () -> Unit, onAllowShi
         "SHIZUKU" -> HubRed
         else -> HubCyan
     }
+
     HubPanel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             HubIconTile(HubMark.Shield, badgeColor)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text("Update Center", color = HubWhite, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = HubFont, maxLines = 1)
-                Text(state.message, color = HubMuted, fontSize = 14.sp, fontFamily = HubFont, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(state.message, color = HubMuted, fontSize = 14.sp, fontFamily = HubFont, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
             HubPill(if (state.checking) "WAIT" else state.badge, badgeColor)
         }
@@ -613,14 +619,12 @@ private fun hubCheckUpdate(context: Context): HubUpdateState {
     val localName = prefs.getString(HUB_PREF_NAME, HUB_DEFAULT_NAME) ?: HUB_DEFAULT_NAME
     val shizuku = hubShizukuState()
     val marker = hubReadDataMarker()
-
     return try {
         val json = hubFetchManifestJson()
         val latestCode = json.optInt("latestVersionCode", 0)
         val latestName = json.optString("latestVersionName", "Unknown")
         val hasPatch = hubFindInlinePatch(json, localCode, latestCode) != null
         val needsUpdate = latestCode > localCode
-
         HubUpdateState(
             checking = false,
             localCode = localCode,
@@ -665,16 +669,12 @@ private fun hubCheckUpdate(context: Context): HubUpdateState {
 private fun hubInstallInlinePatch(context: Context): HubUpdateState {
     val checked = hubCheckUpdate(context)
     if (!checked.canInstall) return checked
-
     return try {
         val json = hubFetchManifestJson()
         val patch = hubFindInlinePatch(json, checked.localCode, checked.latestCode)
             ?: return checked.copy(message = "Patch tidak cocok untuk versi lokal.", canInstall = false)
-        val files = patch.optJSONArray("files")
-            ?: return checked.copy(message = "Patch kosong.", canInstall = false)
-        val target = patch.optString("target", "/sdcard/Android/data/$HUB_GAME_PACKAGE/")
-            .ifBlank { "/sdcard/Android/data/$HUB_GAME_PACKAGE/" }
-
+        val files = patch.optJSONArray("files") ?: return checked.copy(message = "Patch kosong.", canInstall = false)
+        val target = patch.optString("target", "/sdcard/Android/data/$HUB_GAME_PACKAGE/").ifBlank { "/sdcard/Android/data/$HUB_GAME_PACKAGE/" }
         val script = StringBuilder()
         script.append("mkdir -p ").append(hubShellQuote(target)).append("\n")
 
@@ -683,7 +683,6 @@ private fun hubInstallInlinePatch(context: Context): HubUpdateState {
             val relative = obj.optString("path", "").trim()
             val content = obj.optString("content", "")
             if (!hubSafeRelativePath(relative)) continue
-
             val out = target.trimEnd('/') + "/" + relative
             val encoded = Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
             script.append("mkdir -p $(dirname ").append(hubShellQuote(out)).append(")\n")
@@ -691,15 +690,13 @@ private fun hubInstallInlinePatch(context: Context): HubUpdateState {
                 .append(" | base64 -d > ").append(hubShellQuote(out)).append("\n")
         }
 
-        val process = Shizuku.newProcess(arrayOf("sh", "-c", script.toString()), null, null)
+        val process = hubStartShizukuProcess(script.toString())
         val exit = process.waitFor()
-
         if (exit == 0) {
             context.getSharedPreferences(HUB_PREFS, Context.MODE_PRIVATE).edit()
                 .putInt(HUB_PREF_CODE, checked.latestCode)
                 .putString(HUB_PREF_NAME, checked.latestName)
                 .apply()
-
             hubCheckUpdate(context).copy(
                 badge = "INSTALLED",
                 message = "Update berhasil diinstall.",
@@ -714,6 +711,17 @@ private fun hubInstallInlinePatch(context: Context): HubUpdateState {
     } catch (_: Throwable) {
         checked.copy(badge = "FAILED", message = "Install gagal. Cek Shizuku lalu coba lagi.", canInstall = true)
     }
+}
+
+private fun hubStartShizukuProcess(script: String): Process {
+    val method = Shizuku::class.java.getDeclaredMethod(
+        "newProcess",
+        Array<String>::class.java,
+        Array<String>::class.java,
+        String::class.java
+    )
+    method.isAccessible = true
+    return method.invoke(null, arrayOf("sh", "-c", script), null, null) as Process
 }
 
 private fun hubRequestShizukuPermission() {
@@ -775,7 +783,6 @@ private fun hubSafeRelativePath(path: String): Boolean {
 }
 
 private fun hubShellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
-
 
 private fun hubIsGameInstalled(context: Context): Boolean = try {
     context.packageManager.getPackageInfo(HUB_GAME_PACKAGE, 0)
