@@ -9,6 +9,7 @@ DLavie 26 bukan hanya downloader. Target finalnya adalah **mod hub profesional**
 - Public name: **DLavie 26**
 - Meaning: 26 = 2026, searah dengan konsep football season 2026.
 - Tagline: **FIFA 16 Mobile 2026 Mod Hub**
+- Visual direction: dark premium, glassmorphism, neon green/cyan accent, rounded cards, floating bottom navigation.
 
 ## Aplikasi publik vs developer
 
@@ -49,8 +50,10 @@ Developer/admin actions harus divalidasi oleh backend role, bukan hanya hidden m
 
 - App module: Android Kotlin + Jetpack Compose
 - Package: `com.drmacze.f16launcher`
-- Public launcher entry: `ModernLauncherActivity`
+- Public launcher entry: `DLavieHubActivity`
+- Legacy hub: `ModernLauncherActivity`, internal only
 - Internal recovery shell: `DevLauncherActivity`, tidak dijadikan launcher publik
+- Current version: `0.10.0-dlavie26-premium-hub` / versionCode `31`
 - Update manifest default: `https://raw.githubusercontent.com/drmacze/F16/main/updates/latest.json`
 - Target game: `com.ea.gp.fifaworld`
 
@@ -67,9 +70,9 @@ Developer/admin actions harus divalidasi oleh backend role, bukan hanya hidden m
 
 1. Install APK `DLavie 26`.
 2. Buka DLavie 26.
-3. Login/register akun DLavie.
+3. Login/register akun DLavie nanti jika backend aktif.
 4. Buka **Library** untuk install/repair data.
-5. Buka **Update** untuk cek patch baru.
+5. Buka **Update/Repair Center** untuk cek patch baru.
 6. Tekan **Update Now** jika ada update.
 7. Tekan **Play Game**.
 
