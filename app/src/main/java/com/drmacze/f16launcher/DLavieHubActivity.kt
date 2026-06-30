@@ -2,6 +2,7 @@ package com.drmacze.f16launcher
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -12,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -38,9 +38,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +54,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
 
 private const val GAME_PACKAGE = "com.ea.gp.fifaworld"
 private const val DEFAULT_MANIFEST = "https://raw.githubusercontent.com/drmacze/F16/main/updates/latest.json"
@@ -60,8 +70,16 @@ private enum class HubTab(val title: String, val icon: String) {
     Feed("Feed", "⌂"),
     Library("Library", "⇩"),
     Community("Community", "◉"),
-    Profile("Profile", "g")
+    Profile("Profile", "☻")
 }
+
+private data class ManifestState(
+    val loading: Boolean = true,
+    val status: String = "Checking manifest...",
+    val versionName: String = "-",
+    val versionCode: Int = 0,
+    val releaseNotes: List<String> = emptyList()
+)
 
 class DLavieHubActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -104,7 +122,7 @@ private fun DLavie26HubApp() {
                         .padding(bottom = 100.dp)
                 ) { selected ->
                     when (selected) {
-                        HubTab.Feed -> FeedPage(onOpenUpdate = { tab = HubTab.Library }, onOpenCommunity = { tab = HubTab.Community })
+                        HubTab.Feed -> FeedPage(onOpenLibrary = { tab = HubTab.Library }, onOpenCommunity = { tab = HubTab.Community })
                         HubTab.Library -> LibraryPage()
                         HubTab.Community -> CommunityPage()
                         HubTab.Profile -> ProfilePage()
@@ -123,8 +141,20 @@ private fun DLavie26HubApp() {
 }
 
 @Composable
-private fun FeedPage(onOpenUpdate: () -> Unit, onOpenCommunity: () -> Unit) {
+private fun FeedPage(onOpenLibrary: () -> Unit, onOpenCommunity: () -> Unit) {
     val context = LocalContext.current
+    var manifest by remember { mutableStateOf(ManifestState()) }
+    val scope = rememberCoroutineScope()
+
+    fun refreshManifest() {
+        manifest = ManifestState(loading = true, status = "Checking manifest...")
+        scope.launch {
+            manifest = withContext(Dispatchers.IO) { loadManifestState() }
+        }
+    }
+
+    LaunchedEffect(Unit) { manifest = withContext(Dispatchers.IO) { loadManifestState() } }
+
     Column(
         Modifier
             .fillMaxSize()
@@ -135,27 +165,12 @@ private fun FeedPage(onOpenUpdate: () -> Unit, onOpenCommunity: () -> Unit) {
         HeaderBlock()
         QuickActions(
             onPlay = { launchFifa(context) },
-            onUpdate = onOpenUpdate,
+            onLibrary = onOpenLibrary,
             onCommunity = onOpenCommunity,
             onRepair = { openAdvancedUpdater(context) }
         )
-        OfficialUpdateCard(
-            title = "DLavie 26 Global Hub",
-            subtitle = "Developer Announcement",
-            body = "DLavie 26 sedang diarahkan menjadi FIFA 16 Mobile 2026 Mod Hub: install, repair, update, community, profile, dan news dalam satu launcher.",
-            action = "Open Library",
-            onAction = onOpenUpdate,
-            stats = "♡ 128   ◌ 32   ↗ Share   ☆ Save"
-        )
-        OfficialUpdateCard(
-            title = "Gameplay Realism Patch v3",
-            subtitle = "Update Preview · Stable Channel",
-            body = "Rencana patch berikutnya: AI lebih realistis, tempo match lebih natural, attribdb/gameplay tuning, dan safety check cl.ini.",
-            action = "Check Update",
-            onAction = { openAdvancedUpdater(context) },
-            stats = "♡ 84   ◌ 15   ↗ Share   ☆ Save"
-        )
-        CommunityPreviewCard(onOpenCommunity)
+        ManifestCard(manifest, onRefresh = { refreshManifest() }, onOpenUpdater = { openAdvancedUpdater(context) })
+        ProductionPolicyCard()
     }
 }
 
@@ -177,16 +192,16 @@ private fun HeaderBlock() {
                 Text("DLavie 26", color = DlWhite, fontSize = 34.sp, fontWeight = FontWeight.Black)
                 Text("FIFA 16 Mobile 2026 Mod Hub", color = DlMuted, fontSize = 14.sp)
             }
-            Pill("ONLINE", DlGreen)
+            Pill("PROD", DlGreen)
         }
         Spacer(Modifier.height(18.dp))
         Text("Football Reborn", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("Install, update, repair, community, and profile in one premium launcher.", color = DlMuted, fontSize = 14.sp)
+        Text("Production shell only. Fake posts, fake counts, fake chat, and fake profile data are not shown.", color = DlMuted, fontSize = 14.sp)
     }
 }
 
 @Composable
-private fun QuickActions(onPlay: () -> Unit, onUpdate: () -> Unit, onCommunity: () -> Unit, onRepair: () -> Unit) {
+private fun QuickActions(onPlay: () -> Unit, onLibrary: () -> Unit, onCommunity: () -> Unit, onRepair: () -> Unit) {
     GlassPanel {
         Text("Quick Actions", color = DlWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
@@ -198,16 +213,55 @@ private fun QuickActions(onPlay: () -> Unit, onUpdate: () -> Unit, onCommunity: 
         ) { Text("Play FIFA 16", fontWeight = FontWeight.Black) }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            ActionButton("Update", onUpdate, Modifier.weight(1f))
+            ActionButton("Library", onLibrary, Modifier.weight(1f))
             ActionButton("Repair", onRepair, Modifier.weight(1f))
-            ActionButton("Chat", onCommunity, Modifier.weight(1f))
+            ActionButton("Community", onCommunity, Modifier.weight(1f))
         }
+    }
+}
+
+@Composable
+private fun ManifestCard(state: ManifestState, onRefresh: () -> Unit, onOpenUpdater: () -> Unit) {
+    GlassPanel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Update Manifest", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                Text(DEFAULT_MANIFEST, color = DlMuted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Pill(if (state.loading) "CHECK" else "LIVE", if (state.loading) DlMuted else DlGreen)
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(state.status, color = DlMuted)
+        if (state.versionName != "-") {
+            Spacer(Modifier.height(10.dp))
+            InfoLine("Latest", state.versionName)
+            InfoLine("Version code", state.versionCode.toString())
+        }
+        if (state.releaseNotes.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text("Release Notes", color = DlWhite, fontWeight = FontWeight.Bold)
+            state.releaseNotes.forEach { note -> Text("• $note", color = DlMuted, fontSize = 13.sp) }
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onRefresh, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = DlCyan, contentColor = Color(0xFF001018))) { Text("Refresh", fontWeight = FontWeight.Bold) }
+            Button(onClick = onOpenUpdater, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = DlGreen, contentColor = Color(0xFF001407))) { Text("Updater", fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+@Composable
+private fun ProductionPolicyCard() {
+    GlassPanel {
+        Text("Production Data Policy", color = DlWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("Feed posts, likes, comments, saves, chat rooms, and profiles will appear only after a real backend is connected. Until then, this launcher shows only real local/game/manifest states.", color = DlMuted)
     }
 }
 
 @Composable
 private fun LibraryPage() {
     val context = LocalContext.current
+    val installed = remember { isPackageInstalled(context, GAME_PACKAGE) }
     Column(
         Modifier
             .fillMaxSize()
@@ -216,31 +270,30 @@ private fun LibraryPage() {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Library", color = DlWhite, fontSize = 42.sp, fontWeight = FontWeight.Black)
-        Text("Game files, updater, repair tools, and saved patches.", color = DlMuted)
-        LibraryStatusHero(context)
-        LibraryItem("DLavie 26 Base Data", "1.45 GB · Installed via DLavie installer", "VALID", DlGreen) { openAdvancedUpdater(context) }
-        LibraryItem("Main OBB", "main.13.com.ea.gp.fifaworld.obb", "CHECK", DlCyan) { openAdvancedUpdater(context) }
-        LibraryItem("Patch OBB", "patch.26.com.ea.gp.fifaworld.obb", "CHECK", DlCyan) { openAdvancedUpdater(context) }
-        LibraryItem("Advanced Shizuku Updater", "Apply small mod updates without downloading full data again", "OPEN", DlGreen) { openAdvancedUpdater(context) }
-        LibraryItem("Manifest", DEFAULT_MANIFEST, "STABLE", DlMuted) { openAdvancedUpdater(context) }
+        Text("Real install and update actions. No fake validation state.", color = DlMuted)
+        LibraryStatusHero(context, installed)
+        LibraryItem("Game package", GAME_PACKAGE, if (installed) "INSTALLED" else "MISSING", if (installed) DlGreen else DlRed) { launchFifa(context) }
+        LibraryItem("Update / Repair Center", "Open Advanced Shizuku/root updater for real patch and repair operations.", "OPEN", DlGreen) { openAdvancedUpdater(context) }
+        LibraryItem("Manifest source", DEFAULT_MANIFEST, "REMOTE", DlCyan) { openAdvancedUpdater(context) }
+        LibraryItem("File verification", "Full SHA validation must be executed by the updater/installer flow, not guessed by this screen.", "REAL ONLY", DlMuted) { openAdvancedUpdater(context) }
     }
 }
 
 @Composable
-private fun LibraryStatusHero(context: Context) {
+private fun LibraryStatusHero(context: Context, installed: Boolean) {
     GlassPanel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("DLavie 26 Status", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Black)
-                Text("Ready for install, repair, and update flow.", color = DlMuted)
+                Text(if (installed) "FIFA package detected." else "FIFA package is not detected on this device.", color = DlMuted)
             }
-            Pill("v0.10", DlGreen)
+            Pill(if (installed) "READY" else "INSTALL", if (installed) DlGreen else DlRed)
         }
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            StatChip("Data", "v26", Modifier.weight(1f))
+            StatChip("Package", if (installed) "Found" else "Missing", Modifier.weight(1f))
             StatChip("Channel", "Stable", Modifier.weight(1f))
-            StatChip("Access", "Shizuku", Modifier.weight(1f))
+            StatChip("Access", "Updater", Modifier.weight(1f))
         }
         Spacer(Modifier.height(14.dp))
         Button(
@@ -248,7 +301,7 @@ private fun LibraryStatusHero(context: Context) {
             modifier = Modifier.fillMaxWidth().height(52.dp),
             colors = ButtonDefaults.buttonColors(containerColor = DlCyan, contentColor = Color(0xFF001018)),
             shape = RoundedCornerShape(20.dp)
-        ) { Text("Open Update / Repair Center", fontWeight = FontWeight.Bold) }
+        ) { Text("Open Real Update / Repair Center", fontWeight = FontWeight.Bold) }
     }
 }
 
@@ -262,15 +315,16 @@ private fun CommunityPage() {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Community", color = DlWhite, fontSize = 42.sp, fontWeight = FontWeight.Black)
-        Text("Realtime chat direction for the global DLavie 26 community.", color = DlMuted)
-        CommunityRoom("Global Chat", "Discuss DLavie 26 with global players.", "1.2k online")
-        CommunityRoom("Indonesia Chat", "Ruang komunitas Indonesia.", "428 online")
-        CommunityRoom("Bug Report", "Report crash, data error, gameplay bug, or update failed.", "Support")
-        CommunityRoom("Mod Request", "Request kits, database, career mode, faces, or UI features.", "Open")
-        CommunityRoom("Gameplay Discussion", "Balancing, realism, tempo, AI, attribdb, cl.ini.", "Live")
+        Text("Chat will be enabled only after Supabase/Firebase backend is connected.", color = DlMuted)
         GlassPanel {
-            Text("Next Backend Step", color = DlWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text("Supabase schema sudah disiapkan untuk profile, feed, likes, comments, saves, reports, and community messages.", color = DlMuted)
+            Text("No backend connected", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Black)
+            Text("This page does not show fake messages, fake online users, fake rooms, or fake activity. Real global chat requires authentication, database, moderation, reports, and anti-spam rules.", color = DlMuted)
+        }
+        GlassPanel {
+            Text("Required backend features", color = DlWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            InfoLine("Auth", "Real user accounts, username, avatar, role, bans.")
+            InfoLine("Realtime", "Real community_messages table and realtime listener.")
+            InfoLine("Moderation", "Report, delete, mute, ban, audit log.")
         }
     }
 }
@@ -289,84 +343,26 @@ private fun ProfilePage() {
                 Modifier
                     .size(96.dp)
                     .clip(RoundedCornerShape(28.dp))
-                    .background(Color(0xFF485B63)),
+                    .background(Color(0xFF1A1D1C)),
                 contentAlignment = Alignment.Center
             ) {
-                Text("g", color = DlWhite, fontSize = 46.sp, fontWeight = FontWeight.Bold)
+                Text("DL", color = DlGreen, fontSize = 34.sp, fontWeight = FontWeight.Black)
             }
             Spacer(Modifier.width(18.dp))
             Column(Modifier.weight(1f)) {
-                Text("gibran al bukhary", color = DlWhite, fontSize = 28.sp, fontWeight = FontWeight.Black)
-                Text("@gibran_al_bukhary", color = DlMuted, fontSize = 16.sp)
+                Text("Not signed in", color = DlWhite, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Text("Account backend is not connected yet.", color = DlMuted, fontSize = 16.sp)
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill("Founder", DlGreen)
-                    Pill("Developer", DlCyan)
-                }
+                Pill("LOCAL", DlMuted)
             }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            ProfileStat("0", "Posts", Modifier.weight(1f))
-            ProfileStat("0", "Followers", Modifier.weight(1f))
-            ProfileStat("0", "Saved", Modifier.weight(1f))
         }
         GlassPanel {
             Text("Account Settings", color = DlWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            SettingLine("Edit Profile", "Username, display name, avatar, country")
-            SettingLine("Notifications", "Update alerts, replies, mentions")
-            SettingLine("Privacy", "Online status, country visibility, mentions")
-            SettingLine("Saved", "Saved updates, tutorials, comments")
+            Text("Profile, username, avatar, saved posts, comments, and notification settings will be enabled after real authentication is connected. This screen does not display fake user identity.", color = DlMuted)
         }
         GlassPanel {
             Text("Developer Console", color = DlWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text("Developer/admin tools will be moved to a private DLavie Console APK. Public users will not see maintenance, push notification, ban, or publish controls.", color = DlMuted)
-        }
-    }
-}
-
-@Composable
-private fun OfficialUpdateCard(title: String, subtitle: String, body: String, action: String, onAction: () -> Unit, stats: String) {
-    GlassPanel {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(150.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFF2C0745), Color(0xFF0A1A14), Color(0xFF141414))))
-        ) {
-            Text("DLavie 26", color = Color.White.copy(alpha = 0.85f), fontSize = 28.sp, fontWeight = FontWeight.Black, modifier = Modifier.align(Alignment.Center))
-            Pill("OFFICIAL", DlGreen, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp))
-        }
-        Spacer(Modifier.height(14.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(44.dp).clip(CircleShape).background(DlGreen), contentAlignment = Alignment.Center) { Text("DL", color = Color(0xFF001407), fontWeight = FontWeight.Black) }
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text("DLavie Official  ✓", color = DlWhite, fontWeight = FontWeight.Black)
-                Text(subtitle, color = DlMuted, fontSize = 12.sp)
-            }
-            Pill("Public", DlMuted)
-        }
-        Spacer(Modifier.height(14.dp))
-        Text(title, color = DlWhite, fontSize = 24.sp, fontWeight = FontWeight.Black)
-        Text(body, color = DlMuted, fontSize = 15.sp)
-        Spacer(Modifier.height(14.dp))
-        Button(onClick = onAction, colors = ButtonDefaults.buttonColors(containerColor = DlGreen, contentColor = Color(0xFF001407)), shape = RoundedCornerShape(18.dp)) { Text(action, fontWeight = FontWeight.Bold) }
-        Spacer(Modifier.height(10.dp))
-        Text(stats, color = DlMuted, fontSize = 13.sp)
-    }
-}
-
-@Composable
-private fun CommunityPreviewCard(onClick: () -> Unit) {
-    GlassPanel(modifier = Modifier.clickable { onClick() }) {
-        Text("Community Rooms", color = DlWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text("Global Chat · Bug Report · Mod Request · Gameplay Discussion", color = DlMuted)
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Pill("Global", DlGreen)
-            Pill("Bug Report", DlCyan)
-            Pill("Mod Request", DlMuted)
+            Text("Developer/admin tools are not exposed in this public launcher. Maintenance mode, push notification, publishing, banning, and moderation belong in private DLavie Console with backend role checks.", color = DlMuted)
         }
     }
 }
@@ -381,24 +377,9 @@ private fun LibraryItem(title: String, subtitle: String, status: String, statusC
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, color = DlWhite, fontSize = 18.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, color = DlMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, color = DlMuted, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
             Pill(status, statusColor)
-        }
-    }
-}
-
-@Composable
-private fun CommunityRoom(title: String, body: String, meta: String) {
-    GlassPanel {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(52.dp).clip(RoundedCornerShape(18.dp)).background(Color(0xFF08231A)), contentAlignment = Alignment.Center) { Text("#", color = DlGreen, fontSize = 24.sp, fontWeight = FontWeight.Black) }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, color = DlWhite, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                Text(body, color = DlMuted)
-            }
-            Pill(meta, DlGreen)
         }
     }
 }
@@ -469,18 +450,46 @@ private fun StatChip(title: String, value: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun ProfileStat(value: String, label: String, modifier: Modifier = Modifier) {
-    GlassPanel(modifier) {
-        Text(value, color = DlWhite, fontSize = 24.sp, fontWeight = FontWeight.Black)
-        Text(label, color = DlMuted, fontSize = 13.sp)
+private fun InfoLine(title: String, body: String) {
+    Spacer(Modifier.height(8.dp))
+    Text(title, color = DlMuted, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+    Text(body, color = DlWhite, fontSize = 14.sp)
+}
+
+private fun loadManifestState(): ManifestState {
+    return try {
+        val json = fetchJson(DEFAULT_MANIFEST)
+        val notes = json.optJSONArray("releaseNotes")
+        ManifestState(
+            loading = false,
+            status = json.optJSONObject("status")?.optString("message") ?: "Manifest loaded from GitHub.",
+            versionName = json.optString("latestVersionName", "-"),
+            versionCode = json.optInt("latestVersionCode", 0),
+            releaseNotes = if (notes != null) List(notes.length()) { i -> notes.optString(i) } else emptyList()
+        )
+    } catch (t: Throwable) {
+        ManifestState(loading = false, status = "Manifest check failed: ${t.message}")
     }
 }
 
-@Composable
-private fun SettingLine(title: String, body: String) {
-    Spacer(Modifier.height(12.dp))
-    Text(title, color = DlWhite, fontWeight = FontWeight.Bold)
-    Text(body, color = DlMuted, fontSize = 13.sp)
+private fun fetchJson(url: String): JSONObject {
+    val c = URL(url).openConnection() as HttpURLConnection
+    c.connectTimeout = 20000
+    c.readTimeout = 30000
+    return try {
+        BufferedReader(InputStreamReader(c.inputStream)).use { JSONObject(it.readText()) }
+    } finally {
+        c.disconnect()
+    }
+}
+
+private fun isPackageInstalled(context: Context, packageName: String): Boolean {
+    return try {
+        context.packageManager.getPackageInfo(packageName, 0)
+        true
+    } catch (_: PackageManager.NameNotFoundException) {
+        false
+    }
 }
 
 private fun launchFifa(context: Context) {
@@ -496,17 +505,10 @@ private fun openAdvancedUpdater(context: Context) {
     context.startActivity(Intent(context, GameHubActivity::class.java))
 }
 
-private fun shareDLavie(context: Context) {
-    val share = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, "DLavie 26 - FIFA 16 Mobile 2026 Mod Hub")
-    }
-    context.startActivity(Intent.createChooser(share, "Share DLavie 26"))
-}
-
 private val DlBlack = Color(0xFF050606)
 private val DlCard = Color(0xFF101111)
 private val DlWhite = Color(0xFFF7F7F7)
 private val DlMuted = Color(0xFF7A7F83)
 private val DlGreen = Color(0xFF20E070)
 private val DlCyan = Color(0xFF28D7FF)
+private val DlRed = Color(0xFFFF4D4D)
