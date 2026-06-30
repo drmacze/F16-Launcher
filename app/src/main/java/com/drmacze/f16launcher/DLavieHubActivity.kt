@@ -181,9 +181,9 @@ private fun FeedPage(onOpenLibrary: () -> Unit, onOpenCommunity: () -> Unit) {
             onPlay = { launchFifa(context) },
             onLibrary = onOpenLibrary,
             onCommunity = onOpenCommunity,
-            onRepair = { openAdvancedUpdater(context) }
+            onRepair = onOpenLibrary
         )
-        ManifestCard(manifest, onRefresh = { refreshManifest() }, onOpenUpdater = { openAdvancedUpdater(context) })
+        ManifestCard(manifest, onRefresh = { refreshManifest() }, onOpenUpdater = onOpenLibrary)
         ProductionPolicyCard()
     }
 }
@@ -210,7 +210,7 @@ private fun HeaderBlock() {
         }
         Spacer(Modifier.height(18.dp))
         Text("Football Reborn", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = DlFont)
-        Text("Production shell only. Fake posts, fake counts, fake chat, and fake profile data are not shown.", color = DlMuted, fontSize = 14.sp, fontFamily = DlFont)
+        Text("Public launcher tidak menampilkan source URL, manifest path, patch endpoint, atau developer tools.", color = DlMuted, fontSize = 14.sp, fontFamily = DlFont)
     }
 }
 
@@ -246,8 +246,8 @@ private fun ManifestCard(state: HubManifestState, onRefresh: () -> Unit, onOpenU
                 IconTile(HubIcon.Refresh, DlCyan)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Update Manifest", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
-                    Text(DEFAULT_MANIFEST, color = DlMuted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, fontFamily = DlFont)
+                    Text("Update Channel", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
+                    Text("Managed by DLavie service", color = DlMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = DlFont)
                 }
             }
             Pill(if (state.loading) "CHECK" else "LIVE", if (state.loading) DlMuted else DlGreen)
@@ -274,7 +274,7 @@ private fun ManifestCard(state: HubManifestState, onRefresh: () -> Unit, onOpenU
             Button(onClick = onOpenUpdater, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = DlGreen, contentColor = Color(0xFF001407))) {
                 IconMark(HubIcon.Repair, Color(0xFF001407), Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Updater", fontWeight = FontWeight.Bold, fontFamily = DlFont)
+                Text("Status", fontWeight = FontWeight.Bold, fontFamily = DlFont)
             }
         }
     }
@@ -283,9 +283,9 @@ private fun ManifestCard(state: HubManifestState, onRefresh: () -> Unit, onOpenU
 @Composable
 private fun ProductionPolicyCard() {
     GlassPanel {
-        SectionTitle(HubIcon.Info, "Production Data Policy")
+        SectionTitle(HubIcon.Info, "Protection Policy")
         Spacer(Modifier.height(8.dp))
-        Text("Feed posts, likes, comments, saves, chat rooms, and profiles will appear only after a real backend is connected. Until then, this launcher shows only real local/game/manifest states.", color = DlMuted, fontFamily = DlFont)
+        Text("Public launcher tidak membuka repository URL, raw manifest, patch endpoint, atau developer action. Detail teknis hanya untuk DLavie Console/private backend.", color = DlMuted, fontFamily = DlFont)
     }
 }
 
@@ -301,12 +301,10 @@ private fun LibraryPage() {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Library", color = DlWhite, fontSize = 42.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
-        Text("Real install and update actions. No fake validation state.", color = DlMuted, fontFamily = DlFont)
+        Text("Game status dan update channel tanpa menampilkan alamat internal.", color = DlMuted, fontFamily = DlFont)
         LibraryStatusHero(context, installed)
         LibraryItem("Game package", GAME_PACKAGE, if (installed) "INSTALLED" else "MISSING", if (installed) DlGreen else DlRed, if (installed) HubIcon.Check else HubIcon.Error) { launchFifa(context) }
-        LibraryItem("Update / Repair Center", "Open Advanced Shizuku/root updater for real patch and repair operations.", "OPEN", DlGreen, HubIcon.Repair) { openAdvancedUpdater(context) }
-        LibraryItem("Manifest source", DEFAULT_MANIFEST, "REMOTE", DlCyan, HubIcon.Refresh) { openAdvancedUpdater(context) }
-        LibraryItem("File verification", "Full SHA validation must be executed by the updater/installer flow, not guessed by this screen.", "REAL ONLY", DlMuted, HubIcon.Settings) { openAdvancedUpdater(context) }
+        LibraryItem("Update channel", "Managed by DLavie service.", "SECURE", DlGreen, HubIcon.Repair) { }
     }
 }
 
@@ -600,7 +598,7 @@ private fun loadHubManifestState(): HubManifestState {
             releaseNotes = if (notes != null) List(notes.length()) { i -> notes.optString(i) } else emptyList()
         )
     } catch (t: Throwable) {
-        HubManifestState(loading = false, status = "Manifest check failed: ${t.message}")
+        HubManifestState(loading = false, status = "Update channel check failed. Please try again later.")
     }
 }
 
