@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -133,7 +134,7 @@ private fun DLavie26HubApp() {
                     label = "dlavie-hub-tab",
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(bottom = 100.dp)
+                        .padding(bottom = 180.dp)
                 ) { selected ->
                     when (selected) {
                         HubTab.Feed -> FeedPage(onOpenLibrary = { tab = HubTab.Library }, onOpenCommunity = { tab = HubTab.Community })
@@ -203,8 +204,8 @@ private fun HeaderBlock() {
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("DLavie 26", color = DlWhite, fontSize = 34.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
-                Text("FIFA 16 Mobile 2026 Mod Hub", color = DlMuted, fontSize = 14.sp, fontFamily = DlFont)
+                Text("DLavie 26", color = DlWhite, fontSize = 30.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
+                Text("FIFA 16 Mobile 2026", color = DlMuted, fontSize = 14.sp, fontFamily = DlFont)
             }
             Pill("PROD", DlGreen)
         }
@@ -254,23 +255,14 @@ private fun ManifestCard(state: HubManifestState, onRefresh: () -> Unit, onOpenU
         }
         Spacer(Modifier.height(12.dp))
         Text(state.status, color = DlMuted, fontFamily = DlFont)
-        if (state.versionName != "-") {
-            Spacer(Modifier.height(10.dp))
-            HubInfoLine("Latest", state.versionName)
-            HubInfoLine("Version code", state.versionCode.toString())
-        }
         Spacer(Modifier.height(14.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(onClick = onRefresh, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = DlCyan, contentColor = Color(0xFF001018))) {
-                IconMark(HubIcon.Refresh, Color(0xFF001018), Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Check", fontWeight = FontWeight.Bold, fontFamily = DlFont)
-            }
-            Button(onClick = onOpenUpdater, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = DlGreen, contentColor = Color(0xFF001407))) {
-                IconMark(HubIcon.Repair, Color(0xFF001407), Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Data", fontWeight = FontWeight.Bold, fontFamily = DlFont)
-            }
+        Button(
+            onClick = onRefresh,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(18.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = DlCyan, contentColor = Color(0xFF001018))
+        ) {
+            Text("Check Update", fontWeight = FontWeight.Black, fontFamily = DlFont)
         }
     }
 }
@@ -418,12 +410,12 @@ private fun BottomHubNavigation(selected: HubTab, onSelect: (HubTab) -> Unit, mo
                     modifier = Modifier.weight(1f).height(if (active) 58.dp else 50.dp),
                     shape = RoundedCornerShape(26.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = if (active) Color(0xFF0E3A22) else Color.Transparent, contentColor = if (active) DlGreen else DlMuted),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = if (active) 8.dp else 0.dp)
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = if (active) 8.dp else 0.dp), contentPadding = PaddingValues(0.dp)
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         IconMark(item.icon, if (active) DlGreen else DlMuted, Modifier.size(if (active) 22.dp else 19.dp))
                         Spacer(Modifier.height(2.dp))
-                        Text(item.title, fontSize = if (active) 11.sp else 10.sp, fontWeight = if (active) FontWeight.Black else FontWeight.Medium, maxLines = 1, fontFamily = DlFont)
+                        Text(item.title, fontSize = if (active) 10.sp else 9.sp, fontWeight = if (active) FontWeight.Black else FontWeight.Medium, maxLines = 1, fontFamily = DlFont)
                     }
                 }
             }
@@ -445,10 +437,14 @@ private fun GlassPanel(modifier: Modifier = Modifier, content: @Composable Colum
 
 @Composable
 private fun ActionButton(label: String, icon: HubIcon, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    OutlinedButton(onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, Color(0xFF24302A))) {
-        IconMark(icon, DlGreen, Modifier.size(17.dp))
-        Spacer(Modifier.width(6.dp))
-        Text(label, color = DlGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp, fontFamily = DlFont, maxLines = 1)
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(48.dp),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, Color(0xFF24302A)),
+        contentPadding = PaddingValues(horizontal = 4.dp)
+    ) {
+        Text(label, color = DlGreen, fontWeight = FontWeight.Black, fontSize = 13.sp, fontFamily = DlFont, maxLines = 1)
     }
 }
 
