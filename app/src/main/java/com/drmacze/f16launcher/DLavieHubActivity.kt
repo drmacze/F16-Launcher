@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,29 +29,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AccountCircle
-import androidx.compose.material.icons.rounded.Build
-import androidx.compose.material.icons.rounded.ChatBubble
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
@@ -63,9 +49,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -85,11 +77,13 @@ import java.net.URL
 private const val GAME_PACKAGE = "com.ea.gp.fifaworld"
 private const val DEFAULT_MANIFEST = "https://raw.githubusercontent.com/drmacze/F16/main/updates/latest.json"
 
-private enum class HubTab(val title: String, val icon: ImageVector) {
-    Feed("Feed", Icons.Rounded.Home),
-    Library("Library", Icons.Rounded.Folder),
-    Community("Community", Icons.Rounded.ChatBubble),
-    Profile("Profile", Icons.Rounded.AccountCircle)
+private enum class HubIcon { Home, Library, Community, Profile, Play, Repair, Refresh, Info, Check, Error, Settings }
+
+private enum class HubTab(val title: String, val icon: HubIcon) {
+    Feed("Feed", HubIcon.Home),
+    Library("Library", HubIcon.Library),
+    Community("Community", HubIcon.Community),
+    Profile("Profile", HubIcon.Profile)
 }
 
 private data class ManifestState(
@@ -223,7 +217,7 @@ private fun HeaderBlock() {
 @Composable
 private fun QuickActions(onPlay: () -> Unit, onLibrary: () -> Unit, onCommunity: () -> Unit, onRepair: () -> Unit) {
     GlassPanel {
-        SectionTitle(Icons.Rounded.PlayArrow, "Quick Actions")
+        SectionTitle(HubIcon.Play, "Quick Actions")
         Spacer(Modifier.height(12.dp))
         Button(
             onClick = onPlay,
@@ -231,15 +225,15 @@ private fun QuickActions(onPlay: () -> Unit, onLibrary: () -> Unit, onCommunity:
             colors = ButtonDefaults.buttonColors(containerColor = DlGreen, contentColor = Color(0xFF001407)),
             shape = RoundedCornerShape(20.dp)
         ) {
-            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(21.dp))
+            IconMark(HubIcon.Play, Color(0xFF001407), Modifier.size(21.dp))
             Spacer(Modifier.width(8.dp))
             Text("Play FIFA 16", fontWeight = FontWeight.Black, fontFamily = DlFont)
         }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            ActionButton("Library", Icons.Rounded.Folder, onLibrary, Modifier.weight(1f))
-            ActionButton("Repair", Icons.Rounded.Build, onRepair, Modifier.weight(1f))
-            ActionButton("Community", Icons.Rounded.ChatBubble, onCommunity, Modifier.weight(1f))
+            ActionButton("Library", HubIcon.Library, onLibrary, Modifier.weight(1f))
+            ActionButton("Repair", HubIcon.Repair, onRepair, Modifier.weight(1f))
+            ActionButton("Community", HubIcon.Community, onCommunity, Modifier.weight(1f))
         }
     }
 }
@@ -249,7 +243,7 @@ private fun ManifestCard(state: ManifestState, onRefresh: () -> Unit, onOpenUpda
     GlassPanel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                IconTile(Icons.Rounded.Refresh, DlCyan)
+                IconTile(HubIcon.Refresh, DlCyan)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Update Manifest", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
@@ -273,12 +267,12 @@ private fun ManifestCard(state: ManifestState, onRefresh: () -> Unit, onOpenUpda
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             Button(onClick = onRefresh, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = DlCyan, contentColor = Color(0xFF001018))) {
-                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                IconMark(HubIcon.Refresh, Color(0xFF001018), Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Refresh", fontWeight = FontWeight.Bold, fontFamily = DlFont)
             }
             Button(onClick = onOpenUpdater, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = DlGreen, contentColor = Color(0xFF001407))) {
-                Icon(Icons.Rounded.Build, contentDescription = null, modifier = Modifier.size(18.dp))
+                IconMark(HubIcon.Repair, Color(0xFF001407), Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Updater", fontWeight = FontWeight.Bold, fontFamily = DlFont)
             }
@@ -289,7 +283,7 @@ private fun ManifestCard(state: ManifestState, onRefresh: () -> Unit, onOpenUpda
 @Composable
 private fun ProductionPolicyCard() {
     GlassPanel {
-        SectionTitle(Icons.Rounded.Info, "Production Data Policy")
+        SectionTitle(HubIcon.Info, "Production Data Policy")
         Spacer(Modifier.height(8.dp))
         Text("Feed posts, likes, comments, saves, chat rooms, and profiles will appear only after a real backend is connected. Until then, this launcher shows only real local/game/manifest states.", color = DlMuted, fontFamily = DlFont)
     }
@@ -309,10 +303,10 @@ private fun LibraryPage() {
         Text("Library", color = DlWhite, fontSize = 42.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
         Text("Real install and update actions. No fake validation state.", color = DlMuted, fontFamily = DlFont)
         LibraryStatusHero(context, installed)
-        LibraryItem("Game package", GAME_PACKAGE, if (installed) "INSTALLED" else "MISSING", if (installed) DlGreen else DlRed, if (installed) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline) { launchFifa(context) }
-        LibraryItem("Update / Repair Center", "Open Advanced Shizuku/root updater for real patch and repair operations.", "OPEN", DlGreen, Icons.Rounded.Build) { openAdvancedUpdater(context) }
-        LibraryItem("Manifest source", DEFAULT_MANIFEST, "REMOTE", DlCyan, Icons.Rounded.Refresh) { openAdvancedUpdater(context) }
-        LibraryItem("File verification", "Full SHA validation must be executed by the updater/installer flow, not guessed by this screen.", "REAL ONLY", DlMuted, Icons.Rounded.Settings) { openAdvancedUpdater(context) }
+        LibraryItem("Game package", GAME_PACKAGE, if (installed) "INSTALLED" else "MISSING", if (installed) DlGreen else DlRed, if (installed) HubIcon.Check else HubIcon.Error) { launchFifa(context) }
+        LibraryItem("Update / Repair Center", "Open Advanced Shizuku/root updater for real patch and repair operations.", "OPEN", DlGreen, HubIcon.Repair) { openAdvancedUpdater(context) }
+        LibraryItem("Manifest source", DEFAULT_MANIFEST, "REMOTE", DlCyan, HubIcon.Refresh) { openAdvancedUpdater(context) }
+        LibraryItem("File verification", "Full SHA validation must be executed by the updater/installer flow, not guessed by this screen.", "REAL ONLY", DlMuted, HubIcon.Settings) { openAdvancedUpdater(context) }
     }
 }
 
@@ -321,7 +315,7 @@ private fun LibraryStatusHero(context: Context, installed: Boolean) {
     GlassPanel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                IconTile(if (installed) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline, if (installed) DlGreen else DlRed)
+                IconTile(if (installed) HubIcon.Check else HubIcon.Error, if (installed) DlGreen else DlRed)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text("DLavie 26 Status", color = DlWhite, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
@@ -343,7 +337,7 @@ private fun LibraryStatusHero(context: Context, installed: Boolean) {
             colors = ButtonDefaults.buttonColors(containerColor = DlCyan, contentColor = Color(0xFF001018)),
             shape = RoundedCornerShape(20.dp)
         ) {
-            Icon(Icons.Rounded.Build, contentDescription = null, modifier = Modifier.size(19.dp))
+            IconMark(HubIcon.Repair, Color(0xFF001018), Modifier.size(19.dp))
             Spacer(Modifier.width(8.dp))
             Text("Open Real Update / Repair Center", fontWeight = FontWeight.Bold, fontFamily = DlFont)
         }
@@ -362,12 +356,12 @@ private fun CommunityPage() {
         Text("Community", color = DlWhite, fontSize = 42.sp, fontWeight = FontWeight.Black, fontFamily = DlFont)
         Text("Chat will be enabled only after Supabase/Firebase backend is connected.", color = DlMuted, fontFamily = DlFont)
         GlassPanel {
-            SectionTitle(Icons.Rounded.ChatBubble, "No backend connected")
+            SectionTitle(HubIcon.Community, "No backend connected")
             Spacer(Modifier.height(8.dp))
             Text("This page does not show fake messages, fake online users, fake rooms, or fake activity. Real global chat requires authentication, database, moderation, reports, and anti-spam rules.", color = DlMuted, fontFamily = DlFont)
         }
         GlassPanel {
-            SectionTitle(Icons.Rounded.Settings, "Required backend features")
+            SectionTitle(HubIcon.Settings, "Required backend features")
             InfoLine("Auth", "Real user accounts, username, avatar, role, bans.")
             InfoLine("Realtime", "Real community_messages table and realtime listener.")
             InfoLine("Moderation", "Report, delete, mute, ban, audit log.")
@@ -392,7 +386,7 @@ private fun ProfilePage() {
                     .background(Color(0xFF1A1D1C)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Rounded.Person, contentDescription = null, tint = DlGreen, modifier = Modifier.size(48.dp))
+                IconMark(HubIcon.Profile, DlGreen, Modifier.size(48.dp))
             }
             Spacer(Modifier.width(18.dp))
             Column(Modifier.weight(1f)) {
@@ -403,12 +397,12 @@ private fun ProfilePage() {
             }
         }
         GlassPanel {
-            SectionTitle(Icons.Rounded.AccountCircle, "Account Settings")
+            SectionTitle(HubIcon.Profile, "Account Settings")
             Spacer(Modifier.height(8.dp))
             Text("Profile, username, avatar, saved posts, comments, and notification settings will be enabled after real authentication is connected. This screen does not display fake user identity.", color = DlMuted, fontFamily = DlFont)
         }
         GlassPanel {
-            SectionTitle(Icons.Rounded.Settings, "Developer Console")
+            SectionTitle(HubIcon.Settings, "Developer Console")
             Spacer(Modifier.height(8.dp))
             Text("Developer/admin tools are not exposed in this public launcher. Maintenance mode, push notification, publishing, banning, and moderation belong in private DLavie Console with backend role checks.", color = DlMuted, fontFamily = DlFont)
         }
@@ -416,7 +410,7 @@ private fun ProfilePage() {
 }
 
 @Composable
-private fun LibraryItem(title: String, subtitle: String, status: String, statusColor: Color, icon: ImageVector, onClick: () -> Unit) {
+private fun LibraryItem(title: String, subtitle: String, status: String, statusColor: Color, icon: HubIcon, onClick: () -> Unit) {
     GlassPanel(modifier = Modifier.clickable { onClick() }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconTile(icon, statusColor)
@@ -450,7 +444,7 @@ private fun BottomHubNavigation(selected: HubTab, onSelect: (HubTab) -> Unit, mo
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = if (active) 8.dp else 0.dp)
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(item.icon, contentDescription = item.title, modifier = Modifier.size(if (active) 22.dp else 19.dp))
+                        IconMark(item.icon, if (active) DlGreen else DlMuted, Modifier.size(if (active) 22.dp else 19.dp))
                         Spacer(Modifier.height(2.dp))
                         Text(item.title, fontSize = if (active) 11.sp else 10.sp, fontWeight = if (active) FontWeight.Black else FontWeight.Medium, maxLines = 1, fontFamily = DlFont)
                     }
@@ -473,27 +467,100 @@ private fun GlassPanel(modifier: Modifier = Modifier, content: @Composable Colum
 }
 
 @Composable
-private fun ActionButton(label: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun ActionButton(label: String, icon: HubIcon, onClick: () -> Unit, modifier: Modifier = Modifier) {
     OutlinedButton(onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, Color(0xFF24302A))) {
-        Icon(icon, contentDescription = null, tint = DlGreen, modifier = Modifier.size(17.dp))
+        IconMark(icon, DlGreen, Modifier.size(17.dp))
         Spacer(Modifier.width(6.dp))
         Text(label, color = DlGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp, fontFamily = DlFont, maxLines = 1)
     }
 }
 
 @Composable
-private fun IconTile(icon: ImageVector, tint: Color) {
+private fun IconTile(icon: HubIcon, tint: Color) {
     Box(Modifier.size(54.dp).clip(RoundedCornerShape(18.dp)).background(Color(0xFF071F1E)), contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp))
+        IconMark(icon, tint, Modifier.size(26.dp))
     }
 }
 
 @Composable
-private fun SectionTitle(icon: ImageVector, title: String) {
+private fun SectionTitle(icon: HubIcon, title: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = null, tint = DlGreen, modifier = Modifier.size(22.dp))
+        IconMark(icon, DlGreen, Modifier.size(22.dp))
         Spacer(Modifier.width(8.dp))
         Text(title, color = DlWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = DlFont)
+    }
+}
+
+@Composable
+private fun IconMark(type: HubIcon, tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val s = size.minDimension
+        val stroke = Stroke(width = s * 0.085f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        fun p(x: Float, y: Float) = Offset(s * x, s * y)
+        when (type) {
+            HubIcon.Home -> {
+                drawLine(tint, p(0.15f, 0.48f), p(0.50f, 0.18f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, p(0.50f, 0.18f), p(0.85f, 0.48f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawRoundRect(tint, p(0.25f, 0.44f), Size(s * 0.50f, s * 0.40f), CornerRadius(s * 0.06f), style = stroke)
+                drawLine(tint, p(0.47f, 0.84f), p(0.47f, 0.64f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, p(0.53f, 0.64f), p(0.53f, 0.84f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            }
+            HubIcon.Library -> {
+                drawRoundRect(tint, p(0.16f, 0.28f), Size(s * 0.68f, s * 0.52f), CornerRadius(s * 0.08f), style = stroke)
+                drawLine(tint, p(0.24f, 0.28f), p(0.36f, 0.18f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, p(0.36f, 0.18f), p(0.52f, 0.28f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            }
+            HubIcon.Community -> {
+                drawRoundRect(tint, p(0.15f, 0.20f), Size(s * 0.70f, s * 0.48f), CornerRadius(s * 0.12f), style = stroke)
+                drawLine(tint, p(0.34f, 0.68f), p(0.26f, 0.84f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, p(0.43f, 0.68f), p(0.26f, 0.84f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            }
+            HubIcon.Profile -> {
+                drawCircle(tint, radius = s * 0.16f, center = p(0.50f, 0.34f), style = stroke)
+                drawRoundRect(tint, p(0.26f, 0.60f), Size(s * 0.48f, s * 0.24f), CornerRadius(s * 0.12f), style = stroke)
+            }
+            HubIcon.Play -> {
+                val path = Path().apply { moveTo(s * 0.34f, s * 0.22f); lineTo(s * 0.34f, s * 0.78f); lineTo(s * 0.78f, s * 0.50f); close() }
+                drawPath(path, tint)
+            }
+            HubIcon.Repair -> {
+                drawCircle(tint, radius = s * 0.20f, center = p(0.50f, 0.50f), style = stroke)
+                drawCircle(tint, radius = s * 0.07f, center = p(0.50f, 0.50f), style = stroke)
+                listOf(0.18f to 0.50f, 0.82f to 0.50f, 0.50f to 0.18f, 0.50f to 0.82f).forEach { (x, y) -> drawLine(tint, p(0.50f, 0.50f), p(x, y), strokeWidth = stroke.width * 0.8f, cap = StrokeCap.Round) }
+            }
+            HubIcon.Refresh -> {
+                drawArc(tint, startAngle = -35f, sweepAngle = 285f, useCenter = false, topLeft = p(0.20f, 0.20f), size = Size(s * 0.60f, s * 0.60f), style = stroke)
+                drawLine(tint, p(0.74f, 0.25f), p(0.82f, 0.25f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, p(0.76f, 0.17f), p(0.82f, 0.25f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            }
+            HubIcon.Info -> {
+                drawCircle(tint, radius = s * 0.35f, center = p(0.50f, 0.50f), style = stroke)
+                drawCircle(tint, radius = s * 0.025f, center = p(0.50f, 0.34f))
+                drawLine(tint, p(0.50f, 0.47f), p(0.50f, 0.67f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            }
+            HubIcon.Check -> {
+                drawCircle(tint, radius = s * 0.36f, center = p(0.50f, 0.50f), style = stroke)
+                drawLine(tint, p(0.34f, 0.52f), p(0.45f, 0.64f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, p(0.45f, 0.64f), p(0.68f, 0.38f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            }
+            HubIcon.Error -> {
+                drawCircle(tint, radius = s * 0.36f, center = p(0.50f, 0.50f), style = stroke)
+                drawLine(tint, p(0.50f, 0.28f), p(0.50f, 0.56f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawCircle(tint, radius = s * 0.025f, center = p(0.50f, 0.72f))
+            }
+            HubIcon.Settings -> {
+                drawCircle(tint, radius = s * 0.19f, center = p(0.50f, 0.50f), style = stroke)
+                for (i in 0 until 8) {
+                    val a = (i * 45.0).toFloat()
+                    val rad = Math.toRadians(a.toDouble())
+                    val x1 = 0.50f + kotlin.math.cos(rad).toFloat() * 0.30f
+                    val y1 = 0.50f + kotlin.math.sin(rad).toFloat() * 0.30f
+                    val x2 = 0.50f + kotlin.math.cos(rad).toFloat() * 0.40f
+                    val y2 = 0.50f + kotlin.math.sin(rad).toFloat() * 0.40f
+                    drawLine(tint, p(x1, y1), p(x2, y2), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                }
+            }
+        }
     }
 }
 
