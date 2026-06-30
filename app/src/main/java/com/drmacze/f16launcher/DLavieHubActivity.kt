@@ -59,16 +59,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.util.zip.ZipInputStream
 import kotlin.math.max
 
 private const val HUB_GAME_PACKAGE = "com.ea.gp.fifaworld"
@@ -107,7 +108,10 @@ private data class HubUpdateState(
     val progressText: String = "",
     val speedText: String = "-",
     val etaText: String = "-",
-    val sizeText: String = "-"
+    val sizeText: String = "-",
+    val releaseNotes: List<String> = emptyList(),
+    val knownIssues: List<String> = emptyList(),
+    val patchName: String = ""
 )
 
 class DLavieHubActivity : ComponentActivity() {
@@ -253,7 +257,7 @@ private fun HubDataScreen() {
             .padding(horizontal = 20.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        HubPageTitle("Data", "Update, repair, download, dan Shizuku.")
+        HubPageTitle("Update", "Patch, repair, download, dan release notes.")
         HubStatusCard(installed = installed, onPlay = { hubLaunchGame(context) })
         HubUpdateCard(
             state = updateState,
@@ -272,22 +276,20 @@ private fun HubDataScreen() {
             },
             onInstall = {
                 scope.launch {
-                    updateState = updateState.copy(checking = true, message = "Installing update...", progressFraction = 0f, progressText = "Applying patch")
-                    updateState = withContext(Dispatchers.IO) { hubInstallInlinePatch(context, repairMode = false) }
+                    updateState = updateState.copy(checking = true, message = "Installing update...", progressFraction = 0.08f, progressText = "Preparing installer")
+                    updateState = withContext(Dispatchers.IO) { hubInstallUpdate(context, repairMode = false) }
                 }
             },
             onRepair = {
                 scope.launch {
-                    updateState = updateState.copy(checking = true, message = "Repairing data...", progressFraction = 0f, progressText = "Writing verified patch")
-                    updateState = withContext(Dispatchers.IO) { hubInstallInlinePatch(context, repairMode = true) }
+                    updateState = updateState.copy(checking = true, message = "Repairing data...", progressFraction = 0.08f, progressText = "Writing verified patch")
+                    updateState = withContext(Dispatchers.IO) { hubInstallUpdate(context, repairMode = true) }
                 }
             },
             onDownload = {
                 scope.launch {
                     updateState = updateState.copy(checking = true, message = "Preparing download...", progressFraction = 0f, progressText = "Starting")
-                    updateState = hubDownloadPatchZip(context) { progress ->
-                        updateState = progress
-                    }
+                    updateState = hubDownloadPatchZip(context) { progress -> updateState = progress }
                 }
             }
         )
@@ -321,7 +323,7 @@ private fun HubUpdateCard(
             HubIconTile(HubMark.Shield, badgeColor)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("Update", color = HubWhite, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = HubFont, maxLines = 1)
+                Text("Update Center", color = HubWhite, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = HubFont, maxLines = 1)
                 Text(state.message, color = HubMuted, fontSize = 14.sp, fontFamily = HubFont, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
             HubPill(if (state.checking) "WAIT" else state.badge, badgeColor)
@@ -335,6 +337,10 @@ private fun HubUpdateCard(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             HubInfoBox("Shizuku", state.shizukuState, Modifier.weight(1f))
             HubInfoBox("Data", state.dataMarker, Modifier.weight(1f))
+        }
+        if (state.patchName.isNotBlank()) {
+            Spacer(Modifier.height(10.dp))
+            HubInfoBox("Patch", state.patchName, Modifier.fillMaxWidth())
         }
         if (state.progressText.isNotBlank()) {
             Spacer(Modifier.height(12.dp))
@@ -353,60 +359,42 @@ private fun HubUpdateCard(
         }
         if (state.canRequestPermission) {
             Spacer(Modifier.height(10.dp))
-            Button(
-                onClick = onAllowShizuku,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(18.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = HubGreen, contentColor = Color(0xFF001407)),
-                contentPadding = PaddingValues(0.dp),
-                enabled = !state.checking
-            ) {
-                Text("Allow Shizuku", fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
-            }
+            HubActionButton("Allow Shizuku", HubGreen, onAllowShizuku, !state.checking)
         }
         if (state.canDownload) {
             Spacer(Modifier.height(10.dp))
-            Button(
-                onClick = onDownload,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(18.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = HubCyan, contentColor = Color(0xFF001018)),
-                contentPadding = PaddingValues(0.dp),
-                enabled = !state.checking
-            ) {
-                Text("Download Patch", fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
-            }
+            HubActionButton("Download Patch", HubCyan, onDownload, !state.checking)
         }
         if (state.canInstall) {
             Spacer(Modifier.height(10.dp))
-            Button(
-                onClick = onInstall,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(18.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = HubGreen, contentColor = Color(0xFF001407)),
-                contentPadding = PaddingValues(0.dp),
-                enabled = !state.checking
-            ) {
-                Text("Install Update", fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
-            }
+            HubActionButton("Install Update", HubGreen, onInstall, !state.checking)
         }
         if (state.canRepair) {
             Spacer(Modifier.height(10.dp))
-            Button(
-                onClick = onRepair,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(18.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = HubGreen, contentColor = Color(0xFF001407)),
-                contentPadding = PaddingValues(0.dp),
-                enabled = !state.checking
-            ) {
-                Text("Repair Data", fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
-            }
+            HubActionButton("Repair Data", HubGreen, onRepair, !state.checking)
         }
         if (state.showGuide) {
             Spacer(Modifier.height(12.dp))
             HubGuideCard()
         }
+        if (state.releaseNotes.isNotEmpty() || state.knownIssues.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            HubReleaseNotes(state.releaseNotes, state.knownIssues)
+        }
+    }
+}
+
+@Composable
+private fun HubActionButton(label: String, color: Color, onClick: () -> Unit, enabled: Boolean) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().height(48.dp),
+        shape = RoundedCornerShape(18.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color(0xFF001407)),
+        contentPadding = PaddingValues(0.dp),
+        enabled = enabled
+    ) {
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
     }
 }
 
@@ -431,6 +419,26 @@ private fun HubDownloadProgress(state: HubUpdateState) {
             }
             Spacer(Modifier.height(8.dp))
             Text("${state.sizeText} • ${state.speedText} • ETA ${state.etaText}", color = HubMuted, fontSize = 12.sp, fontFamily = HubFont, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun HubReleaseNotes(notes: List<String>, issues: List<String>) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(0xFF0B0F0E),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, HubBorder)
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Release Notes", color = HubWhite, fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
+            notes.take(4).forEach { Text("• $it", color = HubMuted, fontSize = 13.sp, fontFamily = HubFont) }
+            if (issues.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text("Known Issues", color = HubWhite, fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = HubFont)
+                issues.take(3).forEach { Text("• $it", color = HubMuted, fontSize = 13.sp, fontFamily = HubFont) }
+            }
         }
     }
 }
@@ -707,12 +715,19 @@ private fun hubCheckUpdate(context: Context): HubUpdateState {
         val json = hubFetchManifestJson()
         val latestCode = json.optInt("latestVersionCode", 0)
         val latestName = json.optString("latestVersionName", "Unknown")
-        val hasInlinePatch = hubFindInlinePatch(json, localCode, latestCode) != null
-        val hasRepairPatch = hubFindRepairInlinePatch(json, latestCode) != null
-        val hasZipPatch = hubFindZipPatch(json, localCode, latestCode) != null
+        val notes = hubJsonStringList(json.optJSONArray("releaseNotes"))
+        val issues = hubJsonStringList(json.optJSONArray("knownIssues"))
+        val inlinePatch = hubFindInlinePatch(json, localCode, latestCode)
+        val repairPatch = hubFindRepairInlinePatch(json, latestCode)
+        val zipPatch = hubFindZipPatch(json, localCode, latestCode)
+        val hasInlinePatch = inlinePatch != null
+        val hasRepairPatch = repairPatch != null
+        val hasZipPatch = zipPatch != null
+        val zipReady = zipPatch != null && hubCachedZipVerified(context, zipPatch, localCode, latestCode)
         val needsUpdate = latestCode > localCode
         val dataNeedsRepair = latestCode > 0 && !hubMarkerLooksVerified(marker) && shizuku == "Ready" && hasRepairPatch
         val needsPermission = (needsUpdate || dataNeedsRepair) && shizuku == "Permission"
+        val patchName = (inlinePatch ?: zipPatch ?: repairPatch)?.optString("name", "") ?: ""
         HubUpdateState(
             checking = false,
             localCode = localCode,
@@ -731,6 +746,7 @@ private fun hubCheckUpdate(context: Context): HubUpdateState {
             message = when {
                 dataNeedsRepair -> "Versi terbaru, tapi data belum terverifikasi. Jalankan Repair Data."
                 needsUpdate && shizuku == "Ready" && hasInlinePatch -> "Update tersedia. Siap install otomatis."
+                needsUpdate && shizuku == "Ready" && zipReady -> "Patch sudah terdownload dan terverifikasi. Siap install."
                 needsUpdate && shizuku == "Ready" && hasZipPatch -> "Patch tersedia. Download dan verifikasi SHA terlebih dulu."
                 needsUpdate && shizuku == "Permission" -> "Update tersedia. Izinkan Shizuku dulu."
                 needsUpdate && (shizuku == "Inactive" || shizuku == "Missing") -> "Update tersedia. Aktifkan Shizuku untuk install otomatis."
@@ -739,14 +755,20 @@ private fun hubCheckUpdate(context: Context): HubUpdateState {
                 latestCode > 0 -> "Versi kamu terbaru, data perlu diverifikasi."
                 else -> "Channel aktif."
             },
-            canInstall = needsUpdate && hasInlinePatch && shizuku == "Ready",
+            canInstall = needsUpdate && shizuku == "Ready" && (hasInlinePatch || zipReady),
             canRepair = dataNeedsRepair,
-            canDownload = needsUpdate && hasZipPatch,
-            canRequestPermission = needsPermission || (needsUpdate && hasInlinePatch && shizuku == "Permission"),
+            canDownload = needsUpdate && hasZipPatch && !zipReady,
+            canRequestPermission = needsPermission || (needsUpdate && (hasInlinePatch || hasZipPatch) && shizuku == "Permission"),
             showGuide = (needsUpdate || dataNeedsRepair) && shizuku != "Ready",
-            progressFraction = 0f,
-            progressText = "",
-            sizeText = if (hasZipPatch) "Patch zip" else "Inline patch"
+            sizeText = when {
+                zipReady -> "Cached"
+                hasZipPatch -> hubPatchSizeLabel(zipPatch)
+                hasInlinePatch -> "Inline patch"
+                else -> "-"
+            },
+            releaseNotes = notes,
+            knownIssues = issues,
+            patchName = patchName
         )
     } catch (_: Throwable) {
         HubUpdateState(
@@ -763,51 +785,46 @@ private fun hubCheckUpdate(context: Context): HubUpdateState {
     }
 }
 
-private fun hubInstallInlinePatch(context: Context, repairMode: Boolean): HubUpdateState {
+private fun hubInstallUpdate(context: Context, repairMode: Boolean): HubUpdateState {
     val checked = hubCheckUpdate(context)
     if (checked.shizukuState != "Ready") {
         return checked.copy(badge = "SHIZUKU", message = "Shizuku belum Ready.", canInstall = false, canRepair = false, showGuide = true)
     }
-    return try {
-        val json = hubFetchManifestJson()
-        val patch = if (repairMode) {
-            hubFindRepairInlinePatch(json, checked.latestCode)
-        } else {
-            hubFindInlinePatch(json, checked.localCode, checked.latestCode)
-        } ?: return checked.copy(message = "Patch tidak cocok untuk versi lokal.", canInstall = false, canRepair = checked.canRepair)
+    val json = try { hubFetchManifestJson() } catch (_: Throwable) {
+        return checked.copy(badge = "OFFLINE", message = "Gagal mengambil manifest update.")
+    }
+    return if (repairMode) {
+        val repairPatch = hubFindRepairInlinePatch(json, checked.latestCode)
+        if (repairPatch == null) checked.copy(badge = "FAILED", message = "Repair patch belum tersedia.", canRepair = false)
+        else hubApplyInlinePatch(context, checked, repairPatch, repairMode = true)
+    } else {
+        val inlinePatch = hubFindInlinePatch(json, checked.localCode, checked.latestCode)
+        val zipPatch = hubFindZipPatch(json, checked.localCode, checked.latestCode)
+        when {
+            inlinePatch != null -> hubApplyInlinePatch(context, checked, inlinePatch, repairMode = false)
+            zipPatch != null -> hubInstallCachedZipPatch(context, checked, zipPatch)
+            else -> checked.copy(badge = "FAILED", message = "Patch belum cocok untuk versi lokal.", canInstall = false)
+        }
+    }
+}
 
+private fun hubApplyInlinePatch(context: Context, checked: HubUpdateState, patch: JSONObject, repairMode: Boolean): HubUpdateState {
+    return try {
         val files = patch.optJSONArray("files") ?: return checked.copy(message = "Patch kosong.", canInstall = false)
         val target = patch.optString("target", "/sdcard/Android/data/$HUB_GAME_PACKAGE/").ifBlank { "/sdcard/Android/data/$HUB_GAME_PACKAGE/" }
-        val writeScript = StringBuilder()
-        writeScript.append("mkdir -p ").append(hubShellQuote(target)).append("\n")
-
-        for (i in 0 until files.length()) {
-            val obj = files.optJSONObject(i) ?: continue
-            val relative = obj.optString("path", "").trim()
-            val content = obj.optString("content", "")
-            if (!hubSafeRelativePath(relative)) continue
-            val out = target.trimEnd('/') + "/" + relative
-            val encoded = Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-            writeScript.append("mkdir -p $(dirname ").append(hubShellQuote(out)).append(")\n")
-            writeScript.append("printf %s ").append(hubShellQuote(encoded))
-                .append(" | base64 -d > ").append(hubShellQuote(out)).append("\n")
-        }
-
-        val write = hubRunShizukuCommand(writeScript.toString())
+        val writeScript = hubBuildInlineWriteScript(target, files)
+        val write = hubRunShizukuCommand(writeScript)
         if (write.first != 0) {
             return checked.copy(badge = "FAILED", message = "Install gagal. Shizuku tidak bisa menulis file.", canInstall = !repairMode, canRepair = repairMode)
         }
-
         val verified = hubVerifyInlinePatch(target, files)
         if (!verified) {
             return checked.copy(badge = "FAILED", message = "Patch tertulis, tapi verifikasi file gagal. Local tidak diubah.", canInstall = !repairMode, canRepair = true)
         }
-
         context.getSharedPreferences(HUB_PREFS, Context.MODE_PRIVATE).edit()
             .putInt(HUB_PREF_CODE, checked.latestCode)
             .putString(HUB_PREF_NAME, checked.latestName)
             .apply()
-
         val marker = hubReadDataMarkerSmart()
         hubCheckUpdate(context).copy(
             badge = "VERIFIED",
@@ -828,25 +845,40 @@ private fun hubInstallInlinePatch(context: Context, repairMode: Boolean): HubUpd
     }
 }
 
+private fun hubBuildInlineWriteScript(target: String, files: JSONArray): String {
+    val script = StringBuilder()
+    script.append("mkdir -p ").append(hubShellQuote(target)).append("\n")
+    for (i in 0 until files.length()) {
+        val obj = files.optJSONObject(i) ?: continue
+        val relative = obj.optString("path", "").trim()
+        val content = obj.optString("content", "")
+        if (!hubSafeRelativePath(relative)) continue
+        val out = hubJoinTarget(target, relative)
+        val parent = out.substringBeforeLast('/', target.trimEnd('/'))
+        val encoded = Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        script.append("mkdir -p ").append(hubShellQuote(parent)).append("\n")
+        script.append("printf %s ").append(hubShellQuote(encoded))
+            .append(" | base64 -d > ").append(hubShellQuote(out)).append("\n")
+    }
+    return script.toString()
+}
+
 private suspend fun hubDownloadPatchZip(
     context: Context,
     onProgress: suspend (HubUpdateState) -> Unit
 ): HubUpdateState {
     val base = withContext(Dispatchers.IO) { hubCheckUpdate(context) }
-    val json = try {
-        withContext(Dispatchers.IO) { hubFetchManifestJson() }
-    } catch (_: Throwable) {
+    val json = try { withContext(Dispatchers.IO) { hubFetchManifestJson() } } catch (_: Throwable) {
         return base.copy(badge = "OFFLINE", message = "Gagal mengambil manifest update.", checking = false)
     }
     val patch = hubFindZipPatch(json, base.localCode, base.latestCode)
         ?: return base.copy(badge = "FAILED", message = "Patch zip belum tersedia untuk versi ini.", checking = false, canDownload = false)
     val url = hubPatchUrl(patch)
-    val expectedSha = patch.optString("sha256", patch.optString("hash", "")).trim().lowercase()
+    val expectedSha = hubPatchSha(patch)
     if (url.isBlank()) return base.copy(badge = "FAILED", message = "Patch zip tidak memiliki download URL.", checking = false, canDownload = false)
 
-    val cacheDir = File(context.cacheDir, "dlavie-patches")
-    cacheDir.mkdirs()
-    val outFile = File(cacheDir, "patch_${base.localCode}_${base.latestCode}.zip")
+    val outFile = hubPatchCacheFile(context, base.localCode, base.latestCode)
+    outFile.parentFile?.mkdirs()
     var lastError = "Download gagal."
 
     for (attempt in 1..3) {
@@ -856,7 +888,7 @@ private suspend fun hubDownloadPatchZip(
                 connection.connectTimeout = 15000
                 connection.readTimeout = 30000
                 connection.instanceFollowRedirects = true
-                val total = connection.contentLengthLong.takeIf { it > 0L } ?: -1L
+                val total = connection.contentLengthLong.takeIf { it > 0L } ?: patch.optLong("size", patch.optLong("sizeBytes", -1L))
                 val digest = MessageDigest.getInstance("SHA-256")
                 val started = System.currentTimeMillis()
                 var downloaded = 0L
@@ -903,13 +935,14 @@ private suspend fun hubDownloadPatchZip(
                 base.copy(
                     checking = false,
                     badge = "VERIFIED",
-                    message = "Patch berhasil didownload dan SHA terverifikasi.",
+                    message = "Patch berhasil didownload dan SHA terverifikasi. Siap install.",
                     progressFraction = 1f,
                     progressText = "Cached patch verified",
                     sizeText = hubFormatBytes(outFile.length()),
                     speedText = "Ready",
                     etaText = "0s",
-                    canDownload = true
+                    canDownload = false,
+                    canInstall = base.shizukuState == "Ready"
                 )
             }
             return finalState
@@ -930,30 +963,108 @@ private suspend fun hubDownloadPatchZip(
     )
 }
 
-private fun hubVerifyInlinePatch(target: String, files: org.json.JSONArray): Boolean {
+private fun hubInstallCachedZipPatch(context: Context, checked: HubUpdateState, patch: JSONObject): HubUpdateState {
+    return try {
+        val cache = hubPatchCacheFile(context, checked.localCode, checked.latestCode)
+        if (!cache.exists()) return checked.copy(badge = "FAILED", message = "Patch belum didownload.", canDownload = true, canInstall = false)
+        if (!hubCachedZipVerified(context, patch, checked.localCode, checked.latestCode)) {
+            cache.delete()
+            return checked.copy(badge = "FAILED", message = "SHA patch tidak valid. Download ulang patch.", canDownload = true, canInstall = false)
+        }
+        val extractDir = File(hubPatchCacheRoot(context), "extract_${checked.localCode}_${checked.latestCode}")
+        if (extractDir.exists()) extractDir.deleteRecursively()
+        extractDir.mkdirs()
+        hubExtractZipSafely(cache, extractDir)
+        val target = patch.optString("target", "/sdcard/Android/data/$HUB_GAME_PACKAGE/").ifBlank { "/sdcard/Android/data/$HUB_GAME_PACKAGE/" }
+        val backupDir = "/sdcard/Android/data/$HUB_GAME_PACKAGE/.dlavie_backup_${checked.localCode}_${checked.latestCode}"
+        val script = StringBuilder()
+        script.append("mkdir -p ").append(hubShellQuote(target)).append("\n")
+        script.append("mkdir -p ").append(hubShellQuote(backupDir)).append("\n")
+        val fileList = patch.optJSONArray("files")
+        if (fileList != null) {
+            for (i in 0 until fileList.length()) {
+                val obj = fileList.optJSONObject(i) ?: continue
+                val relative = obj.optString("path", "").trim()
+                if (!hubSafeRelativePath(relative)) continue
+                val dest = hubJoinTarget(target, relative)
+                val parent = dest.substringBeforeLast('/', target.trimEnd('/'))
+                script.append("if [ -f ").append(hubShellQuote(dest)).append(" ]; then cp -af ").append(hubShellQuote(dest)).append(" ").append(hubShellQuote(backupDir + "/" + relative.replace('/', '_'))).append("; fi\n")
+                script.append("mkdir -p ").append(hubShellQuote(parent)).append("\n")
+            }
+        }
+        script.append("cp -af ").append(hubShellQuote(extractDir.absolutePath + "/.")).append(" ").append(hubShellQuote(target)).append("\n")
+        val apply = hubRunShizukuCommand(script.toString())
+        if (apply.first != 0) return checked.copy(badge = "FAILED", message = "Install zip gagal. Rollback disiapkan.", canInstall = true)
+        val verified = hubVerifyZipPatch(target, patch)
+        if (!verified) {
+            hubRunShizukuCommand("cp -af ${hubShellQuote(backupDir + "/.")} ${hubShellQuote(target)}")
+            return checked.copy(badge = "FAILED", message = "Verifikasi file gagal. File lama direstore bila tersedia.", canInstall = true)
+        }
+        context.getSharedPreferences(HUB_PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(HUB_PREF_CODE, checked.latestCode)
+            .putString(HUB_PREF_NAME, checked.latestName)
+            .apply()
+        hubCheckUpdate(context).copy(
+            badge = "INSTALLED",
+            message = "Patch zip berhasil diinstall dan diverifikasi.",
+            progressFraction = 1f,
+            progressText = "Installed",
+            sizeText = hubFormatBytes(cache.length()),
+            speedText = "Verified",
+            etaText = "0s",
+            canInstall = false,
+            canDownload = false
+        )
+    } catch (_: Throwable) {
+        checked.copy(badge = "FAILED", message = "Install zip gagal. Cek patch dan Shizuku.", canInstall = true)
+    }
+}
+
+private fun hubExtractZipSafely(zipFile: File, outputDir: File) {
+    ZipInputStream(zipFile.inputStream()).use { zis ->
+        while (true) {
+            val entry = zis.nextEntry ?: break
+            val name = entry.name.trim().replace('\\', '/')
+            if (!hubSafeRelativePath(name)) throw IllegalStateException("Unsafe zip path")
+            val out = File(outputDir, name).canonicalFile
+            val root = outputDir.canonicalFile
+            if (!out.path.startsWith(root.path)) throw IllegalStateException("Zip path escape")
+            if (entry.isDirectory) {
+                out.mkdirs()
+            } else {
+                out.parentFile?.mkdirs()
+                FileOutputStream(out).use { output -> zis.copyTo(output) }
+            }
+            zis.closeEntry()
+        }
+    }
+}
+
+private fun hubVerifyInlinePatch(target: String, files: JSONArray): Boolean {
     val script = StringBuilder()
-    script.append("ok=1\n")
     for (i in 0 until files.length()) {
         val obj = files.optJSONObject(i) ?: continue
         val relative = obj.optString("path", "").trim()
         if (!hubSafeRelativePath(relative)) continue
-        val out = target.trimEnd('/') + "/" + relative
-        script.append("[ -f ").append(hubShellQuote(out)).append(" ] || ok=0\n")
+        val out = hubJoinTarget(target, relative)
+        script.append("[ -f ").append(hubShellQuote(out)).append(" ] || exit 12\n")
         val expectedSha = obj.optString("sha256", "").trim().lowercase()
         if (expectedSha.isNotBlank()) {
-            script.append("if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum ").append(hubShellQuote(out)).append(" | awk '{print $1}'); [ \"$got\" = ").append(hubShellQuote(expectedSha)).append(" ] || ok=0; fi\n")
+            script.append("sha256sum ").append(hubShellQuote(out)).append(" | grep -qi ").append(hubShellQuote("^$expectedSha")).append(" || exit 13\n")
         }
     }
-    script.append("[ $ok -eq 1 ] && echo VERIFY_OK || echo VERIFY_FAIL\n")
+    script.append("echo VERIFY_OK\n")
     val result = hubRunShizukuCommand(script.toString())
     return result.first == 0 && result.second.contains("VERIFY_OK")
 }
 
+private fun hubVerifyZipPatch(target: String, patch: JSONObject): Boolean {
+    val files = patch.optJSONArray("files") ?: return true
+    return hubVerifyInlinePatch(target, files)
+}
+
 private fun hubRequestShizukuPermission() {
-    try {
-        Shizuku.requestPermission(HUB_SHIZUKU_REQUEST_CODE)
-    } catch (_: Throwable) {
-    }
+    try { Shizuku.requestPermission(HUB_SHIZUKU_REQUEST_CODE) } catch (_: Throwable) {}
 }
 
 private fun hubFetchManifestJson(): JSONObject {
@@ -1000,8 +1111,21 @@ private fun hubFindZipPatch(json: JSONObject, from: Int, to: Int): JSONObject? {
     return null
 }
 
-private fun hubPatchUrl(patch: JSONObject): String {
-    return patch.optString("url", patch.optString("downloadUrl", patch.optString("patchUrl", ""))).trim()
+private fun hubPatchUrl(patch: JSONObject): String = patch.optString("url", patch.optString("downloadUrl", patch.optString("patchUrl", ""))).trim()
+private fun hubPatchSha(patch: JSONObject): String = patch.optString("sha256", patch.optString("hash", "")).trim().lowercase()
+private fun hubPatchSizeLabel(patch: JSONObject?): String {
+    val size = patch?.optLong("estimatedSizeBytes", patch.optLong("sizeBytes", -1L)) ?: -1L
+    return if (size > 0L) hubFormatBytes(size) else "Patch zip"
+}
+
+private fun hubJsonStringList(array: JSONArray?): List<String> {
+    if (array == null) return emptyList()
+    val out = mutableListOf<String>()
+    for (i in 0 until array.length()) {
+        val item = array.optString(i).trim()
+        if (item.isNotBlank()) out += item
+    }
+    return out
 }
 
 private fun hubShizukuState(): String {
@@ -1045,9 +1169,7 @@ private fun hubReadDataMarkerDirect(): String {
     }
 }
 
-private fun hubMarkerLooksVerified(marker: String): Boolean {
-    return marker == "Patch OK" || marker == "Verified" || marker.startsWith("v")
-}
+private fun hubMarkerLooksVerified(marker: String): Boolean = marker == "Patch OK" || marker == "Verified" || marker.startsWith("v")
 
 private fun hubRunShizukuCommand(script: String): Pair<Int, String> {
     return try {
@@ -1071,10 +1193,32 @@ private fun hubStartShizukuProcess(script: String): Process {
     return method.invoke(null, arrayOf("sh", "-c", script), null, null) as Process
 }
 
-private fun hubSafeRelativePath(path: String): Boolean {
-    return path.isNotBlank() && !path.startsWith("/") && !path.contains("..") && !path.contains("\\")
+private fun hubCachedZipVerified(context: Context, patch: JSONObject, from: Int, to: Int): Boolean {
+    val file = hubPatchCacheFile(context, from, to)
+    if (!file.exists() || file.length() == 0L) return false
+    val expected = hubPatchSha(patch)
+    if (expected.isBlank()) return true
+    return try { hubSha256(file) == expected } catch (_: Throwable) { false }
 }
 
+private fun hubPatchCacheRoot(context: Context): File = context.externalCacheDir ?: context.cacheDir
+private fun hubPatchCacheFile(context: Context, from: Int, to: Int): File = File(hubPatchCacheRoot(context), "dlavie_patch_${from}_${to}.zip")
+
+private fun hubSha256(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val read = input.read(buffer)
+            if (read <= 0) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+private fun hubSafeRelativePath(path: String): Boolean = path.isNotBlank() && !path.startsWith("/") && !path.contains("..") && !path.contains("\\")
+private fun hubJoinTarget(target: String, relative: String): String = target.trimEnd('/') + "/" + relative.trimStart('/')
 private fun hubShellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
 private fun hubFormatBytes(bytes: Long): String {
