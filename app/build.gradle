@@ -11,13 +11,13 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 35
-        versionCode 35
-        versionName '0.10.6-fix-clipped-ui'
+        versionCode 38
+        versionName '0.10.8-clean-professional-ui'
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion_17
+        targetCompatibility JavaVersion_17
     }
 
     buildFeatures {
