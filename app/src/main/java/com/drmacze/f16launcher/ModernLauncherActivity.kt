@@ -17,8 +17,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.foundation.BorderStroke
@@ -33,6 +35,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,14 +52,18 @@ import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.SportsSoccer
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Terminal
@@ -85,14 +92,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -109,19 +119,21 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
-val Carbon      = Color(0xFF050812)
-val GlassBase   = Color(0xFF0D1520)
+val Carbon      = Color(0xFF040810)
+val GlassBase   = Color(0xFF0C1422)
+val Surface2    = Color(0xFF111C2E)
 val CandyCyan   = Color(0xFF27C8FF)
 val CandyBlue   = Color(0xFF5F57FF)
 val NeonGreen   = Color(0xFF1FDD90)
-val SoftText    = Color(0xFFA0B0C8)
-val GlassStroke = Color(0x445D8DFF)
+val SoftText    = Color(0xFF8899B0)
+val SubText     = Color(0xFF556070)
+val GlassStroke = Color(0x305D8DFF)
 val DangerRed   = Color(0xFFFF4D6D)
-val AmberWarn   = Color(0xFFFFB830)
+val AmberWarn   = Color(0xFFFF9A30)
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 private const val GAME_PKG         = "com.ea.gp.fifaworld"
-private const val FIFA_APK_URL      = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26.apk"
+private const val FIFA_APK_URL     = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26.apk"
 private const val DEFAULT_MANIFEST = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/manifest.json"
 private const val MARKER_PATH      = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
 private const val LOCAL_VER        = 1
@@ -134,12 +146,15 @@ data class PostItem(val id: String, val authorId: String, val body: String, val 
 data class FeedItem(val id: String, val title: String, val body: String, val type: String, val pinned: Boolean, val official: Boolean)
 data class UpdateInfo(val latestCode: Int, val latestName: String, val upToDate: Boolean, val releaseNotes: List<String>)
 
-// ─── Navigation ───────────────────────────────────────────────────────────────
+// ─── App setup state ──────────────────────────────────────────────────────────
+enum class SetupState { LOADING, NEED_GAME, NEED_DATA, READY }
+
+// ─── Navigation pages ─────────────────────────────────────────────────────────
 enum class Page(val label: String, val navIcon: ImageVector) {
-    Home("Home",  Icons.Rounded.Home),
-    Data("Data",  Icons.Rounded.FolderOpen),
-    Chat("Chat",  Icons.Rounded.Forum),
-    Me  ("Me",    Icons.Rounded.AccountCircle)
+    Home  ("Beranda",   Icons.Rounded.Home),
+    Update("Update",    Icons.Rounded.CloudSync),
+    Chat  ("Komunitas", Icons.Rounded.Forum),
+    Me    ("Profil",    Icons.Rounded.AccountCircle)
 }
 
 // ─── Activity ─────────────────────────────────────────────────────────────────
@@ -156,14 +171,16 @@ fun DLavieModernApp() {
     val context = LocalContext.current
     val api     = remember { CommunityApi(context) }
     MaterialTheme(colorScheme = darkColorScheme(
-        background   = Carbon,     surface     = GlassBase,
-        primary      = CandyCyan,  secondary   = CandyBlue,
+        background   = Carbon,    surface      = GlassBase,
+        primary      = CandyCyan, secondary    = CandyBlue,
         onPrimary    = Color(0xFF00111D), onSecondary = Color.White,
-        onBackground = Color.White, onSurface   = Color.White
+        onBackground = Color.White, onSurface  = Color.White
     )) {
         Surface(Modifier.fillMaxSize(), color = Carbon) {
-            Box(Modifier.fillMaxSize()
-                .background(Brush.verticalGradient(listOf(Color(0xFF040A16), Carbon, Color(0xFF060D18))))) {
+            Box(
+                Modifier.fillMaxSize()
+                    .background(Brush.verticalGradient(listOf(Color(0xFF06101E), Carbon, Color(0xFF060D18))))
+            ) {
                 if (!api.loggedIn()) {
                     LaunchedEffect(Unit) {
                         context.startActivity(
@@ -172,9 +189,9 @@ fun DLavieModernApp() {
                         )
                     }
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             CircularProgressIndicator(color = CandyCyan, strokeWidth = 2.5.dp)
-                            Text("Sesi berakhir, mengarahkan ke login...", color = SoftText, fontSize = 13.sp)
+                            Text("Memuat sesi...", color = SoftText, fontSize = 13.sp)
                         }
                     }
                 } else {
@@ -197,7 +214,6 @@ fun DLavieModernApp() {
 fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
     var page by remember { mutableStateOf(Page.Home) }
 
-    // Token auto-refresh every 50 min
     LaunchedEffect(Unit) {
         while (true) {
             delay(50L * 60_000)
@@ -207,22 +223,24 @@ fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
 
     Box(Modifier.fillMaxSize()) {
         AnimatedContent(
-            targetState  = page,
-            label        = "page_transition",
-            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
-            modifier     = Modifier.fillMaxSize().padding(bottom = 92.dp)
+            targetState    = page,
+            label          = "page_anim",
+            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
+            modifier       = Modifier.fillMaxSize().padding(bottom = 100.dp)
         ) { target ->
             when (target) {
-                Page.Home -> HomeScreen(api, onNav = { page = it })
-                Page.Data -> DataScreen(onNav  = { page = it })
-                Page.Chat -> CommunityScreen(api)
-                Page.Me   -> ProfileScreen(api, onLogout)
+                Page.Home   -> HomeScreen(api, onNav = { page = it })
+                Page.Update -> UpdateScreen(onNav  = { page = it })
+                Page.Chat   -> CommunityScreen(api)
+                Page.Me     -> ProfileScreen(api, onLogout)
             }
         }
         FloatingNav(
             page     = page,
             onPage   = { page = it },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp)
+            modifier = Modifier.align(Alignment.BottomCenter)
+                               .navigationBarsPadding()
+                               .padding(bottom = 12.dp)
         )
     }
 }
@@ -230,41 +248,73 @@ fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
 // ─── Floating navigation bar ──────────────────────────────────────────────────
 @Composable
 fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        modifier       = modifier.widthIn(max = 620.dp).padding(horizontal = 14.dp),
-        shape          = RoundedCornerShape(36.dp),
-        color          = Color(0xE60B1422),
-        border         = BorderStroke(1.dp, GlassStroke),
-        shadowElevation = 20.dp,
-        tonalElevation = 0.dp
-    ) {
-        Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Page.values().forEach { item ->
-                val selected  = page == item
-                val iconAlpha by animateFloatAsState(if (selected) 1f else 0.5f, label = "nav_alpha")
-                val scale     by animateFloatAsState(if (selected) 1f else 0.92f, label = "nav_scale")
-                Button(
-                    onClick      = { onPage(item) },
-                    modifier     = Modifier.weight(1f).height(if (selected) 54.dp else 48.dp).scale(scale),
-                    shape        = RoundedCornerShape(28.dp),
-                    colors       = ButtonDefaults.buttonColors(
-                        containerColor = if (selected) CandyBlue else Color.Transparent,
-                        contentColor   = if (selected) Color.White else SoftText
-                    ),
-                    elevation    = ButtonDefaults.buttonElevation(if (selected) 6.dp else 0.dp)
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Icon(
-                            item.navIcon,
-                            contentDescription = item.label,
-                            modifier           = Modifier.size(if (selected) 20.dp else 18.dp).alpha(iconAlpha)
-                        )
-                        Text(
-                            item.label,
-                            fontSize   = if (selected) 10.sp else 9.sp,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                            maxLines   = 1
-                        )
+    val infiniteTransition = rememberInfiniteTransition(label = "nav_glow")
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f, targetValue = 0.65f,
+        animationSpec = infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "glow"
+    )
+
+    Box(modifier = modifier.widthIn(max = 600.dp).padding(horizontal = 16.dp)) {
+        // Glow backdrop
+        Box(
+            Modifier.matchParentSize()
+                .clip(RoundedCornerShape(36.dp))
+                .background(CandyBlue.copy(alpha = glowAlpha * 0.18f))
+        )
+        Surface(
+            shape           = RoundedCornerShape(36.dp),
+            color           = Color(0xF00B1628),
+            border          = BorderStroke(1.dp, GlassStroke),
+            shadowElevation = 24.dp,
+            tonalElevation  = 0.dp
+        ) {
+            Row(
+                Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Page.values().forEach { item ->
+                    val selected   = page == item
+                    val bgAnim     by animateColorAsState(
+                        if (selected) CandyBlue else Color.Transparent,
+                        tween(300), label = "nav_bg"
+                    )
+                    val iconTint   by animateColorAsState(
+                        if (selected) Color.White else SubText,
+                        tween(300), label = "nav_tint"
+                    )
+                    val scaleAnim  by animateFloatAsState(
+                        if (selected) 1f else 0.9f, tween(250), label = "nav_scale"
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(58.dp)
+                            .scale(scaleAnim)
+                            .clip(RoundedCornerShape(28.dp))
+                            .background(bgAnim)
+                            .clickable { onPage(item) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Icon(
+                                item.navIcon,
+                                contentDescription = item.label,
+                                tint     = iconTint,
+                                modifier = Modifier.size(if (selected) 22.dp else 20.dp)
+                            )
+                            Text(
+                                item.label,
+                                fontSize   = if (selected) 10.sp else 9.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                color      = iconTint,
+                                maxLines   = 1
+                            )
+                        }
                     }
                 }
             }
@@ -275,21 +325,37 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
 // ─── Home screen ──────────────────────────────────────────────────────────────
 @Composable
 fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
-    val context       = LocalContext.current
-    val gameInstalled = remember { isGameInstalled(context) }
-    val marker        = remember { readMarker() }
-    val dataReady     = remember { marker.startsWith("v26", ignoreCase = true) }
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
 
-    var updateInfo  by remember { mutableStateOf<UpdateInfo?>(null) }
-    var feed        by remember { mutableStateOf<List<FeedItem>>(emptyList()) }
-    var loadingHome by remember { mutableStateOf(true) }
-    var dlProgress  by remember { mutableStateOf(-1f) }
-    var dlError     by remember { mutableStateOf("") }
-    val dlScope     = rememberCoroutineScope()
+    // ── Setup state detection ──
+    var setupState   by remember { mutableStateOf(SetupState.LOADING) }
+    var gameInstalled by remember { mutableStateOf(false) }
+    var dataReady     by remember { mutableStateOf(false) }
+    var updateInfo    by remember { mutableStateOf<UpdateInfo?>(null) }
+    var feed          by remember { mutableStateOf<List<FeedItem>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            gameInstalled = isGameInstalled(context)
+            dataReady     = readMarker().startsWith("v26", ignoreCase = true)
+            runCatching { updateInfo = fetchUpdateInfo() }
+            runCatching { feed       = parseFeed(api.feedPosts()) }
+        }
+        setupState = when {
+            !gameInstalled -> SetupState.NEED_GAME
+            !dataReady     -> SetupState.NEED_DATA
+            else           -> SetupState.READY
+        }
+    }
+
+    // ── In-app APK download state ──
+    var dlProgress by remember { mutableStateOf(-1f) }
+    var dlError    by remember { mutableStateOf("") }
 
     fun startDownload() {
         dlProgress = 0f; dlError = ""
-        dlScope.launch {
+        scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
                     val outDir  = java.io.File(context.getExternalFilesDir(null), "public-install").also { it.mkdirs() }
@@ -317,316 +383,405 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                     setDataAndType(uri, "application/vnd.android.package-archive")
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
                 })
-            }.onFailure { dlError = it.message ?: "Download gagal"; dlProgress = -1f }
+            }.onFailure { dlError = it.message ?: "Unduhan gagal. Periksa koneksi internet."; dlProgress = -1f }
         }
     }
 
-
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            runCatching { updateInfo = fetchUpdateInfo() }
-            runCatching { feed = parseFeed(api.feedPosts()) }
-        }
-        loadingHome = false
-    }
-
-    // Infinite pulse for play button glow
-    val infiniteTransition = rememberInfiniteTransition(label = "play_pulse")
+    // ── Pulse animation (for play state) ──
+    val infiniteTransition = rememberInfiniteTransition(label = "home_pulse")
     val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f, targetValue = 1.04f,
-        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "pulse_scale"
+        initialValue = 1f, targetValue = 1.035f,
+        animationSpec = infiniteRepeatable(tween(950, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "pulse"
     )
     val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.25f, targetValue = 0.55f,
+        initialValue = 0.2f, targetValue = 0.5f,
         animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "glow_alpha"
-    )
-    val shimmerX by infiniteTransition.animateFloat(
-        initialValue = -1f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing), RepeatMode.Restart),
-        label = "shimmer"
+        label = "glow"
     )
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
 
-        // ── Header card ──────────────────────────────────────────────────────
+        // ── Header ────────────────────────────────────────────────────────────
         GlassCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(52.dp)
-                        .background(Brush.linearGradient(listOf(CandyCyan, CandyBlue)), RoundedCornerShape(16.dp)),
+                    Modifier.size(50.dp)
+                        .background(
+                            Brush.linearGradient(listOf(CandyCyan, CandyBlue)),
+                            RoundedCornerShape(16.dp)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("DL", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
+                    Text("DL", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("DLavie 26", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
-                        AppBadge("PROD", NeonGreen)
+                        DLBadge("PROD", NeonGreen)
                     }
-                    Text("FIFA 16 Mobile 2026", color = SoftText, fontSize = 12.sp)
+                    Text("FIFA 16 Mobile · Mod Launcher", color = SoftText, fontSize = 12.sp)
                 }
-                val name = api.displayName().ifEmpty { "Player" }.take(12)
-                AppBadge("@$name", CandyCyan)
+                val name = api.displayName().ifEmpty { "Player" }.take(11)
+                DLBadge("@$name", CandyCyan)
             }
-            Spacer(Modifier.height(10.dp))
-            Text("Football Reborn", color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Black)
-            Text("Play, update, and connect — powered by DLavie.", color = SoftText, fontSize = 13.sp)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                Box(Modifier.weight(1f).height(2.dp)
+                    .background(Brush.horizontalGradient(listOf(CandyBlue, CandyCyan, NeonGreen)), RoundedCornerShape(1.dp)))
+            }
         }
 
-        // ── Play / Download button ─────────────────────────────────────────────
-        if (gameInstalled) {
-            Box(
-                modifier = Modifier.fillMaxWidth().scale(if (dataReady) pulseScale else 1f),
-                contentAlignment = Alignment.Center
-            ) {
-                if (dataReady) {
-                    Box(
-                        Modifier.fillMaxWidth().height(60.dp)
-                            .background(NeonGreen.copy(alpha = glowAlpha), RoundedCornerShape(22.dp))
-                    )
-                }
-                Button(
-                    onClick  = { launchGame(context) },
-                    modifier = Modifier.fillMaxWidth().height(60.dp),
-                    shape    = RoundedCornerShape(22.dp),
-                    colors   = ButtonDefaults.buttonColors(
-                        containerColor = if (dataReady) NeonGreen else CandyBlue.copy(0.35f),
-                        contentColor   = if (dataReady) Color(0xFF00150B) else Color.White
-                    )
-                ) {
-                    Icon(Icons.Rounded.PlayCircle, contentDescription = "Play", modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Text("Main FIFA 16", fontSize = 17.sp, fontWeight = FontWeight.Black)
-                }
-            }
-        } else {
-            // ── In-app download with progress ─────────────────────────────────
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick  = { if (dlProgress < 0f || dlProgress >= 2f) startDownload() },
-                    enabled  = dlProgress < 0f || dlProgress >= 2f,
-                    modifier = Modifier.fillMaxWidth().height(60.dp),
-                    shape    = RoundedCornerShape(22.dp),
-                    colors   = ButtonDefaults.buttonColors(
-                        containerColor = when {
-                            dlProgress >= 2f -> NeonGreen
-                            dlProgress >= 0f -> CandyBlue.copy(0.5f)
-                            else             -> CandyBlue.copy(0.35f)
-                        },
-                        contentColor = if (dlProgress >= 2f) Color(0xFF00150B) else Color.White
-                    )
-                ) {
-                    when {
-                        dlProgress >= 2f -> {
-                            Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(24.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text("Instal FIFA 16", fontSize = 17.sp, fontWeight = FontWeight.Black)
+        // ── Main action card (state-aware) ────────────────────────────────────
+        AnimatedContent(
+            targetState    = setupState,
+            label          = "setup_state",
+            transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) }
+        ) { state ->
+            when (state) {
+
+                // Loading
+                SetupState.LOADING -> GlassCard {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(22.dp), color = CandyCyan, strokeWidth = 2.5.dp)
+                        Column {
+                            Text("Memeriksa perangkat...", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Text("Mohon tunggu sebentar.", color = SoftText, fontSize = 12.sp)
                         }
-                        dlProgress >= 0f -> {
-                            CircularProgressIndicator(
-                                modifier    = Modifier.size(20.dp),
-                                color       = CandyCyan,
-                                strokeWidth = 2.dp
+                    }
+                }
+
+                // Step 1: Game APK belum terinstall
+                SetupState.NEED_GAME -> GlassCard(borderColor = CandyBlue.copy(0.5f)) {
+                    // Step indicator
+                    StepIndicator(currentStep = 1, totalSteps = 2)
+                    Spacer(Modifier.height(14.dp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(
+                            Modifier.size(48.dp)
+                                .background(CandyBlue.copy(0.15f), RoundedCornerShape(14.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.CloudDownload, null, tint = CandyCyan, modifier = Modifier.size(26.dp))
+                        }
+                        Column {
+                            Text("Instal FIFA 16", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                            Text("Game belum ditemukan di perangkat ini.", color = SoftText, fontSize = 12.sp)
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Unduh dan instal file APK FIFA 16 terlebih dahulu. Proses ini hanya dilakukan sekali.",
+                        color = SoftText, fontSize = 13.sp, lineHeight = 18.sp
+                    )
+                    Spacer(Modifier.height(14.dp))
+
+                    // Download button with inline progress
+                    Button(
+                        onClick  = { if (dlProgress < 0f || dlProgress >= 2f) startDownload() },
+                        enabled  = dlProgress < 0f || dlProgress >= 2f,
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape    = RoundedCornerShape(18.dp),
+                        colors   = ButtonDefaults.buttonColors(
+                            containerColor = when {
+                                dlProgress >= 2f -> NeonGreen
+                                dlProgress >= 0f -> CandyBlue.copy(0.6f)
+                                else             -> CandyBlue
+                            },
+                            contentColor   = if (dlProgress >= 2f) Color(0xFF00150B) else Color.White,
+                            disabledContainerColor = CandyBlue.copy(0.4f),
+                            disabledContentColor   = Color.White.copy(0.7f)
+                        )
+                    ) {
+                        when {
+                            dlProgress >= 2f -> {
+                                Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(22.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Selesai — Instal Sekarang", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                            }
+                            dlProgress >= 0f -> {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = CandyCyan, strokeWidth = 2.dp)
+                                Spacer(Modifier.width(10.dp))
+                                Text("Mengunduh… ${(dlProgress * 100).toInt()}%", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                            }
+                            else -> {
+                                Icon(Icons.Rounded.CloudDownload, null, modifier = Modifier.size(22.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Unduh FIFA 16 Sekarang", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(visible = dlProgress >= 0f && dlProgress < 2f) {
+                        Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            LinearProgressIndicator(
+                                progress   = { dlProgress },
+                                modifier   = Modifier.fillMaxWidth(),
+                                color      = CandyCyan,
+                                trackColor = CandyCyan.copy(0.15f)
                             )
-                            Spacer(Modifier.width(10.dp))
-                            Text("Mengunduh\u2026 ${(dlProgress * 100).toInt()}%", fontSize = 17.sp, fontWeight = FontWeight.Black)
-                        }
-                        else -> {
-                            Icon(Icons.Rounded.CloudDownload, null, modifier = Modifier.size(24.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text("Download FIFA 16", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                            Text(
+                                "${(dlProgress * 34f).toInt()} MB dari 34 MB — ${(dlProgress * 100).toInt()}% selesai",
+                                color = SoftText, fontSize = 11.sp, modifier = Modifier.align(Alignment.End)
+                            )
                         }
                     }
+                    AnimatedVisibility(visible = dlError.isNotEmpty()) {
+                        Row(
+                            Modifier.padding(top = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(Icons.Rounded.ErrorOutline, null, tint = DangerRed, modifier = Modifier.size(14.dp))
+                            Text(dlError, color = DangerRed, fontSize = 12.sp)
+                        }
+                    }
                 }
-                AnimatedVisibility(visible = dlProgress >= 0f && dlProgress < 2f) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        LinearProgressIndicator(
-                            progress   = { dlProgress },
-                            modifier   = Modifier.fillMaxWidth(),
-                            color      = CandyCyan,
-                            trackColor = CandyCyan.copy(0.2f)
+
+                // Step 2: Game terinstall, data belum siap
+                SetupState.NEED_DATA -> GlassCard(borderColor = AmberWarn.copy(0.5f)) {
+                    StepIndicator(currentStep = 2, totalSteps = 2)
+                    Spacer(Modifier.height(14.dp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(
+                            Modifier.size(48.dp)
+                                .background(NeonGreen.copy(0.12f), RoundedCornerShape(14.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.CheckCircle, null, tint = NeonGreen, modifier = Modifier.size(26.dp))
+                        }
+                        Column {
+                            Text("Game Terinstall!", color = NeonGreen, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                            Text("Satu langkah lagi untuk mulai bermain.", color = SoftText, fontSize = 12.sp)
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    GlassInfoBox(
+                        icon  = Icons.Rounded.Storage,
+                        color = AmberWarn,
+                        text  = "Data game belum tersedia. Buka tab Update untuk mengunduh dan menyiapkan data FIFA 16."
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Button(
+                        onClick  = { onNav(Page.Update) },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape    = RoundedCornerShape(18.dp),
+                        colors   = ButtonDefaults.buttonColors(containerColor = AmberWarn, contentColor = Color(0xFF1A0F00))
+                    ) {
+                        Icon(Icons.Rounded.CloudSync, null, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Siapkan Data Game", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                    }
+                }
+
+                // Ready: semua siap!
+                SetupState.READY -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Play button with glow
+                    Box(
+                        modifier = Modifier.fillMaxWidth().scale(pulseScale),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth().height(64.dp)
+                                .background(NeonGreen.copy(alpha = glowAlpha), RoundedCornerShape(24.dp))
                         )
-                        Text(
-                            "${(dlProgress * 34f).toInt()} MB / 34 MB — ${(dlProgress * 100).toInt()}%",
-                            color    = SoftText,
-                            fontSize = 12.sp,
-                            modifier = Modifier.align(Alignment.End)
-                        )
+                        Button(
+                            onClick  = { launchGame(context) },
+                            modifier = Modifier.fillMaxWidth().height(64.dp),
+                            shape    = RoundedCornerShape(24.dp),
+                            colors   = ButtonDefaults.buttonColors(
+                                containerColor = NeonGreen,
+                                contentColor   = Color(0xFF00150B)
+                            )
+                        ) {
+                            Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(26.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text("Main FIFA 16", fontSize = 19.sp, fontWeight = FontWeight.Black)
+                        }
                     }
-                }
-                AnimatedVisibility(visible = dlError.isNotEmpty()) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Rounded.ErrorOutline, null, tint = DangerRed, modifier = Modifier.size(16.dp))
-                        Text(dlError, color = DangerRed, fontSize = 12.sp)
+
+                    // Update available banner
+                    val ui = updateInfo
+                    AnimatedVisibility(
+                        visible = ui != null && !ui.upToDate,
+                        enter = fadeIn() + expandVertically(),
+                        exit  = fadeOut() + shrinkVertically()
+                    ) {
+                        if (ui != null) GlassCard(borderColor = CandyCyan.copy(0.5f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    Modifier.size(40.dp)
+                                        .background(CandyCyan.copy(0.12f), RoundedCornerShape(12.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Rounded.SystemUpdate, null, tint = CandyCyan, modifier = Modifier.size(20.dp))
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("Pembaruan Tersedia", color = CandyCyan, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                    Text("Versi ${ui.latestName} siap diunduh.", color = SoftText, fontSize = 12.sp)
+                                }
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Button(
+                                onClick  = { onNav(Page.Update) },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                shape    = RoundedCornerShape(14.dp),
+                                colors   = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D))
+                            ) {
+                                Icon(Icons.Rounded.CloudSync, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Lihat & Terapkan Update", fontWeight = FontWeight.Black)
+                            }
+                        }
                     }
                 }
             }
         }
 
+        // ── Status bar (3 chips) ───────────────────────────────────────────────
+        AnimatedVisibility(visible = setupState != SetupState.LOADING) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatusChip(
+                    label  = "Game",
+                    value  = if (gameInstalled) "Terinstall" else "Belum ada",
+                    ok     = gameInstalled,
+                    modifier = Modifier.weight(1f)
+                ) { if (!gameInstalled) if (dlProgress < 0f) startDownload() }
 
-        // ── Quick action row ──────────────────────────────────────────────────
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            QuickActionButton("Data", Icons.Rounded.Storage, Modifier.weight(1f)) { onNav(Page.Data) }
-            QuickActionButton("Update", Icons.Rounded.CloudSync, Modifier.weight(1f)) { onNav(Page.Data) }
-            QuickActionButton("Chat", Icons.Rounded.Forum, Modifier.weight(1f)) { onNav(Page.Chat) }
-        }
+                StatusChip(
+                    label  = "Data",
+                    value  = if (dataReady) "Siap" else "Belum siap",
+                    ok     = dataReady,
+                    modifier = Modifier.weight(1f)
+                ) { onNav(Page.Update) }
 
-        // ── Status chips ──────────────────────────────────────────────────────
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatusChip(
-                title   = "Game",
-                value   = if (gameInstalled) "Terinstall" else "Belum ada",
-                ok      = gameInstalled,
-                loading = false,
-                icon    = if (gameInstalled) Icons.Rounded.CheckCircle else Icons.Rounded.Cancel,
-                modifier = Modifier.weight(1f)
-            ) {
-                if (!gameInstalled) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$FIFA_APK_URL")))
+                StatusChip(
+                    label  = "Update",
+                    value  = when {
+                        updateInfo == null        -> "Memeriksa"
+                        updateInfo!!.upToDate     -> "Terbaru"
+                        else                      -> "Tersedia"
+                    },
+                    ok     = updateInfo?.upToDate != false,
+                    modifier = Modifier.weight(1f)
+                ) { onNav(Page.Update) }
             }
-            StatusChip(
-                title   = "Data",
-                value   = if (dataReady) "Ready" else "Belum siap",
-                ok      = dataReady,
-                loading = false,
-                icon    = if (dataReady) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
-                modifier = Modifier.weight(1f)
-            ) { onNav(Page.Data) }
-            StatusChip(
-                title   = "Update",
-                value   = if (loadingHome) "Cek..." else if (updateInfo?.upToDate != false) "Up-to-date" else "Tersedia",
-                ok      = !loadingHome && updateInfo?.upToDate != false,
-                loading = loadingHome,
-                icon    = if (loadingHome) Icons.Rounded.Refresh else if (updateInfo?.upToDate != false) Icons.Rounded.Shield else Icons.Rounded.SystemUpdate,
-                modifier = Modifier.weight(1f)
-            ) { onNav(Page.Data) }
         }
 
-        // ── Base data warning ─────────────────────────────────────────────────
-        AnimatedVisibility(!dataReady, enter = fadeIn(), exit = fadeOut()) {
-            GlassCard(borderColor = DangerRed.copy(0.5f)) {
+        // ── Berita / Feed ─────────────────────────────────────────────────────
+        AnimatedVisibility(visible = feed.isNotEmpty(), enter = fadeIn(tween(400)), exit = fadeOut()) {
+            GlassCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Warning, contentDescription = null, tint = DangerRed, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Rounded.Notifications, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Base Data Belum Siap", color = DangerRed, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "Buka tab Data dan install base data FIFA 16. Patch tidak akan berfungsi tanpa data yang lengkap.",
-                    color = SoftText, fontSize = 13.sp
-                )
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick  = { onNav(Page.Data) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape    = RoundedCornerShape(14.dp),
-                    colors   = ButtonDefaults.buttonColors(containerColor = DangerRed)
-                ) {
-                    Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Buka Data Installer", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        // ── Update available card ─────────────────────────────────────────────
-        val ui = updateInfo
-        AnimatedVisibility(ui != null && !ui.upToDate, enter = fadeIn(), exit = fadeOut()) {
-            if (ui != null) GlassCard(borderColor = CandyCyan.copy(0.5f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.SystemUpdate, contentDescription = null, tint = CandyCyan, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Update Tersedia: ${ui.latestName}", color = CandyCyan, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                }
-                if (ui.releaseNotes.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    ui.releaseNotes.take(3).forEach {
-                        Text("• $it", color = SoftText, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp))
-                    }
+                    Text("Berita Terbaru", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
                 }
                 Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick  = { onNav(Page.Data) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape    = RoundedCornerShape(14.dp),
-                    colors   = ButtonDefaults.buttonColors(containerColor = CandyBlue)
-                ) {
-                    Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Download Patch", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        // ── Announcements feed ────────────────────────────────────────────────
-        AnimatedVisibility(feed.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Info, contentDescription = null, tint = CandyCyan, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Pengumuman", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                }
-                feed.forEach { post ->
-                    GlassCard {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(post.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            if (post.pinned)  AppBadge("PIN", NeonGreen)
-                            if (post.official) AppBadge("OFFICIAL", CandyCyan)
+                feed.take(3).forEach { item ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            Modifier.size(8.dp).padding(top = 5.dp)
+                                .background(
+                                    if (item.pinned) AmberWarn else CandyCyan,
+                                    CircleShape
+                                )
+                        )
+                        Column {
+                            Text(item.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(item.body, color = SoftText, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 15.sp)
                         }
-                        Spacer(Modifier.height(4.dp))
-                        Text(post.body, color = SoftText, fontSize = 13.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
         }
 
-        // Loading indicator (shimmer)
-        AnimatedVisibility(loadingHome && feed.isEmpty(), enter = fadeIn(), exit = fadeOut()) {
-            val loadAlpha by animateFloatAsState(
-                targetValue = if (loadingHome) 1f else 0f,
-                animationSpec = tween(400),
-                label = "load_fade"
-            )
-            Row(
-                Modifier.fillMaxWidth().alpha(loadAlpha),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CircularProgressIndicator(color = CandyCyan, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(10.dp))
-                Text("Memuat feed...", color = SoftText, fontSize = 13.sp)
-            }
-        }
+        // Bottom spacer
+        Spacer(Modifier.height(8.dp))
     }
 }
 
-// ─── Data & Patch screen ──────────────────────────────────────────────────────
+// ─── Step progress indicator ──────────────────────────────────────────────────
 @Composable
-fun DataScreen(onNav: (Page) -> Unit) {
+fun StepIndicator(currentStep: Int, totalSteps: Int) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        (1..totalSteps).forEach { step ->
+            val done     = step < currentStep
+            val active   = step == currentStep
+            val color    = when { done -> NeonGreen; active -> CandyCyan; else -> SubText }
+            Box(
+                Modifier.size(22.dp)
+                    .background(color.copy(if (active || done) 0.15f else 0.07f), CircleShape)
+                    .then(if (active) Modifier else Modifier),
+                contentAlignment = Alignment.Center
+            ) {
+                if (done) Icon(Icons.Rounded.CheckCircle, null, tint = NeonGreen, modifier = Modifier.size(14.dp))
+                else Text("$step", color = color, fontSize = 10.sp, fontWeight = FontWeight.Black)
+            }
+            if (step < totalSteps) {
+                Box(Modifier.weight(1f).height(2.dp).background(
+                    if (done) NeonGreen.copy(0.5f) else SubText.copy(0.25f), RoundedCornerShape(1.dp)
+                ))
+            }
+        }
+        Spacer(Modifier.width(4.dp))
+        Text(
+            "Langkah $currentStep dari $totalSteps",
+            color = SoftText, fontSize = 11.sp, fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+// ─── Glass info box ───────────────────────────────────────────────────────────
+@Composable
+fun GlassInfoBox(icon: ImageVector, color: Color, text: String) {
+    Row(
+        Modifier.fillMaxWidth()
+            .background(color.copy(0.08f), RoundedCornerShape(14.dp))
+            .padding(12.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Icon(icon, null, tint = color, modifier = Modifier.size(16.dp).padding(top = 1.dp))
+        Text(text, color = color.copy(0.9f), fontSize = 12.sp, lineHeight = 17.sp)
+    }
+}
+
+// ─── Update & Data screen ─────────────────────────────────────────────────────
+@Composable
+fun UpdateScreen(onNav: (Page) -> Unit) {
     val context       = LocalContext.current
     val gameInstalled = remember { isGameInstalled(context) }
     var marker        by remember { mutableStateOf(readMarker()) }
-    val dataReady     by remember { mutableStateOf(marker.startsWith("v26", ignoreCase = true)) }
+    val dataReady     = marker.startsWith("v26", ignoreCase = true)
+    var updateInfo    by remember { mutableStateOf<UpdateInfo?>(null) }
+    var loading       by remember { mutableStateOf(true) }
+    var updateError   by remember { mutableStateOf("") }
+    val scope         = rememberCoroutineScope()
 
-    var updateInfo  by remember { mutableStateOf<UpdateInfo?>(null) }
-    var loading     by remember { mutableStateOf(true) }
-    var updateError by remember { mutableStateOf("") }
-    val scope = rememberCoroutineScope()
-
-    // Patch engine state
-    val patchLogs   = remember { mutableStateListOf<String>() }
-    var patching    by remember { mutableStateOf(false) }
-    var patchStep   by remember { mutableStateOf(0) }
-    var patchTotal  by remember { mutableStateOf(1) }
-    var patchLabel  by remember { mutableStateOf("") }
-    var patchError  by remember { mutableStateOf("") }
-    var patchDone   by remember { mutableStateOf(false) }
+    val patchLogs  = remember { mutableStateListOf<String>() }
+    var patching   by remember { mutableStateOf(false) }
+    var patchStep  by remember { mutableStateOf(0) }
+    var patchTotal by remember { mutableStateOf(1) }
+    var patchLabel by remember { mutableStateOf("") }
+    var patchError by remember { mutableStateOf("") }
+    var patchDone  by remember { mutableStateOf(false) }
+    var showLog    by remember { mutableStateOf(false) }
 
     val engine = remember {
         DevPatchEngine(context,
@@ -635,16 +790,13 @@ fun DataScreen(onNav: (Page) -> Unit) {
         )
     }
 
-    fun refreshMarker() { marker = readMarker() }
+    fun refresh() { marker = readMarker() }
 
     fun checkUpdate() {
         loading = true; updateError = ""
         scope.launch {
             withContext(Dispatchers.IO) { runCatching { fetchUpdateInfo() } }
-                .fold(
-                    onSuccess = { updateInfo = it },
-                    onFailure = { updateError = it.message ?: "Gagal" }
-                )
+                .fold(onSuccess = { updateInfo = it }, onFailure = { updateError = it.message ?: "Gagal terhubung" })
             loading = false
         }
     }
@@ -653,348 +805,328 @@ fun DataScreen(onNav: (Page) -> Unit) {
         patchLogs.clear(); patchError = ""; patchDone = false; patching = true
         scope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { engine.applyAvailableUpdates() } }
-            result.onFailure { patchError = it.message ?: "Patch gagal" }
+            result.onFailure { patchError = it.message ?: "Pembaruan gagal diterapkan" }
             result.onSuccess { patchDone = true }
             patching = false
-            refreshMarker()
+            refresh()
         }
     }
 
     LaunchedEffect(Unit) { checkUpdate() }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
 
         // ── Header ──
         GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.DataObject, contentDescription = null, tint = CandyCyan, modifier = Modifier.size(26.dp))
-                Spacer(Modifier.width(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(
+                    Modifier.size(44.dp).background(CandyBlue.copy(0.15f), RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.CloudSync, null, tint = CandyCyan, modifier = Modifier.size(24.dp))
+                }
                 Column {
-                    Text("Data & Patch", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
-                    Text("Status data game + update patch FIFA 16 Mod.", color = SoftText, fontSize = 12.sp)
+                    Text("Update & Pembaruan", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
+                    Text("Kelola data dan pembaruan game FIFA 16.", color = SoftText, fontSize = 12.sp)
                 }
             }
         }
 
-        // ── Status grid ──
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            InfoTile("APK FIFA 16", if (gameInstalled) "Terinstall" else "Belum ada", gameInstalled, Icons.Rounded.CheckCircle, Modifier.weight(1f))
-            InfoTile("Base Data", if (dataReady) "Ready" else "Belum siap", dataReady, Icons.Rounded.Storage, Modifier.weight(1f))
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            InfoTile("Versi Lokal", LOCAL_VER_NAME, true, Icons.Rounded.Shield, Modifier.weight(1f))
-            InfoTile("Versi Terbaru", if (loading) "Cek..." else updateInfo?.latestName ?: "—",
-                updateInfo?.upToDate != false, Icons.Rounded.CloudSync, Modifier.weight(1f))
+        // ── Status ringkasan ──
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MiniStatusTile("Game", if (gameInstalled) "Terinstall" else "Belum ada", gameInstalled, Modifier.weight(1f))
+            MiniStatusTile("Data", if (dataReady) "Siap" else "Belum siap", dataReady, Modifier.weight(1f))
+            MiniStatusTile("Versi",
+                if (loading) "…" else updateInfo?.latestName ?: "—",
+                updateInfo?.upToDate != false, Modifier.weight(1f))
         }
 
-        // ── Marker detail ──
-        GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Terminal, contentDescription = null, tint = SoftText, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Data Marker", color = SoftText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        // ── Data game belum siap ──
+        AnimatedVisibility(!dataReady, enter = fadeIn(), exit = fadeOut()) {
+            GlassCard(borderColor = AmberWarn.copy(0.5f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        Modifier.size(40.dp).background(AmberWarn.copy(0.12f), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Warning, null, tint = AmberWarn, modifier = Modifier.size(20.dp))
+                    }
+                    Column {
+                        Text("Data Game Belum Siap", color = AmberWarn, fontSize = 15.sp, fontWeight = FontWeight.Black)
+                        Text("Game tidak dapat dimainkan sebelum data tersedia.", color = SoftText, fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Terapkan pembaruan di bawah ini untuk mengunduh dan menyiapkan data FIFA 16 secara otomatis.",
+                    color = SoftText, fontSize = 12.sp, lineHeight = 17.sp
+                )
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                marker.take(100).ifBlank { "Marker belum terdeteksi — base data belum diinstall." },
-                color = if (dataReady) NeonGreen else SoftText,
-                fontSize = 13.sp,
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-            )
         }
 
-        // ── Storage detection ──
-        val gamePath = remember { engine.detectGameDataPath() }
-        GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = CandyCyan, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Storage Path", color = SoftText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(4.dp))
-            Text(gamePath, color = Color.White, fontSize = 12.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 2)
-            Text("Access: ${engine.accessMode()}", color = if (engine.accessMode().contains("aktif")) NeonGreen else AmberWarn, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        }
-
-        // ── Patch apply section ───────────────────────────────────────────────
-        val ui = updateInfo
+        // ── Patch / update card ──
+        val ui             = updateInfo
         val patchAvailable = ui != null && !ui.upToDate
 
         GlassCard(borderColor = when {
-            patchDone  -> NeonGreen.copy(0.6f)
-            patchError.isNotBlank() -> DangerRed.copy(0.5f)
-            patchAvailable -> CandyCyan.copy(0.5f)
-            else -> GlassStroke
+            patchDone              -> NeonGreen.copy(0.5f)
+            patchError.isNotBlank()-> DangerRed.copy(0.4f)
+            patchAvailable         -> CandyCyan.copy(0.4f)
+            else                   -> GlassStroke
         }) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.CloudDownload, contentDescription = null,
-                    tint = if (patchAvailable) CandyCyan else SoftText, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(10.dp))
+            // Status row
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(
+                    Modifier.size(44.dp).background(
+                        when {
+                            patchDone   -> NeonGreen.copy(0.12f)
+                            patchAvailable -> CandyCyan.copy(0.10f)
+                            else        -> SubText.copy(0.08f)
+                        }, RoundedCornerShape(14.dp)
+                    ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (patchDone) Icons.Rounded.CheckCircle else Icons.Rounded.CloudDownload,
+                        null,
+                        tint     = if (patchDone) NeonGreen else if (patchAvailable) CandyCyan else SoftText,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
                 Column(Modifier.weight(1f)) {
                     Text(
                         when {
-                            patchDone  -> "Patch Berhasil Diapply"
-                            patchError.isNotBlank() -> "Patch Gagal"
-                            patchAvailable -> "Update Patch Tersedia"
-                            loading -> "Memeriksa..."
-                            else -> "Patch Terbaru"
+                            patchDone               -> "Pembaruan Berhasil!"
+                            patchError.isNotBlank() -> "Pembaruan Gagal"
+                            patchAvailable          -> "Pembaruan Tersedia"
+                            loading                 -> "Memeriksa server…"
+                            else                    -> "Game Sudah Terbaru"
                         },
                         color = when {
-                            patchDone  -> NeonGreen
+                            patchDone   -> NeonGreen
                             patchError.isNotBlank() -> DangerRed
                             patchAvailable -> CandyCyan
-                            else -> Color.White
+                            else        -> Color.White
                         },
                         fontSize = 16.sp, fontWeight = FontWeight.Black
                     )
                     Text(
-                        "Local $LOCAL_VER_NAME  →  Latest ${ui?.latestName ?: "..."}",
+                        "Versi kamu: $LOCAL_VER_NAME  ·  Terbaru: ${ui?.latestName ?: "…"}",
                         color = SoftText, fontSize = 12.sp
                     )
                 }
             }
 
-            // Release notes
-            if (patchAvailable && ui != null && ui.releaseNotes.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                ui.releaseNotes.take(3).forEach {
-                    Text("• $it", color = SoftText, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp))
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            // Progress bar while patching
+            // Progress bar saat patching
             AnimatedVisibility(patching) {
-                Column {
+                Column(Modifier.padding(top = 14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), color = CandyCyan, strokeWidth = 2.dp)
+                        Text(patchLabel.ifEmpty { "Memperbarui game…" }, color = SoftText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Spacer(Modifier.height(8.dp))
                     LinearProgressIndicator(
                         progress   = { if (patchTotal > 0) patchStep.toFloat() / patchTotal else 0f },
                         modifier   = Modifier.fillMaxWidth(),
                         color      = CandyCyan,
                         trackColor = GlassStroke
                     )
-                    Spacer(Modifier.height(6.dp))
-                    Text(patchLabel, color = SoftText, fontSize = 12.sp)
-                    Spacer(Modifier.height(8.dp))
                 }
             }
 
             // Error
             AnimatedVisibility(patchError.isNotBlank()) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = DangerRed, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Error", color = DangerRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Text(patchError, color = SoftText, fontSize = 12.sp)
-                    Spacer(Modifier.height(8.dp))
-                }
+                GlassInfoBox(Icons.Rounded.ErrorOutline, DangerRed, patchError)
             }
 
-            Button(
-                onClick  = { applyPatch() },
-                enabled  = !patching && !loading && patchAvailable,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                shape    = RoundedCornerShape(16.dp),
-                colors   = ButtonDefaults.buttonColors(
-                    containerColor          = if (patchAvailable) CandyCyan else NeonGreen,
-                    contentColor            = Color(0xFF00111D),
-                    disabledContainerColor  = Color(0xFF1C2635),
-                    disabledContentColor    = SoftText
-                )
-            ) {
-                if (patching) {
-                    CircularProgressIndicator(color = Color(0xFF00111D), modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Text("Mengapply Patch...", fontWeight = FontWeight.Black)
-                } else {
-                    Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        when {
-                            patchDone  -> "Patch Sudah Diapply"
-                            patchAvailable -> "Download & Apply Patch"
-                            else -> "Versi Sudah Terbaru"
-                        },
-                        fontWeight = FontWeight.Black
-                    )
-                }
+            // Update error
+            AnimatedVisibility(updateError.isNotBlank()) {
+                GlassInfoBox(Icons.Rounded.ErrorOutline, DangerRed, "Tidak dapat terhubung ke server. Periksa koneksi internet, lalu coba lagi.")
             }
-        }
 
-        // ── Patch log viewer ──────────────────────────────────────────────────
-        AnimatedVisibility(patchLogs.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
-            GlassCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Terminal, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Log Patch", color = SoftText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.height(8.dp))
-                patchLogs.takeLast(30).forEach { line ->
-                    Text(
-                        "› $line",
-                        color    = if (line.contains("Error", ignoreCase = true) || line.contains("gagal", ignoreCase = true))
-                            DangerRed else if (line.contains("selesai", ignoreCase = true) || line.contains("OK", ignoreCase = true))
-                            NeonGreen else SoftText,
-                        fontSize = 11.sp,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        modifier = Modifier.padding(vertical = 1.dp)
-                    )
-                }
-            }
-        }
+            Spacer(Modifier.height(14.dp))
 
-        // ── Update check error ──
-        AnimatedVisibility(updateError.isNotBlank()) {
-            GlassCard(borderColor = DangerRed.copy(0.4f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = DangerRed, modifier = Modifier.size(16.dp))
+            // Action buttons
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick  = { checkUpdate() },
+                    enabled  = !loading && !patching,
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    shape    = RoundedCornerShape(14.dp),
+                    border   = BorderStroke(1.dp, if (!loading && !patching) CandyCyan.copy(0.5f) else GlassStroke)
+                ) {
+                    Icon(Icons.Rounded.Refresh, null, tint = if (!loading && !patching) CandyCyan else SoftText, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Gagal cek manifest", color = DangerRed, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text(if (loading) "Memeriksa…" else "Periksa", color = if (!loading && !patching) CandyCyan else SoftText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
-                Text(updateError, color = SoftText, fontSize = 12.sp)
+                Button(
+                    onClick  = { applyPatch() },
+                    enabled  = !patching && !loading && patchAvailable,
+                    modifier = Modifier.weight(2f).height(50.dp),
+                    shape    = RoundedCornerShape(14.dp),
+                    colors   = ButtonDefaults.buttonColors(
+                        containerColor         = if (patchAvailable) CandyCyan else NeonGreen,
+                        contentColor           = Color(0xFF00111D),
+                        disabledContainerColor = Surface2,
+                        disabledContentColor   = SoftText
+                    )
+                ) {
+                    if (patching) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF00111D), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Memperbarui…", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                    } else {
+                        Icon(Icons.Rounded.CloudDownload, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            when {
+                                patchDone      -> "Sudah Diperbarui ✓"
+                                patchAvailable -> "Terapkan Pembaruan"
+                                else           -> "Sudah Terbaru"
+                            },
+                            fontWeight = FontWeight.Black, fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+
+            // Log toggle
+            AnimatedVisibility(patchLogs.isNotEmpty()) {
+                Column(Modifier.padding(top = 10.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { showLog = !showLog }.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(if (showLog) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null, tint = SubText, modifier = Modifier.size(14.dp))
+                        Text(if (showLog) "Sembunyikan log teknis" else "Lihat log teknis", color = SubText, fontSize = 11.sp)
+                    }
+                    AnimatedVisibility(showLog) {
+                        Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            patchLogs.takeLast(20).forEach { line ->
+                                Text(
+                                    "› $line",
+                                    color    = if (line.contains("error", ignoreCase = true) || line.contains("gagal", ignoreCase = true))
+                                                   DangerRed else if (line.contains("ok", ignoreCase = true) || line.contains("selesai", ignoreCase = true))
+                                                   NeonGreen else SoftText,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        // ── Action buttons ────────────────────────────────────────────────────
-        GlassCard {
-            Text("Aksi Lainnya", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
-            Button(
-                onClick  = { checkUpdate() },
-                enabled  = !loading && !patching,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape    = RoundedCornerShape(16.dp),
-                colors   = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D))
-            ) {
-                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(if (loading) "Mengecek..." else "Cek Update Manifest", fontWeight = FontWeight.Bold)
-            }
-
-
-        }
-
-        // ── Play if ready ─────────────────────────────────────────────────────
-        if (dataReady && gameInstalled) {
+        // ── Play button (jika siap) ──
+        AnimatedVisibility(dataReady && gameInstalled, enter = fadeIn(tween(400)), exit = fadeOut()) {
             Button(
                 onClick  = { launchGame(context) },
                 modifier = Modifier.fillMaxWidth().height(58.dp),
-                shape    = RoundedCornerShape(18.dp),
+                shape    = RoundedCornerShape(20.dp),
                 colors   = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B))
             ) {
-                Icon(Icons.Rounded.PlayCircle, contentDescription = null, modifier = Modifier.size(22.dp))
+                Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(10.dp))
                 Text("Main FIFA 16 Sekarang", fontSize = 17.sp, fontWeight = FontWeight.Black)
             }
         }
 
-        // ── Patch info ────────────────────────────────────────────────────────
-        GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Security, contentDescription = null, tint = CandyCyan, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Sistem Patch DLavie", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(8.dp))
-            listOf(
-                Icons.Rounded.CloudDownload to ("Download" to "Manifest JSON dari GitHub, versi dibandingkan."),
-                Icons.Rounded.Shield        to ("Verifikasi" to "SHA-256 dicek untuk keamanan file patch."),
-                Icons.Rounded.FolderOpen    to ("Backup" to "File lama dibackup sebelum patch diapply."),
-                Icons.Rounded.Storage       to ("Apply" to "File baru di-copy via Shizuku/root (cp -af, no duplikat)."),
-                Icons.Rounded.Refresh       to ("Restore" to "Backup tersedia jika patch bermasalah.")
-            ).forEach { (icon, item) ->
-                val (title, desc) = item
-                Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
-                    Icon(icon, contentDescription = null, tint = CandyCyan, modifier = Modifier.size(14.dp).padding(top = 1.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text(title, color = CandyCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text(desc, color = SoftText, fontSize = 11.sp)
-                    }
-                }
-            }
+        // ── Jika game belum terinstall ──
+        AnimatedVisibility(!gameInstalled) {
+            GlassInfoBox(
+                icon  = Icons.Rounded.Info,
+                color = CandyCyan,
+                text  = "Instal game FIFA 16 terlebih dahulu sebelum melakukan pembaruan. Kembali ke tab Beranda untuk mengunduh."
+            )
         }
+
+        Spacer(Modifier.height(8.dp))
     }
 }
 
-// ─── Community / Chat screen ───────────────────────────────────────────────────
+// ─── Community / Chat screen ──────────────────────────────────────────────────
 @Composable
 fun CommunityScreen(api: CommunityApi) {
     val scope = rememberCoroutineScope()
-    var categories by remember { mutableStateOf<List<CategoryItem>>(emptyList()) }
+    var categories       by remember { mutableStateOf<List<CategoryItem>>(emptyList()) }
     var selectedCategory by remember { mutableStateOf<CategoryItem?>(null) }
-    var topics by remember { mutableStateOf<List<TopicItem>>(emptyList()) }
-    var selectedTopic by remember { mutableStateOf<TopicItem?>(null) }
-    var posts by remember { mutableStateOf<List<PostItem>>(emptyList()) }
-    var status by remember { mutableStateOf("Memuat komunitas...") }
-    var title by remember { mutableStateOf("") }
-    var body by remember { mutableStateOf("") }
-    var reply by remember { mutableStateOf("") }
+    var topics           by remember { mutableStateOf<List<TopicItem>>(emptyList()) }
+    var selectedTopic    by remember { mutableStateOf<TopicItem?>(null) }
+    var posts            by remember { mutableStateOf<List<PostItem>>(emptyList()) }
+    var status           by remember { mutableStateOf("Memuat komunitas…") }
+    var title            by remember { mutableStateOf("") }
+    var body             by remember { mutableStateOf("") }
+    var reply            by remember { mutableStateOf("") }
 
     fun loadPosts(topic: TopicItem) {
         scope.launch {
             try { posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) } }
-            catch (t: Throwable) { status = "Gagal load thread: ${t.message}" }
+            catch (t: Throwable) { status = "Gagal memuat percakapan: ${t.message}" }
         }
     }
     fun loadTopics() {
         scope.launch {
             try {
                 topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
-                status = if (topics.isEmpty()) "Belum ada topik." else "${topics.size} topik."
-            } catch (t: Throwable) { status = "Gagal load topik: ${t.message}" }
+                status = if (topics.isEmpty()) "Belum ada topik." else "${topics.size} topik tersedia."
+            } catch (t: Throwable) { status = "Gagal memuat topik: ${t.message}" }
         }
     }
     fun createTopic() {
-        val cat = selectedCategory ?: run { status = "Pilih channel dulu."; return }
-        if (title.trim().length < 4 || body.trim().isEmpty()) { status = "Judul min 4 karakter & isi wajib diisi."; return }
+        val cat = selectedCategory ?: run { status = "Pilih saluran terlebih dahulu."; return }
+        if (title.trim().length < 4 || body.trim().isEmpty()) { status = "Judul minimal 4 karakter dan isi wajib diisi."; return }
         scope.launch {
             try {
                 val newTopic = withContext(Dispatchers.IO) { api.createTopic(cat.id, title, body) }
                 title = ""; body = ""
                 topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(cat.id)) }
                 selectedTopic = topics.firstOrNull { it.id == newTopic.optString("id") }
-                status = "Topik dibuat."
+                status = "Topik berhasil dibuat."
             } catch (t: Throwable) { status = "Gagal: ${t.message}" }
         }
     }
     fun sendReply() {
-        val topic = selectedTopic ?: run { status = "Pilih topik dulu."; return }
+        val topic = selectedTopic ?: run { status = "Pilih topik terlebih dahulu."; return }
         if (reply.trim().isEmpty()) return
         scope.launch {
             try {
                 withContext(Dispatchers.IO) { api.createPost(topic.id, "", reply) }
                 reply = ""
                 posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) }
-            } catch (t: Throwable) { status = "Gagal reply: ${t.message}" }
+            } catch (t: Throwable) { status = "Gagal mengirim: ${t.message}" }
         }
     }
 
     LaunchedEffect(Unit) {
         try {
-            categories    = withContext(Dispatchers.IO) { jsonCategories(api.categories()) }
+            categories       = withContext(Dispatchers.IO) { jsonCategories(api.categories()) }
             selectedCategory = categories.firstOrNull()
-            topics        = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
-            status        = if (topics.isEmpty()) "Belum ada topik." else "Siap."
-        } catch (t: Throwable) { status = "Community error: ${t.message}" }
+            topics           = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
+            status           = if (topics.isEmpty()) "Belum ada topik." else "Siap."
+        } catch (t: Throwable) { status = "Error komunitas: ${t.message}" }
     }
 
     Box(Modifier.fillMaxSize().padding(14.dp)) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             ChannelPanel(categories, selectedCategory) { selectedCategory = it; selectedTopic = null; posts = emptyList(); loadTopics() }
-            TopicPanel(status, title, body, topics, selectedTopic, onTitle = { title = it }, onBody = { body = it }, onCreate = { createTopic() }, onSelect = { t -> selectedTopic = t; loadPosts(t) })
+            TopicPanel(status, title, body, topics, selectedTopic,
+                onTitle = { title = it }, onBody = { body = it },
+                onCreate = { createTopic() }, onSelect = { t -> selectedTopic = t; loadPosts(t) })
             ThreadPanel(selectedTopic, posts, reply, onReply = { reply = it }, onSend = { sendReply() })
         }
     }
 }
 
-// ─── Profile / Me screen ───────────────────────────────────────────────────────
+// ─── Profile / Me screen ──────────────────────────────────────────────────────
 @Composable
 fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
     val context       = LocalContext.current
@@ -1004,131 +1136,132 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
     val role    = api.role()
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
 
         // ── Avatar + identity ──
         GlassCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(72.dp)
+                    Modifier.size(68.dp)
                         .background(Brush.linearGradient(listOf(CandyCyan, CandyBlue)), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(initial, fontSize = 28.sp, fontWeight = FontWeight.Black, color = Color.White)
+                    Text(initial, fontSize = 26.sp, fontWeight = FontWeight.Black, color = Color.White)
                 }
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(api.displayName().ifEmpty { "DLavie Player" }, fontSize = 19.sp, fontWeight = FontWeight.Black, color = Color.White)
+                    Text(api.displayName().ifEmpty { "DLavie Player" }, fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color.White)
                     Text("@${api.username().ifEmpty { "unknown" }}", color = SoftText, fontSize = 13.sp)
                     Spacer(Modifier.height(6.dp))
-                    AppBadge(role.uppercase(), roleBadgeColor(role))
+                    DLBadge(role.uppercase(), roleBadgeColor(role))
                 }
             }
-        }
-
-        // ── Account info ──
-        GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.AccountCircle, contentDescription = null, tint = CandyCyan, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Info Akun", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            }
             Spacer(Modifier.height(10.dp))
-            ProfileInfoLine("Username",     "@${api.username().ifEmpty { "-" }}")
-            ProfileInfoLine("Display Name", api.displayName().ifEmpty { "-" })
-            ProfileInfoLine("Role",         role)
-            ProfileInfoLine("Server",       "Supabase Cloud")
-            ProfileInfoLine("Game",         if (gameInstalled) "FIFA 16 terinstall" else "Belum terinstall")
+            // Account details
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MiniStatusTile("Game", if (gameInstalled) "Terinstall" else "Belum ada", gameInstalled, Modifier.weight(1f))
+                MiniStatusTile("Sesi", "Aktif", true, Modifier.weight(1f))
+                MiniStatusTile("Server", "Online", true, Modifier.weight(1f))
+            }
         }
 
-        // ── Game quick launch ──
+        // ── Game action ──
         GlassCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.PlayCircle, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.SportsSoccer, null, tint = NeonGreen, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Game", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("FIFA 16 Mobile", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(10.dp))
             if (gameInstalled) {
                 Button(
                     onClick  = { launchGame(context) },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape    = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape    = RoundedCornerShape(14.dp),
                     colors   = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B))
                 ) {
-                    Icon(Icons.Rounded.PlayCircle, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Main FIFA 16", fontWeight = FontWeight.Bold)
                 }
             } else {
-                Button(
-                    onClick  = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$FIFA_APK_URL"))) },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape    = RoundedCornerShape(16.dp),
-                    colors   = ButtonDefaults.buttonColors(containerColor = CandyBlue)
-                ) {
-                    Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Download FIFA 16", fontWeight = FontWeight.Bold)
-                }
+                GlassInfoBox(Icons.Rounded.Info, CandyCyan, "Game belum terinstall. Kembali ke Beranda untuk mengunduh dan menginstal FIFA 16.")
             }
         }
 
-        // ── Security info ──
+        // ── Info akun ──
         GlassCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Security, contentDescription = null, tint = CandyCyan, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.AccountCircle, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Keamanan", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("Detail Akun", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(10.dp))
+            ProfRow("Username",    "@${api.username().ifEmpty { "-" }}")
+            ProfRow("Nama",        api.displayName().ifEmpty { "-" })
+            ProfRow("Role",        role.replaceFirstChar { it.uppercase() })
+            ProfRow("Server",      "DLavie Cloud")
+        }
+
+        // ── Keamanan ──
+        GlassCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Security, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Keamanan", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(14.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Sesi JWT aktif — auto-refresh setiap 50 menit", color = SoftText, fontSize = 12.sp)
-            }
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(14.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Patch SHA-256 terverifikasi sebelum apply", color = SoftText, fontSize = 12.sp)
+            listOf(
+                "Sesi terenkripsi — diperbarui otomatis setiap 50 menit.",
+                "Setiap pembaruan diverifikasi sebelum diterapkan.",
+                "Data login tidak pernah disimpan di penyimpanan lokal."
+            ).forEach { text ->
+                Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Rounded.CheckCircle, null, tint = NeonGreen, modifier = Modifier.size(13.dp).padding(top = 2.dp))
+                    Text(text, color = SoftText, fontSize = 12.sp, lineHeight = 16.sp)
+                }
             }
         }
 
         // ── Logout ──
-        AnimatedContent(targetState = confirmLogout, label = "logout_state") { confirm ->
+        AnimatedContent(targetState = confirmLogout, label = "logout") { confirm ->
             if (!confirm) {
-                Button(
+                OutlinedButton(
                     onClick  = { confirmLogout = true },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape    = RoundedCornerShape(16.dp),
-                    colors   = ButtonDefaults.buttonColors(containerColor = DangerRed.copy(0.15f), contentColor = DangerRed)
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape    = RoundedCornerShape(14.dp),
+                    border   = BorderStroke(1.dp, DangerRed.copy(0.4f))
                 ) {
-                    Text("Logout", fontWeight = FontWeight.Bold)
+                    Text("Keluar dari Akun", color = DangerRed, fontWeight = FontWeight.Bold)
                 }
             } else {
                 GlassCard(borderColor = DangerRed.copy(0.5f)) {
-                    Text("Konfirmasi Logout", color = DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Text("Sesi akan dihapus dan kamu harus login kembali.", color = SoftText, fontSize = 13.sp)
-                    Spacer(Modifier.height(12.dp))
+                    Text("Konfirmasi Keluar", color = DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Kamu harus login kembali setelah keluar.", color = SoftText, fontSize = 13.sp)
+                    Spacer(Modifier.height(14.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedButton(
                             onClick  = { confirmLogout = false },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape    = RoundedCornerShape(12.dp),
                             border   = BorderStroke(1.dp, GlassStroke)
                         ) { Text("Batal", color = SoftText) }
                         Button(
                             onClick  = onLogout,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).height(48.dp),
                             shape    = RoundedCornerShape(12.dp),
                             colors   = ButtonDefaults.buttonColors(containerColor = DangerRed)
-                        ) { Text("Logout", fontWeight = FontWeight.Bold) }
+                        ) { Text("Keluar", fontWeight = FontWeight.Bold) }
                     }
                 }
             }
         }
+
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -1138,82 +1271,68 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
 fun GlassCard(modifier: Modifier = Modifier, borderColor: Color = GlassStroke, content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = modifier,
-        shape    = RoundedCornerShape(28.dp),
-        colors   = CardDefaults.cardColors(containerColor = Color(0xCC0D1520)),
+        shape    = RoundedCornerShape(24.dp),
+        colors   = CardDefaults.cardColors(containerColor = Color(0xBE0C1422)),
         border   = BorderStroke(1.dp, borderColor)
-    ) { Column(modifier = Modifier.padding(18.dp), content = content) }
+    ) { Column(Modifier.padding(16.dp), content = content) }
 }
 
 @Composable
-fun StatusChip(
-    title: String, value: String, ok: Boolean, loading: Boolean,
-    icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit
-) {
-    val borderColor by animateColorAsState(
-        when { loading -> GlassStroke; ok -> NeonGreen.copy(0.4f); else -> DangerRed.copy(0.4f) },
-        animationSpec = tween(400), label = "chip_border"
+fun StatusChip(label: String, value: String, ok: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
+    val borderAnim by animateColorAsState(
+        if (ok) NeonGreen.copy(0.35f) else DangerRed.copy(0.35f),
+        tween(400), label = "chip_border"
     )
     val iconTint by animateColorAsState(
-        if (ok) NeonGreen else if (loading) SoftText else DangerRed,
-        animationSpec = tween(400), label = "chip_icon"
+        if (ok) NeonGreen else DangerRed,
+        tween(400), label = "chip_icon"
     )
     Surface(
-        modifier  = modifier.height(88.dp).clickable { onClick() },
-        shape     = RoundedCornerShape(20.dp),
-        color     = Color(0xAA0A1422),
-        border    = BorderStroke(1.dp, borderColor)
+        modifier  = modifier.height(76.dp).clip(RoundedCornerShape(18.dp)).clickable { onClick() },
+        shape     = RoundedCornerShape(18.dp),
+        color     = Color(0xA00A1422),
+        border    = BorderStroke(1.dp, borderAnim)
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.Center) {
-            if (loading) CircularProgressIndicator(modifier = Modifier.size(18.dp), color = CandyCyan, strokeWidth = 2.dp, trackColor = androidx.compose.ui.graphics.Color.Transparent)
-            else Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.height(4.dp))
-            Text(title, color = SoftText, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(value, color = iconTint, fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.Center) {
+            Icon(
+                if (ok) Icons.Rounded.CheckCircle else Icons.Rounded.Cancel,
+                null, tint = iconTint, modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(label, color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(value, color = iconTint, fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
-fun InfoTile(label: String, value: String, ok: Boolean, icon: ImageVector, modifier: Modifier = Modifier) {
-    val valueColor by animateColorAsState(
-        if (ok) NeonGreen else DangerRed, animationSpec = tween(400), label = "tile_color"
-    )
+fun MiniStatusTile(label: String, value: String, ok: Boolean, modifier: Modifier = Modifier) {
+    val color by animateColorAsState(if (ok) NeonGreen else DangerRed, tween(400), label = "tile_c")
     GlassCard(modifier = modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = valueColor, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(label, color = SoftText, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        }
-        Text(value, color = valueColor, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Spacer(Modifier.height(2.dp))
+        Text(value, color = color, fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
-fun QuickActionButton(label: String, icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Button(
-        onClick  = onClick,
-        modifier = modifier.height(52.dp),
-        shape    = RoundedCornerShape(16.dp),
-        colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF131D2E), contentColor = CandyCyan)
+fun DLBadge(text: String, color: Color) {
+    Surface(
+        color  = color.copy(0.12f),
+        shape  = RoundedCornerShape(999.dp),
+        border = BorderStroke(1.dp, color.copy(0.35f))
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Icon(icon, contentDescription = label, modifier = Modifier.size(16.dp))
-            Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        }
+        Text(
+            text, color = color, fontSize = 10.sp, fontWeight = FontWeight.Black,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), maxLines = 1
+        )
     }
 }
 
 @Composable
-fun AppBadge(text: String, color: Color) {
-    Surface(color = color.copy(0.12f), shape = RoundedCornerShape(999.dp), border = BorderStroke(1.dp, color.copy(0.4f))) {
-        Text(text, color = color, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), maxLines = 1)
-    }
-}
-
-@Composable
-fun ProfileInfoLine(label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(label, color = SoftText, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(110.dp))
+fun ProfRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+        Text(label, color = SubText, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(90.dp))
         Text(value, color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -1221,10 +1340,10 @@ fun ProfileInfoLine(label: String, value: String) {
 @Composable
 fun GlassListItem(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
-        shape     = RoundedCornerShape(18.dp),
-        color     = if (selected) Color(0x5527C8FF) else Color(0x66101F34),
-        border    = BorderStroke(1.dp, if (selected) CandyCyan else GlassStroke),
-        modifier  = Modifier.fillMaxWidth().clickable { onClick() }
+        shape    = RoundedCornerShape(16.dp),
+        color    = if (selected) Color(0x4427C8FF) else Color(0x66101F34),
+        border   = BorderStroke(1.dp, if (selected) CandyCyan else GlassStroke),
+        modifier = Modifier.fillMaxWidth().clickable { onClick() }
     ) {
         Column(Modifier.padding(12.dp)) {
             Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -1237,19 +1356,20 @@ fun GlassListItem(title: String, subtitle: String, selected: Boolean, onClick: (
 fun ChannelPanel(categories: List<CategoryItem>, selected: CategoryItem?, modifier: Modifier = Modifier, onSelect: (CategoryItem) -> Unit) {
     GlassCard(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.Forum, contentDescription = null, tint = CandyCyan, modifier = Modifier.size(18.dp))
+            Icon(Icons.Rounded.Forum, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Channels", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text("Saluran", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
         Spacer(Modifier.height(10.dp))
         if (categories.isEmpty())
-            Text("Memuat channels...", color = SoftText, fontSize = 12.sp)
+            Text("Memuat saluran…", color = SoftText, fontSize = 12.sp)
         else categories.forEach { c ->
             OutlinedButton(
                 onClick  = { onSelect(c) },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                shape    = RoundedCornerShape(12.dp),
                 border   = BorderStroke(1.dp, if (selected?.id == c.id) CandyCyan else GlassStroke)
-            ) { Text(c.name, color = if (selected?.id == c.id) CandyCyan else Color.White) }
+            ) { Text(c.name, color = if (selected?.id == c.id) CandyCyan else Color.White, fontSize = 13.sp) }
         }
     }
 }
@@ -1261,23 +1381,23 @@ fun TopicPanel(
     onCreate: () -> Unit, onSelect: (TopicItem) -> Unit
 ) {
     GlassCard(modifier) {
-        Text("Topik", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text("Topik Diskusi", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
         Text(status, color = SoftText, fontSize = 11.sp)
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(value = title, onValueChange = onTitle, label = { Text("Judul topik baru", fontSize = 12.sp) },
-            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), singleLine = true)
+            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), singleLine = true)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(value = body, onValueChange = onBody, label = { Text("Isi topik", fontSize = 12.sp) },
-            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), minLines = 2)
+            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), minLines = 2)
         Spacer(Modifier.height(8.dp))
         Button(
             onClick  = onCreate,
             colors   = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D)),
-            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)
+            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
         ) { Text("Buat Topik Baru", fontWeight = FontWeight.Bold) }
         Spacer(Modifier.height(10.dp))
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            topics.forEach { t -> GlassListItem(t.title, "${t.replyCount} replies · ${t.createdAt.take(10)}", selected?.id == t.id) { onSelect(t) } }
+            topics.forEach { t -> GlassListItem(t.title, "${t.replyCount} balasan · ${t.createdAt.take(10)}", selected?.id == t.id) { onSelect(t) } }
         }
     }
 }
@@ -1286,25 +1406,25 @@ fun TopicPanel(
 fun ThreadPanel(topic: TopicItem?, posts: List<PostItem>, reply: String, modifier: Modifier = Modifier, onReply: (String) -> Unit, onSend: () -> Unit) {
     GlassCard(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.Forum, contentDescription = null, tint = CandyCyan, modifier = Modifier.size(16.dp))
+            Icon(Icons.Rounded.Forum, null, tint = CandyCyan, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))
-            Text(topic?.title ?: "Thread", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(topic?.title ?: "Pilih Topik", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (topic != null) Text(topic.body, color = SoftText, fontSize = 13.sp)
-        else Text("Pilih topik untuk membaca dan membalas.", color = SoftText, fontSize = 13.sp)
+        if (topic != null) Text(topic.body, color = SoftText, fontSize = 12.sp)
+        else Text("Pilih topik di sebelah kiri untuk mulai membaca.", color = SoftText, fontSize = 12.sp)
         Spacer(Modifier.height(10.dp))
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             posts.forEach { p -> GlassListItem("@${p.authorId.take(8)}", p.body, false) {} }
         }
         if (topic != null) {
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(value = reply, onValueChange = onReply, label = { Text("Tulis balasan", fontSize = 12.sp) },
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), singleLine = false, minLines = 2)
+            OutlinedTextField(value = reply, onValueChange = onReply, label = { Text("Tulis balasan…", fontSize = 12.sp) },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), singleLine = false, minLines = 2)
             Spacer(Modifier.height(8.dp))
             Button(
                 onClick  = onSend,
                 colors   = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B)),
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
             ) { Text("Kirim Balasan", fontWeight = FontWeight.Bold) }
         }
     }
@@ -1319,8 +1439,8 @@ fun readMarker(): String =
     try { File(MARKER_PATH).readText().trim() } catch (_: Exception) { "" }
 
 fun fetchUpdateInfo(): UpdateInfo {
-    val json      = fetchJson(DEFAULT_MANIFEST)
-    // DLavie-Launcher-Data manifest format: { "version": 26, "package": "...", "files": [...] }
+    val json       = fetchJson(DEFAULT_MANIFEST)
+    // Support both DLavie-Launcher-Data format {version:26} and legacy {latestVersionCode:N}
     val latestCode = json.optInt("version", json.optInt("latestVersionCode", LOCAL_VER))
     val latestName = json.optString("latestVersionName", "v$latestCode")
     val notesArr   = json.optJSONArray("releaseNotes")
@@ -1331,7 +1451,7 @@ fun fetchUpdateInfo(): UpdateInfo {
 fun parseFeed(arr: JSONArray): List<FeedItem> = try {
     List(arr.length()) { i ->
         val o = arr.getJSONObject(i)
-        FeedItem(o.optString("id"), o.optString("title"), o.optString("body"), o.optString("type", "info"), o.optBoolean("pinned"), o.optBoolean("official"))
+        FeedItem(o.optString("id"), o.optString("title"), o.optString("body"), o.optString("type","info"), o.optBoolean("pinned"), o.optBoolean("official"))
     }
 } catch (_: Exception) { emptyList() }
 
@@ -1345,7 +1465,7 @@ fun roleBadgeColor(role: String): Color = when (role.lowercase()) {
 fun launchGame(context: android.content.Context) {
     val intent = context.packageManager.getLaunchIntentForPackage(GAME_PKG)
     if (intent != null) context.startActivity(intent)
-    else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$FIFA_APK_URL")))
+    else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(FIFA_APK_URL)))
 }
 
 fun fetchJson(url: String): JSONObject {
