@@ -9,12 +9,12 @@ if not source.exists():
 
 text = source.read_text()
 required = [
-    "private fun DLavieGuidedApp()",
-    "private fun GuidedHomeScreen",
-    "private fun GuidedDataScreen",
-    "private fun GuidedUpdateScreen",
-    "private fun guidedDownloadPatch",
-    "private fun guidedInstallPatch",
+    "fun DLavieGuidedApp()",
+    "fun GuidedHomeScreen",
+    "fun GuidedDataScreen",
+    "fun GuidedUpdateScreen",
+    "fun guidedDownloadPatch",
+    "fun guidedInstallPatch",
 ]
 missing = [item for item in required if item not in text]
 if missing:
