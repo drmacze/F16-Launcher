@@ -548,7 +548,7 @@ fun DataScreen(onNav: (Page) -> Unit) {
         scope.launch {
             withContext(Dispatchers.IO) { runCatching { fetchUpdateInfo() } }
                 .fold(
-                    onSuccess = { r -> r.fold({ updateInfo = it }, { updateError = it.message ?: "Gagal" }) },
+                    onSuccess = { updateInfo = it },
                     onFailure = { updateError = it.message ?: "Gagal" }
                 )
             loading = false
@@ -1075,11 +1075,11 @@ fun StatusChip(
     title: String, value: String, ok: Boolean, loading: Boolean,
     icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit
 ) {
-    val borderColor by androidx.compose.animation.core.animateColorAsState(
+    val borderColor by animateColorAsState(
         when { loading -> GlassStroke; ok -> NeonGreen.copy(0.4f); else -> DangerRed.copy(0.4f) },
         animationSpec = tween(400), label = "chip_border"
     )
-    val iconTint by androidx.compose.animation.core.animateColorAsState(
+    val iconTint by animateColorAsState(
         if (ok) NeonGreen else if (loading) SoftText else DangerRed,
         animationSpec = tween(400), label = "chip_icon"
     )
@@ -1090,7 +1090,7 @@ fun StatusChip(
         border    = BorderStroke(1.dp, borderColor)
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.Center) {
-            if (loading) CircularProgressIndicator(color = CandyCyan, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            if (loading) CircularProgressIndicator(modifier = Modifier.size(18.dp), color = CandyCyan, strokeWidth = 2.dp, trackColor = androidx.compose.ui.graphics.Color.Transparent)
             else Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(18.dp))
             Spacer(Modifier.height(4.dp))
             Text(title, color = SoftText, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -1101,7 +1101,7 @@ fun StatusChip(
 
 @Composable
 fun InfoTile(label: String, value: String, ok: Boolean, icon: ImageVector, modifier: Modifier = Modifier) {
-    val valueColor by androidx.compose.animation.core.animateColorAsState(
+    val valueColor by animateColorAsState(
         if (ok) NeonGreen else DangerRed, animationSpec = tween(400), label = "tile_color"
     )
     GlassCard(modifier = modifier) {
