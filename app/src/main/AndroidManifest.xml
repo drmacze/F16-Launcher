@@ -48,21 +48,12 @@
             android:name=".CommunityActivity"
             android:exported="false" />
 
-        <activity
-            android:name=".GameHubActivity"
-            android:exported="false"
-            android:label="DLavie Advanced Updater" />
 
-        <activity
-            android:name=".ModernLauncherActivity"
-            android:exported="false"
-            android:label="DLavie Legacy Hub"
-            android:theme="@style/AppTheme.Splash" />
 
         <activity
             android:name=".DLavieHubActivity"
             android:exported="false"
-            android:label="DLavie Classic Hub"
+            android:label="DLavie 26"
             android:theme="@style/AppTheme.Splash" />
 
         <activity
