@@ -377,9 +377,7 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
         // ── Quick action row ──────────────────────────────────────────────────
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             QuickActionButton("Data", Icons.Rounded.Storage, Modifier.weight(1f)) { onNav(Page.Data) }
-            QuickActionButton("Update", Icons.Rounded.CloudSync, Modifier.weight(1f)) {
-                context.startActivity(Intent(context, GameHubActivity::class.java))
-            }
+            QuickActionButton("Update", Icons.Rounded.CloudSync, Modifier.weight(1f)) { onNav(Page.Data) }
             QuickActionButton("Chat", Icons.Rounded.Forum, Modifier.weight(1f)) { onNav(Page.Chat) }
         }
 
@@ -410,7 +408,7 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                 loading = loadingHome,
                 icon    = if (loadingHome) Icons.Rounded.Refresh else if (updateInfo?.upToDate != false) Icons.Rounded.Shield else Icons.Rounded.SystemUpdate,
                 modifier = Modifier.weight(1f)
-            ) { context.startActivity(Intent(context, GameHubActivity::class.java)) }
+            ) { onNav(Page.Data) }
         }
 
         // ── Base data warning ─────────────────────────────────────────────────
@@ -782,28 +780,8 @@ fun DataScreen(onNav: (Page) -> Unit) {
                 Spacer(Modifier.width(8.dp))
                 Text(if (loading) "Mengecek..." else "Cek Update Manifest", fontWeight = FontWeight.Bold)
             }
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick  = { context.startActivity(Intent(context, DLavieHubActivity::class.java)) },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape    = RoundedCornerShape(16.dp),
-                colors   = ButtonDefaults.buttonColors(containerColor = CandyBlue)
-            ) {
-                Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Buka Data Installer Lengkap", fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick  = { context.startActivity(Intent(context, GameHubActivity::class.java)) },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape    = RoundedCornerShape(16.dp),
-                colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF14203A))
-            ) {
-                Icon(Icons.Rounded.Terminal, contentDescription = null, tint = CandyCyan, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Advanced Shizuku Updater", fontWeight = FontWeight.Bold, color = CandyCyan)
-            }
+
+
         }
 
         // ── Play if ready ─────────────────────────────────────────────────────
