@@ -4,23 +4,40 @@
         <shape android:shape="rectangle">
             <gradient
                 android:angle="270"
-                android:startColor="#02040A"
-                android:centerColor="#071827"
-                android:endColor="#02040A" />
+                android:startColor="#020403"
+                android:centerColor="#06130E"
+                android:endColor="#000000" />
         </shape>
     </item>
 
     <item android:gravity="center">
         <shape android:shape="oval">
-            <size android:width="320dp" android:height="320dp" />
-            <solid android:color="#1000BFFF" />
-            <stroke android:width="1dp" android:color="#225D8DFF" />
+            <size android:width="420dp" android:height="420dp" />
+            <gradient
+                android:type="radial"
+                android:gradientRadius="210dp"
+                android:startColor="#2624E878"
+                android:centerColor="#1200C8FF"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+
+    <item android:gravity="center">
+        <shape android:shape="rectangle">
+            <size android:width="190dp" android:height="190dp" />
+            <corners android:radius="44dp" />
+            <gradient
+                android:angle="315"
+                android:startColor="#063A24"
+                android:centerColor="#071511"
+                android:endColor="#020403" />
+            <stroke android:width="1dp" android:color="#5524E878" />
         </shape>
     </item>
 
     <item
         android:gravity="center"
-        android:width="196dp"
-        android:height="196dp"
+        android:width="148dp"
+        android:height="148dp"
         android:drawable="@drawable/dlavie_launcher_icon" />
 </layer-list>
