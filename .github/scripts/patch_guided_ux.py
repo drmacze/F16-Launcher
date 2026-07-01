@@ -18,8 +18,7 @@ missing = [item for item in required if item not in text]
 if missing:
     raise SystemExit("Guided source tidak lengkap: " + ", ".join(missing))
 
-# Fix Kotlin compile errors in the guided launcher source.
-# These are small deterministic patches, not UI injection.
+# Recovery compile patch. Only deterministic Kotlin compatibility fixes.
 text = text.replace(
     "guidedDownloadPatch(context) { progress -> state = progress }",
     "guidedDownloadPatch(context) { progress: GuidedUpdateState -> state = progress }",
@@ -55,4 +54,4 @@ text = text.replace(
 )
 
 source.write_text(text)
-print("Guided Compose compile compatibility OK")
+print("Guided recovery compile patch OK")
