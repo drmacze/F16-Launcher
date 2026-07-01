@@ -81,7 +81,7 @@ object GameUtils {
             val stat = StatFs(Environment.getExternalStorageDirectory().absolutePath)
             stat.totalBlocksLong * stat.blockSizeLong
         } catch (_: Throwable) { 0L }
-        }
+    }
 
     /** Human-readable size string. */
     fun formatBytes(bytes: Long): String {
