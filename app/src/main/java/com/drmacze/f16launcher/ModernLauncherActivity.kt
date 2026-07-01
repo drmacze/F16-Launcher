@@ -601,18 +601,18 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                     GlassInfoBox(
                         icon  = Icons.Rounded.Storage,
                         color = AmberWarn,
-                        text  = "Data game belum tersedia. Buka tab Update untuk mengunduh dan menyiapkan data FIFA 16."
+                        text  = "Data game belum tersedia. Buka FIFA 16 — game akan otomatis mengunduh OBB dan data saat pertama kali dibuka."
                     )
                     Spacer(Modifier.height(14.dp))
                     Button(
-                        onClick  = { onNav(Page.Update) },
+                        onClick  = { launchGame(context) },
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         shape    = RoundedCornerShape(18.dp),
                         colors   = ButtonDefaults.buttonColors(containerColor = AmberWarn, contentColor = Color(0xFF1A0F00))
                     ) {
-                        Icon(Icons.Rounded.CloudSync, null, modifier = Modifier.size(22.dp))
+                        Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Siapkan Data Game", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                        Text("Buka FIFA 16 & Siapkan Data", fontSize = 15.sp, fontWeight = FontWeight.Black)
                     }
                 }
 
