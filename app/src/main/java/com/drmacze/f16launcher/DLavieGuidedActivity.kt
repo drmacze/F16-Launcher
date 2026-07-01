@@ -79,6 +79,13 @@ private const val SHIZUKU_REQUEST = 2026
 class DLavieGuidedActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val existing = loadSession(this)
+        if (existing != null) {
+            syncToCommunityPrefs(this, existing)
+            startActivity(Intent(this, ModernLauncherActivity::class.java))
+            finish()
+            return
+        }
         setContent { DLavieGuidedApp() }
     }
 }
@@ -142,11 +149,17 @@ private val GuideFont = FontFamily.SansSerif
 @Composable
 private fun DLavieGuidedApp() {
     val context = LocalContext.current
-    var session by remember { mutableStateOf(loadSession(context)) }
     MaterialTheme(darkColorScheme(background = GuideDark, surface = GuideCard, primary = GuideGreen, secondary = GuideCyan, onBackground = GuideWhite, onSurface = GuideWhite)) {
         Surface(color = GuideDark, modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF082719), GuideDark, Color.Black), radius = 980f))) {
-                if (session == null) GuidedLoginScreen(onLoggedIn = { session = it }) else GuidedLauncherScreen(session = session!!, onLogout = { clearSession(context); session = null })
+                GuidedLoginScreen(onLoggedIn = { session ->
+                    saveSession(context, session)
+                    syncToCommunityPrefs(context, session)
+                    context.startActivity(
+                        Intent(context, ModernLauncherActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                })
             }
         }
     }
@@ -550,6 +563,8 @@ private fun GuidedProfileScreen(session: AuthSession, onLogout: () -> Unit) {
 private fun loadSession(context: Context): AuthSession? { val p = context.getSharedPreferences(PREF_AUTH, Context.MODE_PRIVATE); val token = p.getString(PREF_TOKEN, null) ?: return null; val refresh = p.getString(PREF_REFRESH, "") ?: ""; val email = p.getString(PREF_EMAIL, "") ?: ""; return AuthSession(token, refresh, email) }
 private fun saveSession(context: Context, s: AuthSession) { context.getSharedPreferences(PREF_AUTH, Context.MODE_PRIVATE).edit().putString(PREF_TOKEN, s.accessToken).putString(PREF_REFRESH, s.refreshToken).putString(PREF_EMAIL, s.email).apply() }
 private fun clearSession(context: Context) { context.getSharedPreferences(PREF_AUTH, Context.MODE_PRIVATE).edit().clear().apply() }
+private fun userIdFromJwt(token: String): String = try { val payload = token.split(".").getOrNull(1) ?: return ""; val padded = payload + "=".repeat((4 - payload.length % 4) % 4); val decoded = android.util.Base64.decode(padded, android.util.Base64.URL_SAFE); JSONObject(String(decoded)).optString("sub", "") } catch (_: Exception) { "" }
+private fun syncToCommunityPrefs(context: Context, session: AuthSession) { val userId = userIdFromJwt(session.accessToken); context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE).edit().putString("access_token", session.accessToken).putString("refresh_token", session.refreshToken).putString("user_id", userId).apply() }
 private fun loginWithPassword(context: Context, email: String, password: String): AuthResult = authPassword(context, "/auth/v1/token?grant_type=password", email, password, "OK: login berhasil.")
 private fun registerWithPassword(context: Context, email: String, password: String): AuthResult = authPassword(context, "/auth/v1/signup", email, password, "OK: akun dibuat.")
 private fun registerWithUsernamePassword(context: Context, email: String, password: String, username: String, displayName: String): AuthResult = try {
