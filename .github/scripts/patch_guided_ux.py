@@ -28,21 +28,21 @@ text = text.replace(
     "private fun GuidedPage(content: @Composable () -> Unit) {",
 )
 text = text.replace(
-    """    Column(
+    '''    Column(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
         content = content
-    )""",
-    """    Column(
+    )''',
+    '''    Column(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) { content() }""",
+    ) { content() }''',
 )
 text = text.replace(
     "private fun GuidedPanel(content: @Composable Column.() -> Unit) {",
@@ -57,5 +57,16 @@ text = text.replace(
     'Text("DLavie 26", color = GuideWhite, fontSize = 26.sp',
 )
 
+# Kotlin conditional expressions with lambdas were inferred as Any.
+# Force them into one explicit () -> Unit lambda so Compose button callbacks compile.
+text = text.replace(
+    'GuidedPrimaryCta(if (marker.startsWith("v26")) "Mainkan Game" else "Install Full Data", if (marker.startsWith("v26")) "Data siap. Buka FIFA 16." else "Base data belum lengkap.", if (marker.startsWith("v26")) "▶" else "⬇", if (marker.startsWith("v26")) { guidedLaunchGame(context) } else openData)',
+    'GuidedPrimaryCta(if (marker.startsWith("v26")) "Mainkan Game" else "Install Full Data", if (marker.startsWith("v26")) "Data siap. Buka FIFA 16." else "Base data belum lengkap.", if (marker.startsWith("v26")) "▶" else "⬇", { if (marker.startsWith("v26")) guidedLaunchGame(context) else openData() })',
+)
+text = text.replace(
+    'GuidedActionButton(if (marker.startsWith("v26")) "Ke Update" else "Buka Installer Data", if (marker.startsWith("v26")) GuideCyan else GuideGreen, if (marker.startsWith("v26")) openUpdate else { guidedOpenClassicInstaller(context) }, true)',
+    'GuidedActionButton(if (marker.startsWith("v26")) "Ke Update" else "Buka Installer Data", if (marker.startsWith("v26")) GuideCyan else GuideGreen, { if (marker.startsWith("v26")) openUpdate() else guidedOpenClassicInstaller(context) }, true)',
+)
+
 source.write_text(text)
-print("Recovery compile sanity OK - feature injection disabled")
+print("Recovery compile sanity OK - lambda callbacks fixed")
