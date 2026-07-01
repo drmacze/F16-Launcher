@@ -283,6 +283,44 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
     var updateInfo  by remember { mutableStateOf<UpdateInfo?>(null) }
     var feed        by remember { mutableStateOf<List<FeedItem>>(emptyList()) }
     var loadingHome by remember { mutableStateOf(true) }
+    var dlProgress  by remember { mutableStateOf(-1f) }
+    var dlError     by remember { mutableStateOf("") }
+    val dlScope     = rememberCoroutineScope()
+
+    fun startDownload() {
+        dlProgress = 0f; dlError = ""
+        dlScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val outDir  = java.io.File(context.getExternalFilesDir(null), "public-install").also { it.mkdirs() }
+                    val apkFile = java.io.File(outDir, "DLavie26.apk")
+                    val conn    = URL(FIFA_APK_URL).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 30_000; conn.readTimeout = 120_000; conn.connect()
+                    val total   = conn.contentLengthLong.toFloat().coerceAtLeast(1f)
+                    val buf     = ByteArray(16 * 1024)
+                    conn.inputStream.use { inp ->
+                        apkFile.outputStream().use { out ->
+                            var n: Int; var read = 0L
+                            while (inp.read(buf).also { n = it } != -1) {
+                                out.write(buf, 0, n); read += n
+                                dlProgress = (read / total).coerceIn(0f, 0.99f)
+                            }
+                        }
+                    }
+                    apkFile
+                }
+            }.onSuccess { apkFile ->
+                dlProgress = 2f
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context, "${context.packageName}.files", apkFile)
+                context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                })
+            }.onFailure { dlError = it.message ?: "Download gagal"; dlProgress = -1f }
+        }
+    }
+
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -341,39 +379,96 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
             Text("Play, update, and connect — powered by DLavie.", color = SoftText, fontSize = 13.sp)
         }
 
-        // ── Play button (animated) ────────────────────────────────────────────
-        Box(
-            modifier = Modifier.fillMaxWidth().scale(if (gameInstalled && dataReady) pulseScale else 1f),
-            contentAlignment = Alignment.Center
-        ) {
-            // Glow ring behind button
-            if (gameInstalled && dataReady) {
-                Box(
-                    Modifier.fillMaxWidth().height(60.dp)
-                        .background(NeonGreen.copy(alpha = glowAlpha), RoundedCornerShape(22.dp))
-                )
-            }
-            Button(
-                onClick = {
-                    if (gameInstalled) launchGame(context)
-                    else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$FIFA_APK_URL")))
-                },
-                modifier = Modifier.fillMaxWidth().height(60.dp),
-                shape    = RoundedCornerShape(22.dp),
-                colors   = ButtonDefaults.buttonColors(
-                    containerColor = if (gameInstalled && dataReady) NeonGreen else CandyBlue.copy(0.35f),
-                    contentColor   = if (gameInstalled && dataReady) Color(0xFF00150B) else Color.White
-                )
+        // ── Play / Download button ─────────────────────────────────────────────
+        if (gameInstalled) {
+            Box(
+                modifier = Modifier.fillMaxWidth().scale(if (dataReady) pulseScale else 1f),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Rounded.PlayCircle, contentDescription = "Play", modifier = Modifier.size(24.dp))
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    if (gameInstalled) "Main FIFA 16" else "Download FIFA 16",
-                    fontSize   = 17.sp,
-                    fontWeight = FontWeight.Black
-                )
+                if (dataReady) {
+                    Box(
+                        Modifier.fillMaxWidth().height(60.dp)
+                            .background(NeonGreen.copy(alpha = glowAlpha), RoundedCornerShape(22.dp))
+                    )
+                }
+                Button(
+                    onClick  = { launchGame(context) },
+                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                    shape    = RoundedCornerShape(22.dp),
+                    colors   = ButtonDefaults.buttonColors(
+                        containerColor = if (dataReady) NeonGreen else CandyBlue.copy(0.35f),
+                        contentColor   = if (dataReady) Color(0xFF00150B) else Color.White
+                    )
+                ) {
+                    Icon(Icons.Rounded.PlayCircle, contentDescription = "Play", modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("Main FIFA 16", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                }
+            }
+        } else {
+            // ── In-app download with progress ─────────────────────────────────
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick  = { if (dlProgress < 0f || dlProgress >= 2f) startDownload() },
+                    enabled  = dlProgress < 0f || dlProgress >= 2f,
+                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                    shape    = RoundedCornerShape(22.dp),
+                    colors   = ButtonDefaults.buttonColors(
+                        containerColor = when {
+                            dlProgress >= 2f -> NeonGreen
+                            dlProgress >= 0f -> CandyBlue.copy(0.5f)
+                            else             -> CandyBlue.copy(0.35f)
+                        },
+                        contentColor = if (dlProgress >= 2f) Color(0xFF00150B) else Color.White
+                    )
+                ) {
+                    when {
+                        dlProgress >= 2f -> {
+                            Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(24.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text("Instal FIFA 16", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                        }
+                        dlProgress >= 0f -> {
+                            CircularProgressIndicator(
+                                modifier    = Modifier.size(20.dp),
+                                color       = CandyCyan,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text("Mengunduh\u2026 ${(dlProgress * 100).toInt()}%", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                        }
+                        else -> {
+                            Icon(Icons.Rounded.CloudDownload, null, modifier = Modifier.size(24.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text("Download FIFA 16", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+                AnimatedVisibility(visible = dlProgress >= 0f && dlProgress < 2f) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        LinearProgressIndicator(
+                            progress   = { dlProgress },
+                            modifier   = Modifier.fillMaxWidth(),
+                            color      = CandyCyan,
+                            trackColor = CandyCyan.copy(0.2f)
+                        )
+                        Text(
+                            "${(dlProgress * 34f).toInt()} MB / 34 MB — ${(dlProgress * 100).toInt()}%",
+                            color    = SoftText,
+                            fontSize = 12.sp,
+                            modifier = Modifier.align(Alignment.End)
+                        )
+                    }
+                }
+                AnimatedVisibility(visible = dlError.isNotEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Rounded.ErrorOutline, null, tint = DangerRed, modifier = Modifier.size(16.dp))
+                        Text(dlError, color = DangerRed, fontSize = 12.sp)
+                    }
+                }
             }
         }
+
 
         // ── Quick action row ──────────────────────────────────────────────────
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
