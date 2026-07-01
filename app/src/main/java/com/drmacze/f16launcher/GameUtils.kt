@@ -79,7 +79,7 @@ object GameUtils {
     fun totalBytesSdcard(): Long {
         return try {
             val stat = StatFs(Environment.getExternalStorageDirectory().absolutePath)
-            stat.totalBlocksLong * stat.blockSizeLong
+            stat.blockCountLong * stat.blockSizeLong
         } catch (_: Throwable) { 0L }
     }
 
