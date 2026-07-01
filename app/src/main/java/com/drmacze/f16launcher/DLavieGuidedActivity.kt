@@ -82,7 +82,7 @@ class DLavieGuidedActivity : ComponentActivity() {
         val existing = loadSession(this)
         if (existing != null) {
             syncToCommunityPrefs(this, existing)
-            startActivity(Intent(this, DLavieHubActivity::class.java))
+            startActivity(Intent(this, ModernLauncherActivity::class.java))
             finish()
             return
         }
@@ -156,7 +156,7 @@ private fun DLavieGuidedApp() {
                     saveSession(context, session)
                     syncToCommunityPrefs(context, session)
                     context.startActivity(
-                        Intent(context, DLavieHubActivity::class.java)
+                        Intent(context, ModernLauncherActivity::class.java)
                             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
                     )
                 })
@@ -605,7 +605,7 @@ private fun guidedShizukuState(): String = try { when { !Shizuku.pingBinder() ->
 private fun guidedRequestShizuku() { runCatching { if (Shizuku.pingBinder() && Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) Shizuku.requestPermission(SHIZUKU_REQUEST) } }
 private fun guidedIsGameInstalled(context: Context): Boolean = try { context.packageManager.getPackageInfo(GAME_PACKAGE, 0); true } catch (_: Exception) { false }
 private fun guidedLaunchGame(context: Context) { context.packageManager.getLaunchIntentForPackage(GAME_PACKAGE)?.let { context.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
-private fun guidedOpenClassicInstaller(context: Context) { runCatching { context.startActivity(Intent(context, DLavieHubActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
+private fun guidedOpenClassicInstaller(context: Context) { runCatching { context.startActivity(Intent(context, ModernLauncherActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
 private fun guidedReadMarkerSmart(): String = runCatching { File(MARKER_PATH).readText().trim() }.getOrElse { "No marker" }
 private fun guidedShortMarker(marker: String): String = if (marker.length > 12) marker.take(12) else marker
 private suspend fun guidedDownloadPatch(context: Context, onProgress: (GuidedUpdateState) -> Unit): GuidedUpdateState { val s = GuidedUpdateState(message = "Download patch akan masuk setelah login foundation hijau."); onProgress(s); return s }
