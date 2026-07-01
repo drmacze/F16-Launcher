@@ -6,8 +6,11 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +30,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -45,6 +49,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -150,40 +156,249 @@ private fun DLavieGuidedApp() {
 private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var isLogin by remember { mutableStateOf(true) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var displayName by remember { mutableStateOf("") }
+    var showPass by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf("Login wajib. Tidak ada guest mode.") }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(22.dp), verticalArrangement = Arrangement.Center) {
-        GuidedPanel {
-            Text("DLavie 26", color = GuideWhite, fontSize = 36.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont)
-            Text("Login untuk membuka launcher, profile, ticket, komunitas, dan update.", color = GuideMuted, fontSize = 14.sp, fontFamily = GuideFont)
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(value = email, onValueChange = { email = it.trim() }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-            Text(message, color = if (message.startsWith("OK")) GuideGreen else GuideMuted, fontSize = 12.sp, fontFamily = GuideFont)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                GuidedSmallAction("Login", GuideGreen, {
-                    scope.launch {
-                        working = true
-                        val result = withContext(Dispatchers.IO) { loginWithPassword(context, email, password) }
-                        working = false
-                        message = result.message
-                        result.session?.let(onLoggedIn)
-                    }
-                }, enabled = !working && email.isNotBlank() && password.length >= 6, modifier = Modifier.weight(1f))
-                GuidedSmallAction("Register", GuideCyan, {
-                    scope.launch {
-                        working = true
-                        val result = withContext(Dispatchers.IO) { registerWithPassword(context, email, password) }
-                        working = false
-                        message = result.message
-                        result.session?.let(onLoggedIn)
-                    }
-                }, enabled = !working && email.isNotBlank() && password.length >= 6, modifier = Modifier.weight(1f))
+    var message by remember { mutableStateOf("") }
+    var isSuccess by remember { mutableStateOf(false) }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(
+                Brush.radialGradient(
+                    listOf(Color(0xFF071A0F), Color(0xFF040806), Color.Black),
+                    radius = 1200f
+                )
+            )
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 26.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(Modifier.height(60.dp))
+
+            // ── Logo ──
+            Box(
+                Modifier
+                    .size(88.dp)
+                    .background(
+                        Brush.linearGradient(listOf(Color(0xFF0E4228), Color(0xFF061810))),
+                        RoundedCornerShape(26.dp)
+                    )
+                    .border(1.5.dp, GuideGreen.copy(alpha = 0.40f), RoundedCornerShape(26.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("DL", color = GuideGreen, fontSize = 30.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont)
             }
+            Spacer(Modifier.height(18.dp))
+            Text("DLavie 26", color = GuideWhite, fontSize = 29.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont)
+            Text("FIFA 16 Mobile 2026 Mod Hub", color = GuideMuted, fontSize = 12.sp, fontFamily = GuideFont)
+            Spacer(Modifier.height(36.dp))
+
+            // ── Auth Card ──
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF0C1510),
+                shape = RoundedCornerShape(28.dp),
+                border = BorderStroke(1.dp, Color(0xFF1C2E22))
+            ) {
+                Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+
+                    // Tab switcher
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF080D0A), RoundedCornerShape(14.dp))
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Button(
+                            onClick = { isLogin = true; message = "" },
+                            modifier = Modifier.weight(1f).height(42.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isLogin) GuideGreen else Color.Transparent,
+                                contentColor = if (isLogin) Color(0xFF001407) else GuideMuted
+                            ),
+                            elevation = ButtonDefaults.buttonElevation(0.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) { Text("Login", fontSize = 13.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont) }
+
+                        Button(
+                            onClick = { isLogin = false; message = "" },
+                            modifier = Modifier.weight(1f).height(42.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (!isLogin) GuideCyan else Color.Transparent,
+                                contentColor = if (!isLogin) Color(0xFF001407) else GuideMuted
+                            ),
+                            elevation = ButtonDefaults.buttonElevation(0.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) { Text("Register", fontSize = 13.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont) }
+                    }
+
+                    // Subtitle
+                    Text(
+                        if (isLogin) "Masuk ke akunmu untuk mengakses launcher."
+                        else "Buat akun baru. Username tidak bisa diubah lagi.",
+                        color = GuideMuted, fontSize = 12.sp, fontFamily = GuideFont
+                    )
+
+                    // Email
+                    AuthInputField(
+                        value = email, onValueChange = { email = it.trim() },
+                        label = "Email", prefix = "✉  "
+                    )
+
+                    // Password
+                    AuthInputField(
+                        value = password, onValueChange = { password = it },
+                        label = "Password", prefix = "🔒  ",
+                        isPassword = !showPass,
+                        trailingLabel = if (showPass) "Sembunyikan" else "Tampilkan",
+                        onTrailing = { showPass = !showPass }
+                    )
+
+                    // Register-only fields
+                    AnimatedVisibility(visible = !isLogin) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            AuthInputField(
+                                value = username,
+                                onValueChange = { raw ->
+                                    username = raw.trim().lowercase().filter { c -> c.isLetterOrDigit() || c == '_' }.take(24)
+                                },
+                                label = "Username (3–24 karakter, a-z 0-9 _)", prefix = "@  "
+                            )
+                            AuthInputField(
+                                value = displayName, onValueChange = { displayName = it.take(40) },
+                                label = "Display Name (2–40 karakter)", prefix = "◉  "
+                            )
+                        }
+                    }
+
+                    // Message box
+                    AnimatedVisibility(visible = message.isNotBlank()) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    (if (isSuccess) GuideGreen else GuideRed).copy(alpha = 0.10f),
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .border(
+                                    1.dp,
+                                    (if (isSuccess) GuideGreen else GuideRed).copy(alpha = 0.28f),
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                message,
+                                color = if (isSuccess) GuideGreen else GuideRed,
+                                fontSize = 12.sp,
+                                fontFamily = GuideFont
+                            )
+                        }
+                    }
+
+                    // CTA button
+                    val canSubmit = !working && email.isNotBlank() && password.length >= 6 &&
+                        (isLogin || (username.matches(Regex("[a-zA-Z0-9_]{3,24}")) && displayName.trim().length >= 2))
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                working = true; message = ""
+                                val result = withContext(Dispatchers.IO) {
+                                    if (isLogin) loginWithPassword(context, email, password)
+                                    else registerWithUsernamePassword(context, email, password, username.trim(), displayName.trim())
+                                }
+                                working = false
+                                isSuccess = result.session != null || result.message.startsWith("OK")
+                                message = result.message
+                                result.session?.let(onLoggedIn)
+                            }
+                        },
+                        enabled = canSubmit,
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isLogin) GuideGreen else GuideCyan,
+                            contentColor = Color(0xFF001407),
+                            disabledContainerColor = Color(0xFF181E1A),
+                            disabledContentColor = GuideMuted
+                        )
+                    ) {
+                        Text(
+                            if (working) "Memproses..." else if (isLogin) "Masuk  →" else "Buat Akun  →",
+                            fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            Text(
+                if (isLogin) "Belum punya akun? Tap Register di atas."
+                else "Sudah punya akun? Tap Login di atas.",
+                color = Color(0xFF3E5446), fontSize = 12.sp, textAlign = TextAlign.Center, fontFamily = GuideFont
+            )
+            Spacer(Modifier.height(40.dp))
         }
     }
+}
+
+@Composable
+private fun AuthInputField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    prefix: String,
+    isPassword: Boolean = false,
+    trailingLabel: String? = null,
+    onTrailing: (() -> Unit)? = null
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        prefix = { Text(prefix, color = GuideMuted, fontSize = 14.sp) },
+        trailingIcon = if (trailingLabel != null && onTrailing != null) {
+            {
+                Text(
+                    trailingLabel,
+                    color = GuideCyan,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = GuideFont,
+                    modifier = Modifier
+                        .clickable { onTrailing() }
+                        .padding(end = 14.dp)
+                )
+            }
+        } else null,
+        singleLine = true,
+        visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = GuideGreen,
+            unfocusedBorderColor = GuideBorder,
+            focusedLabelColor = GuideGreen,
+            unfocusedLabelColor = GuideMuted,
+            cursorColor = GuideGreen,
+            focusedTextColor = GuideWhite,
+            unfocusedTextColor = GuideWhite
+        )
+    )
 }
 
 @Composable
@@ -337,11 +552,38 @@ private fun saveSession(context: Context, s: AuthSession) { context.getSharedPre
 private fun clearSession(context: Context) { context.getSharedPreferences(PREF_AUTH, Context.MODE_PRIVATE).edit().clear().apply() }
 private fun loginWithPassword(context: Context, email: String, password: String): AuthResult = authPassword(context, "/auth/v1/token?grant_type=password", email, password, "OK: login berhasil.")
 private fun registerWithPassword(context: Context, email: String, password: String): AuthResult = authPassword(context, "/auth/v1/signup", email, password, "OK: akun dibuat.")
+private fun registerWithUsernamePassword(context: Context, email: String, password: String, username: String, displayName: String): AuthResult = try {
+    val meta = JSONObject().put("username", username).put("display_name", displayName)
+    val signupBody = JSONObject().put("email", email).put("password", password).put("data", meta)
+    val json = httpPost("/auth/v1/signup", null, signupBody)
+    val token = json.optString("access_token", "")
+    val refresh = json.optString("refresh_token", "")
+    val userObj = json.optJSONObject("user")
+    val userEmail = userObj?.optString("email", email) ?: email
+    val userId = userObj?.optString("id", "") ?: ""
+    if (token.isBlank()) {
+        AuthResult(null, "Akun dibuat! Cek email untuk verifikasi, lalu Login.")
+    } else {
+        val session = AuthSession(token, refresh, userEmail)
+        saveSession(context, session)
+        if (userId.isNotBlank()) runCatching {
+            httpPostWithPrefer(
+                "/rest/v1/profiles",
+                token,
+                JSONObject().put("id", userId).put("username", username).put("display_name", displayName),
+                "resolution=merge-duplicates,return=minimal"
+            )
+        }
+        runCatching { httpPost("/rest/v1/rpc/dlavie_v2_create_profile_if_missing", token, JSONObject().put("p_display_name", displayName)) }
+        AuthResult(session, "OK: akun dibuat. Selamat datang, $displayName!")
+    }
+} catch (e: Exception) { AuthResult(null, "Error: ${e.message ?: "register gagal"}") }
 private fun authPassword(context: Context, path: String, email: String, password: String, okMessage: String): AuthResult = try { val json = httpPost(path, null, JSONObject().put("email", email).put("password", password)); val token = json.optString("access_token", ""); val refresh = json.optString("refresh_token", ""); val userEmail = json.optJSONObject("user")?.optString("email", email) ?: email; if (token.isBlank()) AuthResult(null, "Akun dibuat. Cek email lalu login.") else { val session = AuthSession(token, refresh, userEmail); saveSession(context, session); runCatching { httpPost("/rest/v1/rpc/dlavie_v2_create_profile_if_missing", session.accessToken, JSONObject().put("p_display_name", "DLavie Player")) }; AuthResult(session, okMessage) } } catch (e: Exception) { AuthResult(null, "Error: ${e.message ?: "auth gagal"}") }
 private fun loadBootstrap(session: AuthSession): BootstrapState = try { val json = httpPost("/rest/v1/rpc/dlavie_v2_get_launcher_bootstrap", session.accessToken, JSONObject().put("p_local_version_code", LOCAL_VERSION_CODE)); parseBootstrap(json) } catch (e: Exception) { BootstrapState(loaded = false, error = e.message ?: "backend gagal") }
 private fun parseBootstrap(json: JSONObject): BootstrapState { val profile = json.optJSONObject("profile") ?: JSONObject(); val update = json.optJSONObject("update") ?: JSONObject(); val patch = update.optJSONObject("patch"); val maintenance = json.optJSONObject("maintenance") ?: JSONObject(); val notices = jsonArrayObjectsToTitles(json.optJSONArray("notices")); return BootstrapState(displayName = profile.optString("display_name", "DLavie Player"), role = profile.optString("role", "user"), maintenance = maintenance.optBoolean("enabled", false), maintenanceMessage = maintenance.optString("message", ""), latestVersionCode = update.optInt("latestVersionCode", 0), latestVersionName = update.optString("latestVersionName", "Belum dicek"), updateAvailable = update.optBoolean("updateAvailable", false), patchName = patch?.optString("name", "") ?: "", patchUrl = patch?.optString("url", "") ?: "", notices = notices, unreadNotifications = json.optInt("unreadNotifications", 0), loaded = true) }
 private fun createSupportTicket(session: AuthSession, message: String): String = try { val marker = guidedReadMarkerSmart(); val json = httpPost("/rest/v1/rpc/dlavie_v2_create_ticket", session.accessToken, JSONObject().put("p_title", "DLavie Support").put("p_category", "general").put("p_message", message).put("p_app_version", "0.19.0-login-foundation").put("p_local_version", LOCAL_VERSION_NAME).put("p_latest_version", "").put("p_data_marker", marker).put("p_shizuku_status", guidedShizukuState())); "OK: ticket dibuat #${json.optString("public_code", json.optString("id", ""))}" } catch (e: Exception) { "Error: ${e.message ?: "ticket gagal"}" }
 private fun httpPost(path: String, token: String?, body: JSONObject): JSONObject { val conn = (URL(SUPABASE_URL + path).openConnection() as HttpURLConnection); conn.requestMethod = "POST"; conn.doOutput = true; conn.setRequestProperty("apikey", SUPABASE_KEY); conn.setRequestProperty("Content-Type", "application/json"); conn.setRequestProperty("Accept", "application/json"); if (!token.isNullOrBlank()) conn.setRequestProperty("Authorization", "Bearer $token"); conn.outputStream.use { it.write(body.toString().toByteArray()) }; val code = conn.responseCode; val stream = if (code in 200..299) conn.inputStream else conn.errorStream; val text = stream?.bufferedReader()?.readText().orEmpty(); conn.disconnect(); if (code !in 200..299) throw IllegalStateException(parseError(text)); return if (text.isBlank()) JSONObject() else JSONObject(text) }
+private fun httpPostWithPrefer(path: String, token: String?, body: JSONObject, prefer: String): JSONObject { val conn = (URL(SUPABASE_URL + path).openConnection() as HttpURLConnection); conn.requestMethod = "POST"; conn.doOutput = true; conn.setRequestProperty("apikey", SUPABASE_KEY); conn.setRequestProperty("Content-Type", "application/json"); conn.setRequestProperty("Accept", "application/json"); conn.setRequestProperty("Prefer", prefer); if (!token.isNullOrBlank()) conn.setRequestProperty("Authorization", "Bearer $token"); conn.outputStream.use { it.write(body.toString().toByteArray()) }; val code = conn.responseCode; val stream = if (code in 200..299) conn.inputStream else conn.errorStream; val text = stream?.bufferedReader()?.readText().orEmpty(); conn.disconnect(); if (code !in 200..299) throw IllegalStateException(parseError(text)); return if (text.isBlank()) JSONObject() else runCatching { JSONObject(text) }.getOrElse { JSONObject() } }
 private fun parseError(text: String): String = runCatching { JSONObject(text).optString("message", text.take(160)) }.getOrElse { text.take(160).ifBlank { "request gagal" } }
 private fun jsonArrayObjectsToTitles(arr: JSONArray?): List<String> { if (arr == null) return emptyList(); val out = mutableListOf<String>(); for (i in 0 until arr.length()) { val o = arr.optJSONObject(i); if (o != null) out += (o.optString("title", "Notice") + ": " + o.optString("body", "")) }; return out }
 private fun guidedShizukuState(): String = try { when { !Shizuku.pingBinder() -> "Start"; Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED -> "Ready"; else -> "Permission" } } catch (_: Exception) { "Start" }
