@@ -55,6 +55,36 @@ jobs:
               p.write_text(s)
           print("DLavie full base installer card attached")
 
+      - name: Patch guided launcher Kotlin compatibility
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path("app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt")
+          s = p.read_text()
+          s = s.replace("guidedDownloadPatch(context) { progress -> state = progress }", "guidedDownloadPatch(context) { progress: GuidedUpdateState -> state = progress }")
+          s = s.replace("private fun GuidedPage(content: @Composable Column.() -> Unit) {", "private fun GuidedPage(content: @Composable () -> Unit) {")
+          s = s.replace(
+              """    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        content = content
+    )""",
+              """    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) { content() }"""
+          )
+          s = s.replace("private fun GuidedPanel(content: @Composable Column.() -> Unit) {", "private fun GuidedPanel(content: @Composable () -> Unit) {")
+          s = s.replace("Column(Modifier.padding(18.dp), content = content)", "Column(Modifier.padding(18.dp)) { content() }")
+          p.write_text(s)
+          print("Guided launcher Kotlin compatibility patched")
+
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
