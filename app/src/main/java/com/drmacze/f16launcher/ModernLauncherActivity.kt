@@ -81,6 +81,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -335,7 +338,12 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
     var updateInfo    by remember { mutableStateOf<UpdateInfo?>(null) }
     var feed          by remember { mutableStateOf<List<FeedItem>>(emptyList()) }
 
-    LaunchedEffect(Unit) {
+    // ── Pull-to-refresh state ──
+    val pullState    = rememberPullToRefreshState()
+    var isRefreshing by remember { mutableStateOf(false) }
+
+    // Reusable data loader — dipanggil oleh LaunchedEffect awal & onRefresh
+    suspend fun loadAllData() {
         withContext(Dispatchers.IO) {
             gameInstalled = isGameInstalled(context)
             dataReady     = readMarker().startsWith("v26", ignoreCase = true)
@@ -348,6 +356,8 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
             else           -> SetupState.READY
         }
     }
+
+    LaunchedEffect(Unit) { loadAllData() }
 
     // ── In-app APK download state ──
     var dlProgress by remember { mutableStateOf(-1f) }
@@ -400,6 +410,29 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
         label = "glow"
     )
 
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = {
+            if (!isRefreshing) {
+                isRefreshing = true
+                scope.launch {
+                    runCatching { loadAllData() }
+                    isRefreshing = false
+                }
+            }
+        },
+        state = pullState,
+        modifier = Modifier.fillMaxSize(),
+        indicator = {
+            PullToRefreshDefaults.Indicator(
+                state = pullState,
+                isRefreshing = isRefreshing,
+                modifier = Modifier.align(Alignment.TopCenter),
+                containerColor = MaterialTheme.colorScheme.surface,
+                color = CandyCyan
+            )
+        }
+    ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 20.dp),
@@ -710,6 +743,7 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
         // Bottom spacer
         Spacer(Modifier.height(8.dp))
     }
+    } // end PullToRefreshBox
 }
 
 // ─── Step progress indicator ──────────────────────────────────────────────────
