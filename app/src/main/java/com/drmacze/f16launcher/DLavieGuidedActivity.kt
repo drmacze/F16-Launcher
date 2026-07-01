@@ -82,7 +82,7 @@ class DLavieGuidedActivity : ComponentActivity() {
         val existing = loadSession(this)
         if (existing != null) {
             syncToCommunityPrefs(this, existing)
-            startActivity(Intent(this, ModernLauncherActivity::class.java))
+            startActivity(Intent(this, DLavieHubActivity::class.java))
             finish()
             return
         }
@@ -156,7 +156,7 @@ private fun DLavieGuidedApp() {
                     saveSession(context, session)
                     syncToCommunityPrefs(context, session)
                     context.startActivity(
-                        Intent(context, ModernLauncherActivity::class.java)
+                        Intent(context, DLavieHubActivity::class.java)
                             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
                     )
                 })
