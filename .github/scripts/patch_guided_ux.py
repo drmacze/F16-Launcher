@@ -1,13 +1,11 @@
 from pathlib import Path
 
-# Stabilizer step.
-# Jangan patch Kotlin secara agresif di workflow, karena membuat hasil build berubah-ubah.
-# UX besar berikutnya harus masuk langsung ke source file, bukan injected saat CI.
 source = Path("app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt")
 if not source.exists():
     raise SystemExit("DLavieGuidedActivity.kt tidak ditemukan")
 
 text = source.read_text()
+
 required = [
     "fun DLavieGuidedApp()",
     "fun GuidedHomeScreen",
@@ -20,4 +18,41 @@ missing = [item for item in required if item not in text]
 if missing:
     raise SystemExit("Guided source tidak lengkap: " + ", ".join(missing))
 
-print("Guided UX source sanity OK - no runtime Kotlin injection")
+# Fix Kotlin compile errors in the guided launcher source.
+# These are small deterministic patches, not UI injection.
+text = text.replace(
+    "guidedDownloadPatch(context) { progress -> state = progress }",
+    "guidedDownloadPatch(context) { progress: GuidedUpdateState -> state = progress }",
+)
+text = text.replace(
+    "private fun GuidedPage(content: @Composable Column.() -> Unit) {",
+    "private fun GuidedPage(content: @Composable () -> Unit) {",
+)
+text = text.replace(
+    """    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        content = content
+    )""",
+    """    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) { content() }""",
+)
+text = text.replace(
+    "private fun GuidedPanel(content: @Composable Column.() -> Unit) {",
+    "private fun GuidedPanel(content: @Composable () -> Unit) {",
+)
+text = text.replace(
+    "Column(Modifier.padding(18.dp), content = content)",
+    "Column(Modifier.padding(18.dp)) { content() }",
+)
+
+source.write_text(text)
+print("Guided Compose compile compatibility OK")
