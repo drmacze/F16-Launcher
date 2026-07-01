@@ -3,9 +3,11 @@
     <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">#070A12</item>
-        <item name="android:navigationBarColor">#070A12</item>
-        <item name="android:colorAccent">#6C63FF</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:statusBarColor">#020403</item>
+        <item name="android:navigationBarColor">#020403</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:colorAccent">#24E878</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionBar">false</item>
     </style>
@@ -13,8 +15,9 @@
     <style name="AppTheme.Splash" parent="AppTheme">
         <item name="android:windowBackground">@drawable/dlavie_splash_screen</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">#02040A</item>
-        <item name="android:navigationBarColor">#02040A</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:statusBarColor">#020403</item>
+        <item name="android:navigationBarColor">#020403</item>
         <item name="android:windowDisablePreview">false</item>
     </style>
 </resources>
