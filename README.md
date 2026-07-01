@@ -19,15 +19,17 @@ APK publik untuk semua user/player.
 
 Fitur utama:
 
+- Can play on Android 10,11,12,13,14,15,16
 - Play FIFA 16 Mobile
 - Install OBB + data mod
 - Repair/verify data
 - Update Center dari GitHub manifest
 - Community chat
-- Profile/account
-- Feed/news/update post
-- Like/comment/share/save
+- Profile/account/settings/Rate App
+- Feed/news/update post/post update library
+- Like/comment/share/bookmark
 - Bug report
+- ChatBot DLavie/CS Live Chat with Developer.
 
 ### DLavie Console
 
@@ -43,6 +45,8 @@ Fitur utama:
 - Ban/unban user
 - Review reports
 - Manage update channels
+- Live Chat support user
+- Dashboard Launcher DLavie
 
 Developer/admin actions harus divalidasi oleh backend role, bukan hanya hidden menu di APK.
 
@@ -53,22 +57,24 @@ Developer/admin actions harus divalidasi oleh backend role, bukan hanya hidden m
 - Public launcher entry: `DLavieHubActivity`
 - Legacy hub: `ModernLauncherActivity`, internal only
 - Internal recovery shell: `DevLauncherActivity`, tidak dijadikan launcher publik
-- Current version: `0.10.0-dlavie26-premium-hub` / versionCode `31`
 - Update manifest default: `https://raw.githubusercontent.com/drmacze/F16/main/updates/latest.json`
 - Target game: `com.ea.gp.fifaworld`
 
 ## Target utama teknis
 
 - cek update dari GitHub manifest
-- download patch kecil saja, bukan full data ulang
+- download patch update terbaru saja, bukan download full data ulang
 - verifikasi SHA-256 kalau tersedia
 - backup file lama yang akan ditimpa
 - apply update otomatis via Shizuku atau root
 - launch FIFA 16 langsung dari launcher
+- All work no dummy/simulasi.
+- Can fully play work on android 10+
+- Download Data&OBB bukan dari launcher, namun user buka aplikasi DLavie 26 kemudian nanti download Data+OBB.
 
 ## Cara update untuk user
 
-1. Install APK `DLavie 26`.
+1. Install APK `DLavie 26` jika belum punya.
 2. Buka DLavie 26.
 3. Login/register akun DLavie nanti jika backend aktif.
 4. Buka **Library** untuk install/repair data.
@@ -158,4 +164,4 @@ app/build/outputs/apk/debug/app-debug.apk
 
 Repo ini adalah launcher/updater. File data besar FIFA 16 tetap dikelola lewat GitHub Releases dan patch repo `drmacze/F16`.
 
-Untuk update kecil, jangan upload ulang data 1.4GB. Upload patch kecil dan update manifest saja.
+Untuk update kecil, jangan upload ulang data 1.4GB. Upload file patch update baru yang diperlukan dan update manifest saja.
