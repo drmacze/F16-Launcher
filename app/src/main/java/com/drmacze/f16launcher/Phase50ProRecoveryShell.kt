@@ -1,6 +1,9 @@
 package com.drmacze.f16launcher
 
+import android.content.Context
+import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,6 +33,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
+private fun InfoLine(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = Color(0xFF7A8A9A), fontSize = 13.sp)
+        Text(value, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
 fun Phase50ProRecoveryShell(api: CommunityApi) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -42,11 +53,11 @@ fun Phase50ProRecoveryShell(api: CommunityApi) {
     var working by remember { mutableStateOf(false) }
     var shizuku by remember { mutableStateOf(ShizukuSetup.status(context)) }
     var report by remember { mutableStateOf("") }
-    var gameInstalled by remember { mutableStateOf(isPackageInstalled(context, DevPatchEngine.GAME_PACKAGE)) }
+    var gameInstalled by remember { mutableStateOf(try { context.packageManager.getPackageInfo(DevPatchEngine.GAME_PACKAGE, 0); true } catch (_: PackageManager.NameNotFoundException) { false }) }
 
     fun refreshState() {
         shizuku = ShizukuSetup.status(context)
-        gameInstalled = isPackageInstalled(context, DevPatchEngine.GAME_PACKAGE)
+        gameInstalled = try { context.packageManager.getPackageInfo(DevPatchEngine.GAME_PACKAGE, 0); true } catch (_: PackageManager.NameNotFoundException) { false }
         if (shizuku != "Ready") {
             message = when (shizuku) {
                 "Need Permission" -> "Shizuku aktif tapi izin belum diberikan. Tekan Grant Shizuku."
