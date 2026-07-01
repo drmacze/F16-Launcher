@@ -11,8 +11,8 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 35
-        versionCode 42
-        versionName '0.15.0-real-patch-installer-update-page'
+        versionCode 43
+        versionName '0.16.0-full-base-installer-engine'
     }
 
     compileOptions {
