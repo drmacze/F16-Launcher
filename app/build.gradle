@@ -11,13 +11,13 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 35
-        versionCode 44
-        versionName '0.17.0-guided-launcher-faq-assistant'
+        versionCode 45
+        versionName '0.18.0-guided-pro-profile-faq-polish'
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion_17
+        targetCompatibility JavaVersion_17
     }
 
     buildFeatures {
