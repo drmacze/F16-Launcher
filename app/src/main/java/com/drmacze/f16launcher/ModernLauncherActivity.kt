@@ -112,6 +112,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -810,6 +811,9 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
     var updateError   by remember { mutableStateOf("") }
     val scope         = rememberCoroutineScope()
 
+    // All-Files Access permission state (for direct patch without Shizuku)
+    var filesAccessGranted by remember { mutableStateOf(StorageAccess.isGranted()) }
+
     val patchLogs  = remember { mutableStateListOf<String>() }
     var patching   by remember { mutableStateOf(false) }
     var patchStep  by remember { mutableStateOf(0) }
@@ -879,6 +883,73 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
             MiniStatusTile("Versi",
                 if (loading) "…" else updateInfo?.latestName ?: "—",
                 updateInfo?.upToDate != false, Modifier.weight(1f))
+        }
+
+        // ── All-Files Access permission card ──
+        // Refresh state when screen becomes visible (e.g. after returning from settings)
+        val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+        LaunchedEffect(lifecycleOwner) {
+            val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                    filesAccessGranted = StorageAccess.isGranted()
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            try { awaitCancellation() } finally { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+
+        AnimatedVisibility(!filesAccessGranted, enter = fadeIn(), exit = fadeOut()) {
+            GlassCard(borderColor = CandyCyan.copy(0.5f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(
+                        Modifier.size(44.dp).background(CandyCyan.copy(0.12f), RoundedCornerShape(14.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Security, null, tint = CandyCyan, modifier = Modifier.size(22.dp))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("Izinkan Akses File", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                        Text("Agar launcher bisa apply patch mod langsung tanpa Shizuku / root / file manager.", color = SoftText, fontSize = 12.sp, lineHeight = 16.sp)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Launcher butuh izin 'Akses semua file' untuk menulis file patch (mis. platform.ini) ke folder data FIFA 16. " +
+                    "Tanpa izin ini, kamu harus pakai Shizuku / root sebagai alternatif.",
+                    color = SoftText, fontSize = 12.sp, lineHeight = 17.sp
+                )
+                Spacer(Modifier.height(14.dp))
+                Button(
+                    onClick  = { StorageAccess.request(context) },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape    = RoundedCornerShape(16.dp),
+                    colors   = ButtonDefaults.buttonColors(
+                        containerColor = CandyCyan, contentColor = Color(0xFF00111D)
+                    )
+                ) {
+                    Icon(Icons.Rounded.Security, null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Izinkan Sekarang", fontSize = 14.sp, fontWeight = FontWeight.Black)
+                }
+            }
+        }
+
+        // Confirmation card when permission is granted
+        AnimatedVisibility(filesAccessGranted, enter = fadeIn(), exit = fadeOut()) {
+            GlassCard(borderColor = NeonGreen.copy(0.5f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        Modifier.size(36.dp).background(NeonGreen.copy(0.12f), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.CheckCircle, null, tint = NeonGreen, modifier = Modifier.size(20.dp))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("Akses File Aktif", color = NeonGreen, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                        Text("Patch mod akan diapply otomatis tanpa Shizuku / root.", color = SoftText, fontSize = 11.sp)
+                    }
+                }
+            }
         }
 
         // ── Data game belum siap ──

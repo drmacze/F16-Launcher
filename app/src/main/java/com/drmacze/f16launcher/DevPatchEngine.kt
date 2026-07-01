@@ -49,6 +49,7 @@ class DevPatchEngine(
     fun latestBackupTarget(): String = prefs.getString("last_backup_target", GAME_DATA_CANDIDATES[0]) ?: GAME_DATA_CANDIDATES[0]
 
     fun accessMode(): String = when {
+        StorageAccess.isGranted() -> "All-Files Access aktif"
         shizukuOk() -> "Shizuku aktif"
         rootOk()    -> "Root aktif"
         else        -> "Belum aktif"
@@ -219,10 +220,23 @@ class DevPatchEngine(
         log("Backup file lama ke $backup ...")
         onProgress?.invoke(50, 100, "Apply patch...")
 
-        val result = privileged(buildCopyCommand(extracted.absolutePath, target, backup, entries))
-        log(result.out.trim().ifEmpty { "Copy selesai (${entries.size} file)." })
-        if (result.code != 0)
-            throw IllegalStateException("Apply gagal (exit ${result.code}).\nOutput:\n${result.out.take(600)}")
+        // Try direct file access first (MANAGE_EXTERNAL_STORAGE).
+        // This avoids Shizuku/root for patching files in Android/data/com.ea.gp.fifaworld/.
+        val directOk = try {
+            applyPatchDirect(extracted, target, backup, entries)
+        } catch (e: Throwable) {
+            log("Direct file apply error: ${e.message}. Akan coba Shizuku/root...")
+            false
+        }
+        if (!directOk) {
+            log("Direct file access tidak tersedia, fallback ke Shizuku/root...")
+            val result = privileged(buildCopyCommand(extracted.absolutePath, target, backup, entries))
+            log(result.out.trim().ifEmpty { "Copy selesai (${entries.size} file)." })
+            if (result.code != 0)
+                throw IllegalStateException("Apply gagal (exit ${result.code}).\nOutput:\n${result.out.take(600)}")
+        } else {
+            log("Apply via All-Files Access berhasil (${entries.size} file).")
+        }
 
         prefs.edit()
             .putString("last_backup_root", backup)
@@ -238,13 +252,59 @@ class DevPatchEngine(
     }
 
     /**
+     * Apply patch using direct File() API (no shell command).
+     * Requires MANAGE_EXTERNAL_STORAGE permission (StorageAccess.isGranted()).
+     * Returns true on success, false if permission not granted.
+     */
+    private fun applyPatchDirect(extracted: File, targetRoot: String, backupRoot: String, entries: List<String>): Boolean {
+        if (!StorageAccess.isGranted()) return false
+
+        val targetDir = File(targetRoot)
+        val backupDir = File(backupRoot)
+        targetDir.mkdirs()
+        backupDir.mkdirs()
+
+        for (rel in entries) {
+            val src = File(extracted, rel)
+            val dst = File(targetDir, rel)
+            val bak = File(backupDir, rel)
+
+            // Backup existing file (if present) before overwriting
+            if (dst.exists()) {
+                bak.parentFile?.mkdirs()
+                try { dst.copyTo(bak, overwrite = true) }
+                catch (e: Throwable) { log("Backup gagal untuk $rel: ${e.message}") }
+            }
+
+            // Overwrite with new file
+            dst.parentFile?.mkdirs()
+            try {
+                src.copyTo(dst, overwrite = true)
+            } catch (e: Throwable) {
+                throw IllegalStateException("Gagal menulis ${dst.absolutePath}: ${e.message}")
+            }
+        }
+        return true
+    }
+
+    /**
      * Write the data-ready marker file inside Android/data.
-     * Must go through privileged shell because the path is in Android/data (scoped storage).
+     * Tries direct file write first (MANAGE_EXTERNAL_STORAGE),
+     * falls back to privileged shell (Shizuku/root).
      */
     private fun writeMarker(version: Int) {
         val markerDir     = MARKER_PATH.substringBeforeLast('/')
         val markerContent = "v26-patch-$version-${System.currentTimeMillis()}"
-        val writeResult   = privileged("mkdir -p ${q(markerDir)}; printf '%s' ${q(markerContent)} > ${q(MARKER_PATH)}")
+
+        // Try direct file write first
+        if (StorageAccess.isGranted()) {
+            val ok = StorageAccess.writeMarker(markerContent)
+            if (ok) { log("Marker diperbarui (direct): $markerContent"); return }
+            log("Direct marker write gagal, fallback ke Shizuku/root...")
+        }
+
+        // Fallback: privileged shell
+        val writeResult = privileged("mkdir -p ${q(markerDir)}; printf '%s' ${q(markerContent)} > ${q(MARKER_PATH)}")
         if (writeResult.code == 0) log("Marker diperbarui: $markerContent")
         else log("Peringatan: marker gagal ditulis (exit ${writeResult.code}): ${writeResult.out.take(200)}")
     }
