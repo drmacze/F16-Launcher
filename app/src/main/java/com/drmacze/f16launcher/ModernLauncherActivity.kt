@@ -121,6 +121,7 @@ val AmberWarn   = Color(0xFFFFB830)
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 private const val GAME_PKG         = "com.ea.gp.fifaworld"
+private const val FIFA_APK_URL      = "https://github.com/drmacze/F16/releases/download/v1.0-dlavie26/DLavie26.apk"
 private const val DEFAULT_MANIFEST = "https://raw.githubusercontent.com/drmacze/F16/main/updates/latest.json"
 private const val MARKER_PATH      = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
 private const val LOCAL_VER        = 1
@@ -355,7 +356,7 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
             Button(
                 onClick = {
                     if (gameInstalled) launchGame(context)
-                    else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$GAME_PKG")))
+                    else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$FIFA_APK_URL")))
                 },
                 modifier = Modifier.fillMaxWidth().height(60.dp),
                 shape    = RoundedCornerShape(22.dp),
@@ -391,7 +392,7 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                 icon    = if (gameInstalled) Icons.Rounded.CheckCircle else Icons.Rounded.Cancel,
                 modifier = Modifier.weight(1f)
             ) {
-                if (!gameInstalled) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$GAME_PKG")))
+                if (!gameInstalled) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$FIFA_APK_URL")))
             }
             StatusChip(
                 title   = "Data",
@@ -968,7 +969,7 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
                 }
             } else {
                 Button(
-                    onClick  = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$GAME_PKG"))) },
+                    onClick  = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$FIFA_APK_URL"))) },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     shape    = RoundedCornerShape(16.dp),
                     colors   = ButtonDefaults.buttonColors(containerColor = CandyBlue)
@@ -1248,7 +1249,7 @@ fun roleBadgeColor(role: String): Color = when (role.lowercase()) {
 fun launchGame(context: android.content.Context) {
     val intent = context.packageManager.getLaunchIntentForPackage(GAME_PKG)
     if (intent != null) context.startActivity(intent)
-    else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$GAME_PKG")))
+    else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$FIFA_APK_URL")))
 }
 
 fun fetchJson(url: String): JSONObject {
