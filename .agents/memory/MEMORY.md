@@ -1,0 +1,3 @@
+- [Auth architecture](auth-arch.md) — Two SharedPrefs bridged: DLavieGuidedActivity uses `dlavie_auth_session`, CommunityApi uses `dlavie_community`. Always sync both on login/logout.
+- [Flow decisions](flow-decisions.md) — Entry: DLavieGuidedActivity (LAUNCHER). After login → ModernLauncherActivity via FLAG_ACTIVITY_CLEAR_TASK. Logout clears BOTH prefs, redirects back to DLavieGuidedActivity.
+- [Build config](build-config.md) — Supabase keys moved to BuildConfig: SUPABASE_URL, SUPABASE_ANON_KEY (GuidedActivity), SUPABASE_PUB_KEY (CommunityApi). buildConfig=true in buildFeatures.

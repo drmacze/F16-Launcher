@@ -123,6 +123,23 @@ public class CommunityApi {
         prefs.edit().putString("username", p.optString("username", "")).putString("display_name", p.optString("display_name", "")).putString("avatar_url", p.optString("avatar_url", "")).putString("role", p.optString("role", "member")).apply();
     }
 
+    public String role() { return prefs.getString("role", "member"); }
+    public String avatarUrl() { return prefs.getString("avatar_url", ""); }
+
+    public JSONArray feedPosts() throws Exception {
+        return new JSONArray(request("GET", "/rest/v1/feed_posts?select=id,title,body,type,pinned,official,created_at&order=pinned.desc,created_at.desc&limit=8", null, false, (String) null));
+    }
+
+    public JSONObject refreshToken() throws Exception {
+        String refresh = prefs.getString("refresh_token", "");
+        if (refresh.isEmpty()) throw new IllegalStateException("No refresh token.");
+        JSONObject body = new JSONObject();
+        body.put("refresh_token", refresh);
+        JSONObject res = new JSONObject(request("POST", "/auth/v1/token?grant_type=refresh_token", body, false, (String) null));
+        storeSessionIfPresent(res);
+        return res;
+    }
+
     public JSONArray categories() throws Exception {
         return new JSONArray(request("GET", "/rest/v1/community_categories?select=id,slug,name,description&order=sort_order.asc", null, false, false));
     }
