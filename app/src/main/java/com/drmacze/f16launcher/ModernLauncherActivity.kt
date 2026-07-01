@@ -121,8 +121,8 @@ val AmberWarn   = Color(0xFFFFB830)
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 private const val GAME_PKG         = "com.ea.gp.fifaworld"
-private const val FIFA_APK_URL      = "https://github.com/drmacze/F16/releases/download/v1.0-dlavie26/DLavie26.apk"
-private const val DEFAULT_MANIFEST = "https://raw.githubusercontent.com/drmacze/F16/main/updates/latest.json"
+private const val FIFA_APK_URL      = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26.apk"
+private const val DEFAULT_MANIFEST = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/manifest.json"
 private const val MARKER_PATH      = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
 private const val LOCAL_VER        = 1
 private const val LOCAL_VER_NAME   = "v1"
@@ -1320,7 +1320,8 @@ fun readMarker(): String =
 
 fun fetchUpdateInfo(): UpdateInfo {
     val json      = fetchJson(DEFAULT_MANIFEST)
-    val latestCode = json.optInt("latestVersionCode", LOCAL_VER)
+    // DLavie-Launcher-Data manifest format: { "version": 26, "package": "...", "files": [...] }
+    val latestCode = json.optInt("version", json.optInt("latestVersionCode", LOCAL_VER))
     val latestName = json.optString("latestVersionName", "v$latestCode")
     val notesArr   = json.optJSONArray("releaseNotes")
     val notes      = if (notesArr != null) List(notesArr.length()) { i -> notesArr.optString(i) } else emptyList()
