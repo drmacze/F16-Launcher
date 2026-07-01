@@ -40,6 +40,21 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Attach full base installer card
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path("app/src/main/java/com/drmacze/f16launcher/DLavieHubActivity.kt")
+          s = p.read_text()
+          hook = "        DLavieBaseInstallCard(isGameInstalled = installed)\n"
+          needle = '        HubDataRow("FIFA 16 Mobile", if (installed) "Installed" else "Not found", if (installed) "READY" else "MISSING", if (installed) HubGreen else HubRed, if (installed) HubMark.Check else HubMark.Alert)\n'
+          if hook not in s:
+              if needle not in s:
+                  raise SystemExit("DLavie base installer hook needle not found")
+              s = s.replace(needle, hook + needle)
+              p.write_text(s)
+          print("DLavie full base installer card attached")
+
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
