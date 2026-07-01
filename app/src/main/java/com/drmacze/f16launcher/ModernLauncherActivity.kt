@@ -51,6 +51,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.DataObject
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -72,6 +73,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -823,6 +826,18 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
     var patchDone  by remember { mutableStateOf(false) }
     var showLog    by remember { mutableStateOf(false) }
 
+    // Storage & backup state
+    var freeBytes       by remember { mutableStateOf(0L) }
+    var totalBytes      by remember { mutableStateOf(0L) }
+    var backupCount     by remember { mutableStateOf(0) }
+    var backupTotalSize by remember { mutableStateOf(0L) }
+    var rollbackBusy    by remember { mutableStateOf(false) }
+    var rollbackMsg     by remember { mutableStateOf("") }
+    var cleanupBusy     by remember { mutableStateOf(false) }
+    var cleanupMsg      by remember { mutableStateOf("") }
+    var showRollback    by remember { mutableStateOf(false) }
+    var showCleanup     by remember { mutableStateOf(false) }
+
     val engine = remember {
         DevPatchEngine(context,
             onLog      = { msg -> patchLogs.add(msg) },
@@ -830,7 +845,18 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
         )
     }
 
-    fun refresh() { marker = readMarker() }
+    fun refreshStorage() {
+        freeBytes = GameUtils.freeBytesSdcard()
+        totalBytes = GameUtils.totalBytesSdcard()
+        val backups = GameUtils.listBackups()
+        backupCount = backups.size
+        backupTotalSize = GameUtils.totalBackupSize()
+    }
+
+    fun refresh() {
+        marker = readMarker()
+        refreshStorage()
+    }
 
     fun checkUpdate() {
         loading = true; updateError = ""
@@ -852,7 +878,10 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
         }
     }
 
-    LaunchedEffect(Unit) { checkUpdate() }
+    LaunchedEffect(Unit) {
+        checkUpdate()
+        refreshStorage()
+    }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
@@ -949,6 +978,119 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
                         Text("Patch mod akan diapply otomatis tanpa Shizuku / root.", color = SoftText, fontSize = 11.sp)
                     }
                 }
+            }
+        }
+
+        // ── Storage Info card ──
+        val freeLabel    = GameUtils.formatBytes(freeBytes)
+        val totalLabel   = GameUtils.formatBytes(totalBytes)
+        val usedPct      = if (totalBytes > 0) ((totalBytes - freeBytes) * 100 / totalBytes).toInt() else 0
+        val lowStorage   = freeBytes in 1L..(5L * 1024 * 1024 * 1024)  // < 5 GB
+        val noStorage    = freeBytes == 0L && totalBytes == 0L
+        GlassCard(borderColor = if (lowStorage) AmberWarn.copy(0.5f) else GlassStroke) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(
+                    Modifier.size(40.dp).background(
+                        if (lowStorage) AmberWarn.copy(0.12f) else CandyBlue.copy(0.10f),
+                        RoundedCornerShape(12.dp)
+                    ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.Storage, null, tint = if (lowStorage) AmberWarn else CandyCyan, modifier = Modifier.size(20.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("Penyimpanan Perangkat", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        if (noStorage) "Tidak dapat membaca penyimpanan" else "$freeLabel bebas dari $totalLabel total",
+                        color = if (lowStorage) AmberWarn else SoftText, fontSize = 12.sp
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress   = { usedPct / 100f },
+                modifier   = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                color      = if (lowStorage) AmberWarn else CandyCyan,
+                trackColor = GlassStroke
+            )
+            if (lowStorage) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "⚠ Storage menipis. Patch OBB/data besar (>1 GB) mungkin gagal. Hapus file tidak terpakai atau backup lama.",
+                    color = AmberWarn, fontSize = 11.sp, lineHeight = 15.sp
+                )
+            }
+        }
+
+        // ── Maintenance card: Backup Rollback + Cleanup ──
+        GlassCard {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(
+                    Modifier.size(40.dp).background(CandyBlue.copy(0.10f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.Security, null, tint = CandyCyan, modifier = Modifier.size(20.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("Pemulihan & Pembersihan", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        if (backupCount == 0) "Belum ada backup patch."
+                        else "$backupCount backup tersimpan · ${GameUtils.formatBytes(backupTotalSize)}",
+                        color = SoftText, fontSize = 12.sp
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+
+            // Rollback button (only enabled if backup exists)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick  = { showRollback = true },
+                    enabled  = backupCount > 0 && !rollbackBusy && !patching,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape    = RoundedCornerShape(12.dp),
+                    border   = BorderStroke(1.dp, if (backupCount > 0 && !rollbackBusy) CandyCyan.copy(0.5f) else GlassStroke)
+                ) {
+                    Icon(Icons.Rounded.Refresh, null, tint = if (backupCount > 0 && !rollbackBusy) CandyCyan else SoftText, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Rollback", color = if (backupCount > 0 && !rollbackBusy) CandyCyan else SoftText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick  = { showCleanup = true },
+                    enabled  = backupCount > 0 && !cleanupBusy,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape    = RoundedCornerShape(12.dp),
+                    border   = BorderStroke(1.dp, if (backupCount > 0 && !cleanupBusy) AmberWarn.copy(0.5f) else GlassStroke)
+                ) {
+                    Icon(Icons.Rounded.Delete, null, tint = if (backupCount > 0 && !cleanupBusy) AmberWarn else SoftText, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Bersihkan", color = if (backupCount > 0 && !cleanupBusy) AmberWarn else SoftText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+            if (backupCount == 0) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Backup otomatis dibuat setiap kali kamu apply patch. Setelah apply patch pertama, kamu bisa rollback ke versi sebelumnya kalau ada masalah.",
+                    color = SubText, fontSize = 11.sp, lineHeight = 15.sp
+                )
+            }
+
+            // Rollback progress / result message
+            AnimatedVisibility(rollbackBusy || rollbackMsg.isNotEmpty()) {
+                GlassInfoBox(
+                    icon  = if (rollbackBusy) Icons.Rounded.Refresh else Icons.Rounded.Info,
+                    color = if (rollbackBusy) CandyCyan else if (rollbackMsg.startsWith("OK", true)) NeonGreen else DangerRed,
+                    text  = if (rollbackBusy) "Memulihkan backup..." else rollbackMsg
+                )
+            }
+
+            // Cleanup progress / result message
+            AnimatedVisibility(cleanupBusy || cleanupMsg.isNotEmpty()) {
+                GlassInfoBox(
+                    icon  = if (cleanupBusy) Icons.Rounded.Refresh else Icons.Rounded.Info,
+                    color = if (cleanupBusy) AmberWarn else if (cleanupMsg.startsWith("OK", true)) NeonGreen else DangerRed,
+                    text  = if (cleanupBusy) "Membersihkan backup lama..." else cleanupMsg
+                )
             }
         }
 
@@ -1154,6 +1296,83 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
         }
 
         Spacer(Modifier.height(8.dp))
+    }
+
+    // ── Rollback confirmation dialog ──
+    if (showRollback) {
+        AlertDialog(
+            onDismissRequest = { showRollback = false },
+            title            = { Text("Kembalikan ke Backup Terakhir?", color = Color.White, fontWeight = FontWeight.Black) },
+            text             = {
+                Text(
+                    "File patch terakhir akan diganti dengan versi backup sebelumnya. " +
+                    "Gunakan ini kalau patch baru bikin game error / rusak.\n\n" +
+                    "Catatan: game harus ditutup dulu sebelum rollback.",
+                    color = SoftText, fontSize = 13.sp
+                )
+            },
+            confirmButton    = {
+                TextButton(onClick = {
+                    showRollback = false
+                    rollbackBusy = true; rollbackMsg = ""
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching { engine.restoreLastBackup() }
+                        }
+                        result.onSuccess {
+                            rollbackMsg = "OK: Backup berhasil dipulihkan. Buka FIFA 16 untuk cek."
+                            // Decrement local version to allow re-apply later
+                            engine.resetLocalVersion((engine.localVersion() - 1).coerceAtLeast(1))
+                            refresh()
+                        }
+                        result.onFailure { rollbackMsg = "Error: ${it.message ?: "rollback gagal"}" }
+                        rollbackBusy = false
+                    }
+                }) { Text("Pulihkan", color = CandyCyan, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton    = {
+                TextButton(onClick = { showRollback = false }) { Text("Batal", color = SoftText) }
+            },
+            containerColor   = GlassBase
+        )
+    }
+
+    // ── Cleanup confirmation dialog ──
+    if (showCleanup) {
+        AlertDialog(
+            onDismissRequest = { showCleanup = false },
+            title            = { Text("Bersihkan Backup Lama?", color = Color.White, fontWeight = FontWeight.Black) },
+            text             = {
+                Text(
+                    "Backup yang lebih lama dari 30 hari akan dihapus permanen untuk menghemat penyimpanan. " +
+                    "Backup terbaru akan tetap dipertahankan untuk rollback.\n\n" +
+                    "Backup saat ini: $backupCount (${GameUtils.formatBytes(backupTotalSize)})",
+                    color = SoftText, fontSize = 13.sp
+                )
+            },
+            confirmButton    = {
+                TextButton(onClick = {
+                    showCleanup = false
+                    cleanupBusy = true; cleanupMsg = ""
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching { GameUtils.cleanupOldBackups() }
+                        }
+                        result.onSuccess { (count, freed) ->
+                            cleanupMsg = if (count == 0) "OK: Tidak ada backup lama (>30 hari) untuk dihapus."
+                            else "OK: $count backup dihapus. ${GameUtils.formatBytes(freed)} dibebaskan."
+                            refreshStorage()
+                        }
+                        result.onFailure { cleanupMsg = "Error: ${it.message ?: "cleanup gagal"}" }
+                        cleanupBusy = false
+                    }
+                }) { Text("Bersihkan", color = AmberWarn, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton    = {
+                TextButton(onClick = { showCleanup = false }) { Text("Batal", color = SoftText) }
+            },
+            containerColor   = GlassBase
+        )
     }
 }
 

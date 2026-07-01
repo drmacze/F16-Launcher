@@ -78,11 +78,22 @@ class DevPatchEngine(
      * Patches are applied sequentially. Each patch:
      *  1. Downloads & verifies ZIP (or uses inline files)
      *  2. Backs up existing files before overwrite
-     *  3. Copies patch files via Shizuku/root (cp -af, no duplicates)
+     *  3. Copies patch files via direct File() API / Shizuku / root
      *  4. Writes marker file to MARKER_PATH
      *  5. Cleans up temp work directory
+     *
+     * @throws IllegalStateException if the game is currently running —
+     *         applying a patch to a live game process can corrupt files.
      */
     fun applyAvailableUpdates() {
+        // Safety: refuse to patch if game is running
+        if (GameUtils.isGameRunning(context)) {
+            throw IllegalStateException(
+                "FIFA 16 sedang berjalan. Tutup game terlebih dahulu sebelum apply patch " +
+                "agar file tidak rusak (corrupt). Buka Recent Apps, swipe FIFA 16 ke atas/samping, lalu coba lagi."
+            )
+        }
+
         val manifest  = fetchManifest()
         val latest    = manifest.getInt("latestVersionCode")
         var local     = localVersion()
