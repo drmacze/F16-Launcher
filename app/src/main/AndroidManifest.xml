@@ -61,6 +61,12 @@
 
         <activity
             android:name=".DLavieHubActivity"
+            android:exported="false"
+            android:label="DLavie Classic Hub"
+            android:theme="@style/AppTheme.Splash" />
+
+        <activity
+            android:name=".DLavieGuidedActivity"
             android:exported="true"
             android:icon="@drawable/dlavie_launcher_icon"
             android:label="DLavie 26"
