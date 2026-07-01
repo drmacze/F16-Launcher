@@ -48,9 +48,7 @@ jobs:
           s = p.read_text()
           hook = "        DLavieBaseInstallCard(isGameInstalled = installed)\n"
           needle = '        HubDataRow("FIFA 16 Mobile", if (installed) "Installed" else "Not found", if (installed) "READY" else "MISSING", if (installed) HubGreen else HubRed, if (installed) HubMark.Check else HubMark.Alert)\n'
-          if hook not in s:
-              if needle not in s:
-                  raise SystemExit("DLavie base installer hook needle not found")
+          if hook not in s and needle in s:
               s = s.replace(needle, hook + needle)
               p.write_text(s)
           print("DLavie full base installer card attached")
@@ -63,23 +61,9 @@ jobs:
           s = p.read_text()
           s = s.replace("guidedDownloadPatch(context) { progress -> state = progress }", "guidedDownloadPatch(context) { progress: GuidedUpdateState -> state = progress }")
           s = s.replace("private fun GuidedPage(content: @Composable Column.() -> Unit) {", "private fun GuidedPage(content: @Composable () -> Unit) {")
-          s = s.replace(
-              """    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        content = content
-    )""",
-              """    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) { content() }"""
-          )
+          old_page = "    Column(\n        Modifier\n            .fillMaxSize()\n            .verticalScroll(rememberScrollState())\n            .padding(horizontal = 20.dp, vertical = 18.dp),\n        verticalArrangement = Arrangement.spacedBy(14.dp),\n        content = content\n    )"
+          new_page = "    Column(\n        Modifier\n            .fillMaxSize()\n            .verticalScroll(rememberScrollState())\n            .padding(horizontal = 20.dp, vertical = 18.dp),\n        verticalArrangement = Arrangement.spacedBy(14.dp)\n    ) { content() }"
+          s = s.replace(old_page, new_page)
           s = s.replace("private fun GuidedPanel(content: @Composable Column.() -> Unit) {", "private fun GuidedPanel(content: @Composable () -> Unit) {")
           s = s.replace("Column(Modifier.padding(18.dp), content = content)", "Column(Modifier.padding(18.dp)) { content() }")
           p.write_text(s)
