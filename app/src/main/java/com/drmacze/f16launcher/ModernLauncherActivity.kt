@@ -137,7 +137,7 @@ val AmberWarn   = Color(0xFFFF9A30)
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 private const val GAME_PKG         = "com.ea.gp.fifaworld"
-private const val FIFA_APK_URL     = "https://github.com/drmacze/F16/releases/download/v1.0-dlavie26/DLavie26.apk"
+private const val FIFA_APK_URL     = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26.apk"
 private const val DEFAULT_MANIFEST = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/manifest.json"
 private const val MARKER_PATH      = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
 private const val LOCAL_VER        = 1
