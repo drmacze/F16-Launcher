@@ -56,9 +56,14 @@ s = s.replace('GuidedIconTile(icon, color, 44)', 'GuidedIconTile(icon, color, 38
 s = s.replace('fontSize = 15.sp, fontWeight = FontWeight.Black', 'fontSize = 14.sp, fontWeight = FontWeight.Black')
 s = s.replace('Surface(modifier = modifier.height(70.dp)', 'Surface(modifier = modifier.height(62.dp)')
 s = s.replace(
-    'GuidedStepRow(4, "Mainkan Game", "Launch setelah data siap.", if (update.marker.startsWith("v26")) "READY" else "NANTI", GuidedIcon.Rocket, Color(0xFFB783FF), { })',
-    'GuidedStepRow(4, "Mainkan Game", "Launch setelah data siap.", if (update.marker.startsWith("v26")) "READY" else "NANTI", GuidedIcon.Rocket, Color(0xFFB783FF), { guidedLaunchGame(LocalContext.current) })',
+    "private fun GuidedQuickSteps(openData: () -> Unit, openUpdate: () -> Unit, update: GuidedUpdateState) {\n    GuidedPanel {",
+    "private fun GuidedQuickSteps(openData: () -> Unit, openUpdate: () -> Unit, update: GuidedUpdateState) {\n    val context = LocalContext.current\n    GuidedPanel {",
 )
+s = s.replace(
+    'GuidedStepRow(4, "Mainkan Game", "Launch setelah data siap.", if (update.marker.startsWith("v26")) "READY" else "NANTI", GuidedIcon.Rocket, Color(0xFFB783FF), { })',
+    'GuidedStepRow(4, "Mainkan Game", "Launch setelah data siap.", if (update.marker.startsWith("v26")) "READY" else "NANTI", GuidedIcon.Rocket, Color(0xFFB783FF), { guidedLaunchGame(context) })',
+)
+s = s.replace('{ guidedLaunchGame(LocalContext.current) })', '{ guidedLaunchGame(context) })')
 
 extra = r'''
 
@@ -164,5 +169,6 @@ private fun guidedFaqAnswerPro(title: String): String = when (title) {
 if "private fun GuidedProfileScreen" not in s:
     s += extra
 
+s = s.replace('\\"', '"')
 p.write_text(s)
 print("Guided UX patch applied safely")
