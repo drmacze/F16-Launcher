@@ -50,8 +50,9 @@
 
 
 
+
         <activity
-            android:name=".DLavieHubActivity"
+            android:name=".ModernLauncherActivity"
             android:exported="false"
             android:label="DLavie 26"
             android:theme="@style/AppTheme.Splash" />
