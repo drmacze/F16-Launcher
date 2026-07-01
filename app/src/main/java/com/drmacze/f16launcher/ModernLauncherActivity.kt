@@ -84,6 +84,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -326,6 +327,7 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
 }
 
 // ─── Home screen ──────────────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
     val context = LocalContext.current
