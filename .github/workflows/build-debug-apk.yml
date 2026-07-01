@@ -58,7 +58,18 @@ jobs:
         run: python .github/scripts/patch_guided_ux.py
 
       - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+        shell: bash
+        run: |
+          set +e
+          gradle assembleDebug --stacktrace --console=plain > build.log 2>&1
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "---- DLavie concise build errors ----"
+            grep -nE "e: file:|error:|FAILURE:|What went wrong|Execution failed|Unresolved reference|Cannot infer|Type mismatch|Conflicting overloads" build.log | head -120 || tail -180 build.log
+            exit "$code"
+          fi
+          echo "---- DLavie build OK ----"
+          tail -80 build.log
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
