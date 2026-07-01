@@ -59,6 +59,7 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Refresh
@@ -178,6 +179,30 @@ class ModernLauncherActivity : ComponentActivity() {
 fun DLavieModernApp() {
     val context = LocalContext.current
     val api     = remember { CommunityApi(context) }
+    var pinVerified by remember { mutableStateOf(!PinManager.hasPin(context)) }
+
+    // If PIN is enabled and not yet verified, launch the PIN lock screen
+    LaunchedEffect(Unit) {
+        if (PinManager.hasPin(context) && !pinVerified) {
+            PinLockActivity.launch(context, PinLockActivity.MODE_UNLOCK)
+        }
+    }
+
+    // Refresh pinVerified state on resume (after returning from PinLockActivity)
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                if (!PinManager.hasPin(context)) pinVerified = true
+                // If PIN exists and was just verified externally (via PinLockActivity),
+                // we can't easily know — but the activity launching back means user is allowed in
+                // (or they pressed home — but we re-prompt on next foreground via onResume).
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        try { kotlinx.coroutines.awaitCancellation() } finally { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     MaterialTheme(colorScheme = darkColorScheme(
         background   = Carbon,    surface      = GlassBase,
         primary      = CandyCyan, secondary    = CandyBlue,
@@ -202,10 +227,28 @@ fun DLavieModernApp() {
                             Text("Memuat sesi...", color = SoftText, fontSize = 13.sp)
                         }
                     }
+                } else if (!pinVerified && PinManager.hasPin(context)) {
+                    // Wait for PIN verification — show lock screen placeholder
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Icon(Icons.Rounded.Lock, null, tint = CandyCyan, modifier = Modifier.size(48.dp))
+                            Text("Masukkan PIN untuk lanjut", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text("Aktivitas PIN lock terbuka di layar lain", color = SoftText, fontSize = 12.sp)
+                            Spacer(Modifier.height(20.dp))
+                            Button(
+                                onClick = { PinLockActivity.launch(context, PinLockActivity.MODE_UNLOCK) },
+                                modifier = Modifier.height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D))
+                            ) { Text("Buka PIN Lock", fontWeight = FontWeight.Black) }
+                        }
+                    }
                 } else {
                     MainShell(api) {
                         api.logout()
                         context.getSharedPreferences("dlavie_auth_session", Context.MODE_PRIVATE).edit().clear().apply()
+                        // Also clear PIN on logout for security
+                        PinManager.clearPin(context)
                         context.startActivity(
                             Intent(context, DLavieGuidedActivity::class.java)
                                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -1532,6 +1575,9 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
             ProfRow("Server",      "DLavie Cloud")
         }
 
+        // ── Akun & Keamanan (Account Settings) ──
+        AccountSettingsCard(api = api, context = context)
+
         // ── Keamanan ──
         GlassCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1754,6 +1800,316 @@ fun ThreadPanel(topic: TopicItem?, posts: List<PostItem>, reply: String, modifie
             ) { Text("Kirim Balasan", fontWeight = FontWeight.Bold) }
         }
     }
+}
+
+// ─── Account Settings Card (Profile screen) ──────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AccountSettingsCard(api: CommunityApi, context: android.content.Context) {
+    val scope = rememberCoroutineScope()
+    var expandedSection by remember { mutableStateOf<String?>(null) }
+    var working by remember { mutableStateOf(false) }
+    var resultMsg by remember { mutableStateOf("") }
+    var isSuccess by remember { mutableStateOf(false) }
+    var pinEnabled by remember { mutableStateOf(PinManager.hasPin(context)) }
+
+    // Field states
+    var newPass by remember { mutableStateOf("") }
+    var newPassConfirm by remember { mutableStateOf("") }
+    var newEmail by remember { mutableStateOf("") }
+    var newUsername by remember { mutableStateOf(api.username()) }
+    var newDisplayName by remember { mutableStateOf(api.displayName()) }
+
+    fun execute(call: suspend () -> String) {
+        working = true; resultMsg = ""
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { call() } }
+            result.onSuccess {
+                isSuccess = it.startsWith("OK")
+                resultMsg = it
+                if (isSuccess && expandedSection == "profile") {
+                    // Update local prefs from new values
+                    context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE).edit()
+                        .putString("username", newUsername.trim())
+                        .putString("display_name", newDisplayName.trim())
+                        .apply()
+                }
+            }
+            result.onFailure {
+                isSuccess = false
+                resultMsg = "Error: ${it.message ?: "operasi gagal"}"
+            }
+            working = false
+        }
+    }
+
+    GlassCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Security, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Akun & Keamanan", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Kelola password, email, profil, dan PIN launcher dari sini.",
+            color = SoftText, fontSize = 12.sp
+        )
+        Spacer(Modifier.height(12.dp))
+
+        // ── Section: Ganti Password ──
+        SettingRow(
+            icon = Icons.Rounded.Lock,
+            title = "Ganti Password",
+            subtitle = "Minimal 6 karakter. Sesi lain akan otomatis logout.",
+            expanded = expandedSection == "password",
+            onToggle = { expandedSection = if (expandedSection == "password") null else "password"; resultMsg = "" }
+        ) {
+            ModernTextField(
+                value = newPass,
+                onValueChange = { newPass = it },
+                label = "Password Baru",
+                isPassword = true
+            )
+            Spacer(Modifier.height(8.dp))
+            ModernTextField(
+                value = newPassConfirm,
+                onValueChange = { newPassConfirm = it },
+                label = "Konfirmasi Password Baru",
+                isPassword = true
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick  = {
+                    if (newPass != newPassConfirm) {
+                        isSuccess = false; resultMsg = "Error: Password tidak cocok."; return@Button
+                    }
+                    execute { AuthManager.updatePassword(api.token(), newPass) }
+                    newPass = ""; newPassConfirm = ""
+                },
+                enabled  = !working && newPass.length >= 6 && newPass == newPassConfirm,
+                modifier = Modifier.fillMaxWidth().height(46.dp),
+                shape    = RoundedCornerShape(14.dp),
+                colors   = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D))
+            ) {
+                Text(if (working) "Memproses..." else "Ubah Password", fontWeight = FontWeight.Black, fontSize = 13.sp)
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // ── Section: Ganti Email ──
+        SettingRow(
+            icon = Icons.Rounded.Info,
+            title = "Ganti Email",
+            subtitle = "Email konfirmasi akan dikirim ke email baru.",
+            expanded = expandedSection == "email",
+            onToggle = { expandedSection = if (expandedSection == "email") null else "email"; resultMsg = "" }
+        ) {
+            ModernTextField(
+                value = newEmail,
+                onValueChange = { newEmail = it.trim() },
+                label = "Email Baru"
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick  = { execute { AuthManager.updateEmail(api.token(), newEmail) }; newEmail = "" },
+                enabled  = !working && newEmail.contains("@") && newEmail.contains("."),
+                modifier = Modifier.fillMaxWidth().height(46.dp),
+                shape    = RoundedCornerShape(14.dp),
+                colors   = ButtonDefaults.buttonColors(containerColor = CandyBlue, contentColor = Color.White)
+            ) {
+                Text(if (working) "Memproses..." else "Kirim Konfirmasi", fontWeight = FontWeight.Black, fontSize = 13.sp)
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // ── Section: Ganti Profil (Username & Display Name) ──
+        SettingRow(
+            icon = Icons.Rounded.AccountCircle,
+            title = "Ganti Profil",
+            subtitle = "Username (3-24, a-z 0-9 _) dan Display Name (2-40).",
+            expanded = expandedSection == "profile",
+            onToggle = { expandedSection = if (expandedSection == "profile") null else "profile"; resultMsg = "" }
+        ) {
+            ModernTextField(
+                value = newUsername,
+                onValueChange = { raw ->
+                    newUsername = raw.trim().lowercase().filter { c -> c.isLetterOrDigit() || c == '_' }.take(24)
+                },
+                label = "Username"
+            )
+            Spacer(Modifier.height(8.dp))
+            ModernTextField(
+                value = newDisplayName,
+                onValueChange = { newDisplayName = it.take(40) },
+                label = "Display Name"
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick  = {
+                    execute {
+                        AuthManager.updateProfile(api.token(), api.userId(), newUsername, newDisplayName)
+                    }
+                },
+                enabled  = !working &&
+                           newUsername.matches(Regex("[a-zA-Z0-9_]{3,24}")) &&
+                           newDisplayName.trim().length in 2..40,
+                modifier = Modifier.fillMaxWidth().height(46.dp),
+                shape    = RoundedCornerShape(14.dp),
+                colors   = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B))
+            ) {
+                Text(if (working) "Memproses..." else "Simpan Profil", fontWeight = FontWeight.Black, fontSize = 13.sp)
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // ── Section: PIN Launcher ──
+        SettingRow(
+            icon = Icons.Rounded.Lock,
+            title = if (pinEnabled) "PIN Launcher Aktif" else "PIN Launcher",
+            subtitle = if (pinEnabled) "Klik untuk ubah / nonaktifkan PIN."
+                       else "Lindungi launcher dengan PIN 6-digit.",
+            expanded = expandedSection == "pin",
+            onToggle = { expandedSection = if (expandedSection == "pin") null else "pin"; resultMsg = "" }
+        ) {
+            if (pinEnabled) {
+                Button(
+                    onClick  = {
+                        PinLockActivity.launch(context, PinLockActivity.MODE_CHANGE)
+                    },
+                    enabled  = !working,
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape    = RoundedCornerShape(14.dp),
+                    colors   = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D))
+                ) {
+                    Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Ubah PIN", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick  = {
+                        PinLockActivity.launch(context, PinLockActivity.MODE_DISABLE)
+                        // After disable activity returns, refresh state on resume
+                        expandedSection = null
+                    },
+                    enabled  = !working,
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape    = RoundedCornerShape(14.dp),
+                    border   = BorderStroke(1.dp, DangerRed.copy(0.5f))
+                ) {
+                    Text("Nonaktifkan PIN", color = DangerRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            } else {
+                Button(
+                    onClick  = {
+                        PinLockActivity.launch(context, PinLockActivity.MODE_SETUP)
+                    },
+                    enabled  = !working,
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape    = RoundedCornerShape(14.dp),
+                    colors   = ButtonDefaults.buttonColors(containerColor = CandyBlue, contentColor = Color.White)
+                ) {
+                    Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Setup PIN 6-digit", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                }
+            }
+        }
+
+        // Refresh PIN state on resume (after returning from PinLockActivity)
+        val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+        LaunchedEffect(lifecycleOwner) {
+            val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                    pinEnabled = PinManager.hasPin(context)
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            try { kotlinx.coroutines.awaitCancellation() } finally { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+
+        // Result message
+        AnimatedVisibility(resultMsg.isNotEmpty()) {
+            GlassInfoBox(
+                icon  = if (isSuccess) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline,
+                color = if (isSuccess) NeonGreen else DangerRed,
+                text  = resultMsg
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
+) {
+    Surface(
+        color = Color(0xFF0F1828),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, if (expanded) CandyCyan.copy(0.5f) else GlassStroke)
+    ) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().clickable { onToggle() }.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier.size(32.dp).background(CandyBlue.copy(0.12f), RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text(subtitle, color = SoftText, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                Icon(
+                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    null, tint = SoftText, modifier = Modifier.size(20.dp)
+                )
+            }
+            AnimatedVisibility(expanded) {
+                Column(Modifier.padding(horizontal = 14.dp).padding(bottom = 14.dp), content = content)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModernTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    isPassword: Boolean = false
+) {
+    androidx.compose.material3.OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label, fontSize = 12.sp) },
+        singleLine = true,
+        visualTransformation = if (isPassword) androidx.compose.ui.text.input.PasswordVisualTransformation()
+                                else androidx.compose.ui.text.input.VisualTransformation.None,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = CandyCyan,
+            unfocusedBorderColor = GlassStroke,
+            focusedLabelColor = CandyCyan,
+            unfocusedLabelColor = SoftText,
+            cursorColor = CandyCyan,
+            focusedTextColor = Color.White,
+            unfocusedTextColor = Color.White
+        )
+    )
 }
 
 // ─── Helper functions ─────────────────────────────────────────────────────────

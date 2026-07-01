@@ -80,5 +80,14 @@
             android:exported="false"
             android:label="DLavie Recovery Console"
             android:theme="@style/AppTheme.Splash" />
+
+        <!-- PIN lock activity (unlock / setup / change / disable) -->
+        <activity
+            android:name=".PinLockActivity"
+            android:exported="false"
+            android:label="DLavie PIN"
+            android:theme="@style/AppTheme.Splash"
+            android:excludeFromRecents="true"
+            android:lockTaskMode="if_whitelisted" />
     </application>
 </manifest>
