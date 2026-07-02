@@ -227,9 +227,27 @@ create table if not exists public.notification_campaigns (
     body text not null,
     target jsonb not null default '{"type": "all"}'::jsonb,
     action jsonb not null default '{"type": "open_app"}'::jsonb,
+    category text not null default 'announcement', -- update | announcement | maintenance | community
     sent_at timestamptz,
     created_at timestamptz not null default now()
 );
+
+create index if not exists notification_campaigns_sent_at_idx
+    on public.notification_campaigns(sent_at desc) where sent_at is not null;
+create index if not exists notification_campaigns_category_idx
+    on public.notification_campaigns(category, sent_at desc) where sent_at is not null;
+
+-- ---------- GAME RATINGS (DLavie 26 community rating) ----------
+
+create table if not exists public.game_ratings (
+    user_id    uuid primary key references public.profiles(id) on delete cascade,
+    rating     smallint not null check (rating between 1 and 5),
+    review     text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists game_ratings_rating_idx on public.game_ratings(rating);
 
 -- ---------- AUDIT LOGS ----------
 
@@ -382,6 +400,32 @@ create policy "notifications developer read" on public.notification_campaigns fo
 
 drop policy if exists "notifications developer write" on public.notification_campaigns;
 create policy "notifications developer write" on public.notification_campaigns for all using (public.is_developer_staff()) with check (public.is_developer_staff());
+
+-- Authenticated (logged-in) users may read SENT notifications (sent_at not null).
+-- Required so the launcher can show inline banner + notification popup for non-staff users.
+drop policy if exists "notifications auth read sent" on public.notification_campaigns;
+create policy "notifications auth read sent" on public.notification_campaigns
+    for select using (auth.role() = 'authenticated' and sent_at is not null);
+
+-- ── Game ratings RLS ──
+alter table public.game_ratings enable row level security;
+
+-- Anyone (anon + auth) may read aggregate ratings (so the launcher can show avg on Home).
+drop policy if exists "game ratings public read" on public.game_ratings;
+create policy "game ratings public read" on public.game_ratings for select using (true);
+
+-- A user may insert/update ONLY their own rating row.
+drop policy if exists "game ratings own upsert" on public.game_ratings;
+create policy "game ratings own upsert" on public.game_ratings
+    for insert with check (auth.uid() = user_id);
+
+drop policy if exists "game ratings own update" on public.game_ratings;
+create policy "game ratings own update" on public.game_ratings
+    for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "game ratings own delete" on public.game_ratings;
+create policy "game ratings own delete" on public.game_ratings
+    for delete using (auth.uid() = user_id);
 
 drop policy if exists "audit staff read" on public.audit_logs;
 create policy "audit staff read" on public.audit_logs for select using (public.is_staff());

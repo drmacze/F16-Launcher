@@ -27,16 +27,20 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -48,6 +52,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Article
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -72,6 +77,8 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.SportsSoccer
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Terminal
@@ -82,6 +89,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -89,6 +98,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -116,8 +126,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -133,6 +146,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.sin
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -798,6 +812,22 @@ fun HomeScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNa
     var maintenanceState by remember { mutableStateOf(maintenanceInfo) }
     var latestNotif      by remember { mutableStateOf<NotifCampaign?>(null) }
 
+    // ── NEW: Rating state (game_ratings table, real data from Supabase) ──
+    var avgRating      by remember { mutableStateOf(0.0) }   // 1-5 scale
+    var ratingCount    by remember { mutableStateOf(0) }
+    var myRating       by remember { mutableStateOf(0) }     // 1-5, or 0 if not rated
+    var showRatingPopup by remember { mutableStateOf(false) }
+    var ratingSubmitError by remember { mutableStateOf("") }
+
+    // ── NEW: Notification category popup state ──
+    var showNotifPopup  by remember { mutableStateOf(false) }
+    // notifCategory tracks the user's current filter (default "all"). Tidak dipakai
+    // untuk navigasi ke screen lain — hanya popup filter lokal di Home.
+    var notifCategory   by remember { mutableStateOf("all") }
+    // Filtered notification list (fetched saat kategori dipilih). Bisa kosong.
+    var notifList       by remember { mutableStateOf<List<NotifCampaign>>(emptyList()) }
+    var notifListOpen   by remember { mutableStateOf(false) }
+
     // ── Bug 2: Partial maintenance blocking ──
     // Kalau scope=partial, block download/apply/launch tapi allow komunitas & profile.
     val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"
@@ -819,6 +849,16 @@ fun HomeScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNa
             // (latestNotif == null) supaya tidak menimpa dismiss user saat refresh.
             if (latestNotif == null) {
                 runCatching { latestNotif = fetchLatestNotifCampaign(api) }
+            }
+            // ── NEW: rating stats (fail-open — table mungkin belum ada di schema lama) ──
+            runCatching {
+                val stats = api.fetchRatingStats()
+                avgRating   = stats.optDouble("avg", 0.0)
+                ratingCount = stats.optInt("count", 0)
+            }
+            // ── NEW: my rating (hanya kalau login) ──
+            if (api.loggedIn()) {
+                runCatching { myRating = api.getMyRating() }
             }
         }
         setupState = when {
@@ -992,59 +1032,279 @@ fun HomeScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNa
             }
         }
 
-        // ── Hero Header (premium gradient + glow) ──────────────────────────────
-        PremiumGlassCard(gradientBorder = true) {
-            // Subtle animated background glow inside header
-            val infiniteTransition = rememberInfiniteTransition(label = "hero_glow")
-            val heroGlow by infiniteTransition.animateFloat(
-                initialValue = 0.15f, targetValue = 0.35f,
-                animationSpec = infiniteRepeatable(tween(2000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-                label = "hero_glow_val"
-            )
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(60.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(
-                        Brush.linearGradient(
-                            listOf(
-                                CandyCyan.copy(alpha = heroGlow * 0.4f),
-                                CandyBlue.copy(alpha = heroGlow * 0.3f),
-                                PremiumViolet.copy(alpha = heroGlow * 0.2f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-            ) {
-                Row(
-                    Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+        // ── Top Bar ─────────────────────────────────────────────────────────────
+        // Kiri: "DLavie 26" text (bold, white). Kanan: notification bell icon.
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(32.dp)
+                        .background(
+                            Brush.linearGradient(listOf(CandyCyan, CandyBlue, PremiumViolet)),
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
+                    Text("DL", color = Carbon, fontSize = 13.sp, fontWeight = FontWeight.Black)
+                }
+                Spacer(Modifier.width(10.dp))
+                Text("DLavie 26", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+            }
+            Box {
+                Icon(
+                    Icons.Rounded.Notifications, "Notifikasi",
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp).clickable { showNotifPopup = true }
+                )
+                // Tiny unread dot indicator (subtle, kalau ada latestNotif belum di-dismiss)
+                if (latestNotif != null) {
                     Box(
-                        Modifier.size(44.dp)
-                            .background(
-                                Brush.linearGradient(listOf(CandyCyan, CandyBlue, PremiumViolet)),
-                                RoundedCornerShape(14.dp)
-                            )
-                            .softGlow(CandyCyan, radius = 18f, alpha = 0.35f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("DL", color = Carbon, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("DLavie 26", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
-                            ModernPill("PROD", NeonGreen)
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 1.dp, y = (-1).dp)
+                            .size(7.dp)
+                            .background(DangerRed, CircleShape)
+                    )
+                }
+                DropdownMenu(
+                    expanded = showNotifPopup,
+                    onDismissRequest = { showNotifPopup = false },
+                    modifier = Modifier.background(GlassBase)
+                ) {
+                    NotificationCategoryItems(
+                        onCategorySelected = { cat ->
+                            notifCategory = cat
+                            showNotifPopup = false
+                            // Fetch filtered notifications (fail-open).
+                            scope.launch {
+                                val list = withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        val arr = api.getNotificationsByCategory(15, cat)
+                                        (0 until arr.length()).mapNotNull { i ->
+                                            runCatching {
+                                                val o = arr.getJSONObject(i)
+                                                NotifCampaign(
+                                                    id = o.optString("id"),
+                                                    title = o.optString("title"),
+                                                    body = o.optString("body"),
+                                                    sentAt = o.optString("sent_at")
+                                                )
+                                            }.getOrNull()
+                                        }
+                                    }.getOrDefault(emptyList())
+                                }
+                                notifList = list
+                                notifListOpen = true
+                            }
                         }
-                        Text("FIFA 16 Mobile · Mod Launcher", color = SoftText, fontSize = 11.sp)
-                    }
-                    val name = api.displayName().ifEmpty { "Player" }.take(11)
-                    ModernPill("@$name", CandyCyan)
+                    )
                 }
             }
         }
+
+        // ── Hero Banner (FIFA 16 Mobile — TapTap-style) ────────────────────────
+        // Pure black background + animated mesh gradient grey wave + shiny title
+        // + typewriter subtitle + rating badge + DL logo cover.
+        Box(
+            Modifier.fillMaxWidth().height(200.dp)
+                .clip(RoundedCornerShape(24.dp))
+        ) {
+            MeshGradientBackground(Modifier.fillMaxSize())
+
+            Column(
+                Modifier.fillMaxSize().padding(20.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Top row: title + rating badge
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        ShinyTitle("FIFA 16 Mobile")
+                        Spacer(Modifier.height(10.dp))
+                        TypewriterText(
+                            texts = listOf(
+                                "Play FIFA 16 Mobile everywhere",
+                                "Play offline, Always update, More improvement."
+                            )
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    // Rating badge — pojok kanan atas banner
+                    Column(horizontalAlignment = Alignment.End) {
+                        val rating10 = String.format("%.1f", avgRating * 2.0)
+                        Text("⭐ $rating10", color = NeonGreen, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                        Text("$ratingCount ratings", color = SoftText, fontSize = 10.sp)
+                    }
+                }
+
+                // Bottom row: DL logo + small "verified" pill
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.size(60.dp)
+                            .background(
+                                Brush.linearGradient(listOf(CandyCyan, CandyBlue, PremiumViolet)),
+                                CircleShape
+                            )
+                            .softGlow(CandyCyan, radius = 22f, alpha = 0.4f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("DL", color = Carbon, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    }
+                    Surface(
+                        color = NeonGreen.copy(0.16f),
+                        border = BorderStroke(1.dp, NeonGreen.copy(0.45f)),
+                        shape = RoundedCornerShape(999.dp)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Rounded.Verified, null, tint = NeonGreen, modifier = Modifier.size(11.dp))
+                            Text("OFFICIAL", color = NeonGreen, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── "Beri Rating DLavie 26" button (conditional: belum rate & login) ────
+        AnimatedVisibility(
+            visible = myRating == 0 && api.loggedIn(),
+            enter = fadeIn(tween(300)) + expandVertically(),
+            exit = fadeOut(tween(200)) + shrinkVertically()
+        ) {
+            OutlinedButton(
+                onClick = { ratingSubmitError = ""; showRatingPopup = true },
+                modifier = Modifier.fillMaxWidth().height(46.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, AmberWarn.copy(0.55f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AmberWarn)
+            ) {
+                Icon(Icons.Rounded.Star, null, tint = AmberWarn, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Beri Rating DLavie 26", color = AmberWarn, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.width(6.dp))
+                Text("· bantu kami naik ranking", color = SoftText, fontSize = 11.sp, fontWeight = FontWeight.Normal)
+            }
+        }
+
+        // ── Game Card: "DLavie 26: Football Game" (Dapatkan / Mainkan / Diblokir) ─
+        PremiumGlassCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(56.dp)
+                        .background(
+                            Brush.linearGradient(listOf(CandyCyan, CandyBlue, PremiumViolet)),
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("DL", color = Carbon, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("DLavie 26: Football Game", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("⚽ Olahraga · FIFA 16 Mod", color = SoftText, fontSize = 11.sp)
+                    val rating10 = String.format("%.1f", avgRating * 2.0)
+                    Text("⭐ $rating10 · $ratingCount ratings", color = NeonGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+                // Button: Dapatkan / Mainkan / Diblokir Maintenance
+                when {
+                    maintenanceBlocked -> {
+                        OutlinedButton(
+                            onClick = {},
+                            enabled = false,
+                            shape = RoundedCornerShape(20.dp),
+                            border = BorderStroke(1.dp, Surface2),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Rounded.Lock, null, tint = SoftText, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Diblokir", color = SoftText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    gameInstalled -> {
+                        Button(
+                            onClick = { launchGame(context) },
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B)),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Mainkan", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    else -> {
+                        OutlinedButton(
+                            onClick = { if (dlProgress < 0f) startDownload() },
+                            shape = RoundedCornerShape(20.dp),
+                            border = BorderStroke(1.dp, NeonGreen),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Rounded.CloudDownload, null, tint = NeonGreen, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Dapatkan", color = NeonGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+            // Inline download progress (kalau sedang unduh dari tombol "Dapatkan")
+            AnimatedVisibility(
+                visible = dlProgress >= 0f && dlProgress < 2f,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    LinearProgressIndicator(
+                        progress = { dlProgress },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = NeonGreen,
+                        trackColor = NeonGreen.copy(0.15f)
+                    )
+                    Text(
+                        "Mengunduh APK… ${(dlProgress * 100).toInt()}%",
+                        color = SoftText, fontSize = 10.sp, modifier = Modifier.align(Alignment.End)
+                    )
+                }
+            }
+            AnimatedVisibility(
+                visible = dlError.isNotEmpty(),
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Row(
+                    Modifier.padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(Icons.Rounded.ErrorOutline, null, tint = DangerRed, modifier = Modifier.size(13.dp))
+                    Text(dlError, color = DangerRed, fontSize = 11.sp)
+                }
+            }
+        }
+
+        // ── Section "Trusted by DLavie" ────────────────────────────────────────
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Verified, "Verified", tint = NeonGreen, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Trusted by DLavie", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
+        }
+        Text(
+            "Game resmi yang diverifikasi oleh DLavie — aman, ter-update, dan didukung komunitas.",
+            color = SoftText, fontSize = 11.sp, lineHeight = 15.sp
+        )
 
         // ── Main action card (state-aware) ────────────────────────────────────
         AnimatedContent(
@@ -1345,6 +1605,382 @@ fun HomeScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNa
         Spacer(Modifier.height(8.dp))
     }
     } // end PullToRefreshBox
+
+    // ── Rating popup (Play Store style, 5 stars + optional review) ──────────────
+    if (showRatingPopup) {
+        RatingPopup(
+            currentRating = myRating,
+            submitError = ratingSubmitError,
+            onDismiss = { showRatingPopup = false },
+            onSubmit = { rating, review ->
+                scope.launch {
+                    val ok = withContext(Dispatchers.IO) {
+                        runCatching {
+                            api.submitRating(rating, review)
+                            // Refresh stats + my rating after submit
+                            val stats = api.fetchRatingStats()
+                            avgRating   = stats.optDouble("avg", 0.0)
+                            ratingCount = stats.optInt("count", 0)
+                            myRating    = rating
+                            true
+                        }.getOrDefault(false)
+                    }
+                    if (ok) {
+                        ratingSubmitError = ""
+                        showRatingPopup = false
+                    } else {
+                        ratingSubmitError = "Gagal kirim rating. Coba lagi nanti."
+                    }
+                }
+            }
+        )
+    }
+
+    // ── Filtered notification list dialog (muncul setelah pilih kategori) ──────
+    if (notifListOpen) {
+        NotificationListDialog(
+            category = notifCategory,
+            items = notifList,
+            onDismiss = { notifListOpen = false }
+        )
+    }
+}
+
+// ─── Mesh gradient grey wave background (animated, subtle) ──────────────────────
+// Pure black base + 2 radial grey gradients (animated) + faint sine wave lines.
+// Designed for Hero Banner background. Subtle (not too bright).
+@Composable
+fun MeshGradientBackground(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "mesh")
+    val wave1 by infiniteTransition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Reverse),
+        label = "wave1"
+    )
+    val wave2 by infiniteTransition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(12000, easing = LinearEasing), RepeatMode.Reverse),
+        label = "wave2"
+    )
+
+    Canvas(modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+
+        // Base: pure black
+        drawRect(Color.Black)
+
+        // Mesh gradient 1: grey wave (top-left, animated center)
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFF1A1A1A).copy(alpha = 0.6f + wave1 * 0.2f),
+                    Color(0xFF0A0A0A).copy(alpha = 0.3f),
+                    Color.Transparent
+                ),
+                center = Offset(w * (0.2f + wave1 * 0.3f), h * (0.3f + wave1 * 0.2f)),
+                radius = w * 0.8f
+            )
+        )
+
+        // Mesh gradient 2: subtle grey wave (bottom-right, animated center)
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFF222222).copy(alpha = 0.4f + wave2 * 0.2f),
+                    Color(0xFF111111).copy(alpha = 0.2f),
+                    Color.Transparent
+                ),
+                center = Offset(w * (0.8f - wave2 * 0.2f), h * (0.7f - wave2 * 0.1f)),
+                radius = w * 0.7f
+            )
+        )
+
+        // Subtle wave lines (animated sine) — faint grey
+        val wavePath = Path()
+        for (i in 0..5) {
+            val y = h * (0.2f + i * 0.15f)
+            wavePath.reset()
+            wavePath.moveTo(0f, y)
+            var x = 0
+            while (x <= w.toInt()) {
+                val yOffset = sin((x + wave1 * 200 + i * 50) * 0.01f) * 15f
+                wavePath.lineTo(x.toFloat(), y + yOffset)
+                x += 20
+            }
+            drawPath(
+                wavePath,
+                color = Color(0xFF333333).copy(alpha = 0.08f),
+                style = Stroke(width = 1f)
+            )
+        }
+    }
+}
+
+// ─── Shiny title — silver gradient sweep animation (TextStyle brush) ────────────
+// Uses Brush.linearGradient inside TextStyle — NOT BlendMode. Sweep loops 3s.
+@Composable
+fun ShinyTitle(text: String, modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "shiny")
+    val sweepProgress by infiniteTransition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(3000, easing = LinearEasing), RepeatMode.Restart),
+        label = "sweep"
+    )
+    // sweepX travels from -1 to 2 (extends beyond text bounds for full sweep)
+    val sweepX = -1f + sweepProgress * 3f
+
+    Text(
+        text = text,
+        style = TextStyle(
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color(0xFF6B7280),   // dark silver
+                    Color(0xFFF9FAFB),   // bright white
+                    Color(0xFFE5E7EB),   // light silver
+                    Color(0xFF9CA3AF),   // mid silver
+                    Color(0xFFF9FAFB),   // bright white
+                    Color(0xFF6B7280)    // dark silver
+                ),
+                start = Offset(sweepX * 500f, 0f),
+                end = Offset(sweepX * 500f + 300f, 60f)
+            ),
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = (-1).sp
+        ),
+        modifier = modifier
+    )
+}
+
+// ─── Typewriter animation — loop through list of strings ───────────────────────
+// 50ms/char typing, 1.5s hold, 25ms/char deleting, 300ms pause between phrases.
+@Composable
+fun TypewriterText(
+    texts: List<String>,
+    modifier: Modifier = Modifier
+) {
+    var textIndex by remember { mutableStateOf(0) }
+    var displayedText by remember { mutableStateOf("") }
+    var isDeleting by remember { mutableStateOf(false) }
+
+    // Single long-lived coroutine — keys on `texts` identity only.
+    LaunchedEffect(texts) {
+        if (texts.isEmpty()) { displayedText = ""; return@LaunchedEffect }
+        while (true) {
+            val fullText = texts[textIndex]
+            if (!isDeleting) {
+                // Typing
+                for (i in 0..fullText.length) {
+                    displayedText = fullText.substring(0, i)
+                    delay(50)
+                }
+                delay(1500)  // hold
+                isDeleting = true
+            } else {
+                // Deleting (faster)
+                for (i in fullText.length downTo 0) {
+                    displayedText = fullText.substring(0, i)
+                    delay(25)
+                }
+                isDeleting = false
+                textIndex = (textIndex + 1) % texts.size
+                delay(300)
+            }
+        }
+    }
+
+    Text(
+        text = displayedText,
+        color = Color(0xFF9CA3AF),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = modifier
+    )
+}
+
+// ─── Rating popup (Play Store style — 5 stars + optional review) ────────────────
+@Composable
+fun RatingPopup(
+    currentRating: Int = 0,
+    submitError: String = "",
+    onDismiss: () -> Unit,
+    onSubmit: (rating: Int, review: String) -> Unit
+) {
+    var selectedRating by remember { mutableStateOf(currentRating) }
+    var hoveredRating by remember { mutableStateOf(0) }
+    var review by remember { mutableStateOf("") }
+    var submitting by remember { mutableStateOf(false) }
+
+    // Reset submitting state if user dismisses/reopens or on submit error.
+    LaunchedEffect(Unit) { submitting = false }
+    LaunchedEffect(submitError) { if (submitError.isNotEmpty()) submitting = false }
+
+    AlertDialog(
+        onDismissRequest = { if (!submitting) onDismiss() },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Star, null, tint = AmberWarn, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Rate DLavie 26", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+            }
+        },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Bagaimana pengalaman Anda?", color = SoftText, fontSize = 13.sp)
+                Spacer(Modifier.height(16.dp))
+
+                // 5 stars — tap to select, press-and-hold untuk hover preview
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (i in 1..5) {
+                        val filled = if (hoveredRating > 0) i <= hoveredRating else i <= selectedRating
+                        Icon(
+                            if (filled) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                            contentDescription = "$i star",
+                            tint = if (filled) AmberWarn else Color(0xFF374151),
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clickable { selectedRating = i }
+                                .pointerInput(i) {
+                                    detectTapGestures(
+                                        onPress = {
+                                            hoveredRating = i
+                                            tryAwaitRelease()
+                                            hoveredRating = 0
+                                        }
+                                    )
+                                }
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Review text field (optional)
+                OutlinedTextField(
+                    value = review,
+                    onValueChange = { review = it },
+                    label = { Text("Ulasan (opsional)", fontSize = 12.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = CandyCyan,
+                        unfocusedBorderColor = GlassStroke,
+                        cursorColor = CandyCyan,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedLabelColor = CandyCyan,
+                        unfocusedLabelColor = SoftText
+                    )
+                )
+
+                if (submitError.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(submitError, color = DangerRed, fontSize = 11.sp)
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                Button(
+                    onClick = {
+                        submitting = true
+                        onSubmit(selectedRating, review)
+                    },
+                    enabled = selectedRating > 0 && !submitting,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Carbon)
+                ) {
+                    if (submitting) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Carbon, strokeWidth = 2.dp)
+                    } else {
+                        Text("Kirim Rating", fontWeight = FontWeight.Black)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = { if (!submitting) onDismiss() }) {
+                Text("Nanti saja", color = SoftText)
+            }
+        },
+        containerColor = GlassBase
+    )
+}
+
+// ─── Notification category items (used inside DropdownMenu) ─────────────────────
+@Composable
+fun ColumnScope.NotificationCategoryItems(
+    onCategorySelected: (String) -> Unit
+) {
+    data class Cat(val id: String, val label: String, val icon: ImageVector)
+    val categories = listOf(
+        Cat("all",           "Semua",        Icons.Rounded.Notifications),
+        Cat("update",        "Pembaruan",    Icons.Rounded.SystemUpdate),
+        Cat("announcement",  "Pengumuman",   Icons.Rounded.Campaign),
+        Cat("maintenance",   "Maintenance",  Icons.Rounded.Build),
+        Cat("community",     "Komunitas",    Icons.Rounded.Forum)
+    )
+    categories.forEach { c ->
+        DropdownMenuItem(
+            text = { Text(c.label, color = Color.White, fontSize = 13.sp) },
+            leadingIcon = { Icon(c.icon, null, tint = CandyCyan, modifier = Modifier.size(18.dp)) },
+            onClick = { onCategorySelected(c.id) },
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        )
+    }
+}
+
+// ─── Notification list dialog (shows filtered notifications) ───────────────────
+@Composable
+fun NotificationListDialog(
+    category: String,
+    items: List<NotifCampaign>,
+    onDismiss: () -> Unit
+) {
+    val title = when (category) {
+        "update"       -> "Notifikasi · Pembaruan"
+        "announcement" -> "Notifikasi · Pengumuman"
+        "maintenance"  -> "Notifikasi · Maintenance"
+        "community"    -> "Notifikasi · Komunitas"
+        else           -> "Semua Notifikasi"
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Notifications, null, tint = CandyCyan, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
+            }
+        },
+        text = {
+            if (items.isEmpty()) {
+                Text("Belum ada notifikasi di kategori ini.", color = SoftText, fontSize = 13.sp)
+            } else {
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items.forEach { n ->
+                        Column(Modifier.fillMaxWidth().background(Surface2.copy(0.5f), RoundedCornerShape(12.dp)).padding(12.dp)) {
+                            Text(n.title.ifEmpty { "Notifikasi DLavie" }, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (n.body.isNotEmpty()) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(n.body, color = SoftText, fontSize = 11.sp, lineHeight = 15.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Tutup", color = CandyCyan, fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = {},
+        containerColor = GlassBase
+    )
 }
 
 // ─── Feed row (Module 5 — icon per type, pinned indicator, official badge) ────

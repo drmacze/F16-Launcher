@@ -232,6 +232,82 @@ public class CommunityApi {
     }
 
     /**
+     * Fetch recent sent notification campaigns filtered by category.
+     * Categories: "all", "update", "announcement", "maintenance", "community".
+     *
+     * Notes:
+     *   - Column `category` ditambahkan ke notification_campaigns (default 'announcement').
+     *     Kalau kolom belum ada di Supabase (schema lama), filter category=eq.X akan 400.
+     *     Caller wajib wrap dengan try/catch dan fallback ke getNotifications(limit).
+     *   - auth=true (RLS check auth.uid() pass).
+     */
+    public JSONArray getNotificationsByCategory(int limit, String category) throws Exception {
+        int safe = Math.max(1, Math.min(limit, 20));
+        String filter = "sent_at=not.null";
+        if (category != null && !category.trim().isEmpty() && !category.equalsIgnoreCase("all")) {
+            filter += "&category=eq." + enc(category.trim());
+        }
+        return new JSONArray(request("GET",
+            "/rest/v1/notification_campaigns?" + filter + "&order=sent_at.desc&limit=" + safe +
+            "&select=id,created_by,title,body,target,action,sent_at,created_at,category",
+            null, true, (String) null));  // auth=true → pakai user access token (RLS)
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Game ratings (game_ratings table — DLavie 26 community rating)
+    //  Schema:
+    //    user_id   uuid PK references profiles(id)
+    //    rating    smallint NOT NULL CHECK (rating BETWEEN 1 AND 5)
+    //    review    text
+    //    created_at timestamptz default now()
+    //    updated_at timestamptz default now()
+    //  RLS: SELECT public (anon + auth), INSERT/UPDATE owner only.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Fetch average rating (1-5) and total count.
+     * Returns: { "avg": <double 1-5>, "count": <int> }.
+     * Public read (anon key) — does NOT require login.
+     */
+    public JSONObject fetchRatingStats() throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/game_ratings?select=rating", null, false, false));
+        if (arr.length() == 0) return new JSONObject().put("avg", 0.0).put("count", 0);
+        double sum = 0;
+        for (int i = 0; i < arr.length(); i++) sum += arr.getJSONObject(i).optInt("rating", 0);
+        double avg = sum / arr.length();
+        return new JSONObject().put("avg", avg).put("count", arr.length());
+    }
+
+    /**
+     * Submit or update current user's rating (1-5 stars).
+     * Uses upsert (on_conflict=user_id, resolution=merge-duplicates).
+     * Login required.
+     */
+    public void submitRating(int rating, String review) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login.");
+        if (rating < 1 || rating > 5) throw new IllegalArgumentException("Rating harus 1-5.");
+        JSONObject body = new JSONObject()
+            .put("user_id", userId())
+            .put("rating", rating);
+        if (review != null && !review.trim().isEmpty()) body.put("review", review.trim());
+        request("POST", "/rest/v1/game_ratings?on_conflict=user_id", body, true,
+            "resolution=merge-duplicates,return=minimal");
+    }
+
+    /**
+     * Get current user's rating (1-5), or 0 if not yet rated.
+     * Login required.
+     */
+    public int getMyRating() throws Exception {
+        if (!loggedIn()) return 0;
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/game_ratings?user_id=eq." + enc(userId()) + "&select=rating",
+            null, true, false));
+        return arr.length() > 0 ? arr.getJSONObject(0).optInt("rating", 0) : 0;
+    }
+
+    /**
      * Fetch published update_posts dari Supabase.
      * Update posts dibuat oleh developer via Dev Dashboard dan mewakili
      * patch announcements yang sudah published (published=true), diurutkan
