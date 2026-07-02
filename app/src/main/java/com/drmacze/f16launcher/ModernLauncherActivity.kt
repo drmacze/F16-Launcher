@@ -531,7 +531,6 @@ fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLog
     // Saat user tap TTGameCard di Beranda, set showGameDetail=true + capture state.
     // GameDetailScreen rendered sebagai overlay (menggantikan AnimatedContent).
     var showGameDetail by remember { mutableStateOf(false) }
-    var showSettings by remember { mutableStateOf(false) }
     var detailGameInstalled     by remember { mutableStateOf(false) }
     var detailAvgRating         by remember { mutableStateOf(0.0) }
     var detailRatingCount       by remember { mutableStateOf(0) }
@@ -757,11 +756,9 @@ fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLog
             SettingsScreen(
                 api           = api,
                 onBack        = { showSettings = false },
-                onLogout      = onLogout,
-                onEditAccount = { section ->
-                    profileExpandedSection = section
-                    page = Page.Me
+                onLogout      = {
                     showSettings = false
+                    onLogout()
                 }
             )
         }
@@ -1043,11 +1040,8 @@ fun HomeScreen(
         withContext(Dispatchers.IO) {
             gameInstalled = isGameInstalled(context)
             dataReady     = readMarker().startsWith("v26", ignoreCase = true)
-            // Phase 4: honor "Cek Update Otomatis" setting (SettingsPrefs).
-            // When disabled, skip the update fetch — updateInfo stays as-is.
-            if (SettingsPrefs.autoCheckUpdates(context)) {
-                runCatching { updateInfo = fetchUpdateInfo(api) }
-            }
+            // Phase 4: always check updates (settings toggle can be added later)
+            runCatching { updateInfo = fetchUpdateInfo(api) }
             runCatching { feed       = parseFeed(api.feedPosts()) }
             // Banner data — fail-open, tidak pernah crash launcher.
             runCatching { maintenanceState = fetchMaintenanceInfo(api) }

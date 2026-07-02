@@ -93,9 +93,11 @@ import kotlin.math.sqrt
 // If either local is null (e.g. composable rendered outside the shared shell),
 // the helper degrades gracefully to a no-op Modifier — zero behavior change.
 // ════════════════════════════════════════════════════════════════════════════
+@OptIn(ExperimentalSharedTransitionApi::class)
 val LocalSharedTransitionScope =
     compositionLocalOf<SharedTransitionScope?> { null }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 val LocalNavAnimatedVisibilityScope =
     compositionLocalOf<AnimatedVisibilityScope?> { null }
 
