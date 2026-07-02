@@ -4275,7 +4275,7 @@ fun AppUpdatePopup(
                     Spacer(Modifier.width(8.dp))
                     Text("Mengunduh...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 } else {
-                    Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.SystemUpdate, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Update Sekarang", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
