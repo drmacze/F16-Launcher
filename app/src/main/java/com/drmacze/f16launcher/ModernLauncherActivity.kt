@@ -242,13 +242,19 @@ class ModernLauncherActivity : ComponentActivity() {
 fun DLavieModernApp() {
     val context = LocalContext.current
     val api     = remember { CommunityApi(context) }
-    val scope   = rememberCoroutineScope()
     var pinVerified by remember { mutableStateOf(!PinManager.hasPin(context)) }
 
-    // ── Maintenance state (Bug 2: full-screen + partial scope) ──
+    // ── Maintenance state (Bug 1-3: full/partial scope + staff bypass) ──
     var maintenanceState by remember { mutableStateOf<MaintenanceInfo?>(null) }
     var maintenanceChecked by remember { mutableStateOf(false) }
-    var allowOfflineBypass by remember { mutableStateOf(false) } // user tekan "Masuk" saat scope=full & allowOfflinePlay=true
+    var partialBypassed by remember { mutableStateOf(false) } // user tekan "Masuk Launcher" saat scope=partial
+
+    // ── Staff bypass (Bug 3): admin/developer/moderator/owner skip maintenance entirely ──
+    val userRole = api.role()
+    val isStaff = userRole.equals("admin", ignoreCase = true)
+               || userRole.equals("developer", ignoreCase = true)
+               || userRole.equals("owner", ignoreCase = true)
+               || userRole.equals("moderator", ignoreCase = true)
 
     // If PIN is enabled and not yet verified, launch the PIN lock screen
     LaunchedEffect(Unit) {
@@ -257,10 +263,13 @@ fun DLavieModernApp() {
         }
     }
 
-    // ── Fetch maintenance saat app dibuka (Bug 2) ──
+    // ── Fetch maintenance HANYA untuk non-staff (Bug 3) ──
+    // Staff bypass: tidak perlu fetch app_config.maintenance sama sekali.
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            runCatching { maintenanceState = fetchMaintenanceInfo(api) }
+        if (!isStaff) {
+            withContext(Dispatchers.IO) {
+                runCatching { maintenanceState = fetchMaintenanceInfo(api) }
+            }
         }
         maintenanceChecked = true
     }
@@ -291,83 +300,109 @@ fun DLavieModernApp() {
                 Modifier.fillMaxSize()
                     .background(Brush.verticalGradient(listOf(Color(0xFF06101E), Carbon, Color(0xFF060D18))))
             ) {
-                if (!api.loggedIn()) {
-                    LaunchedEffect(Unit) {
-                        context.startActivity(
-                            Intent(context, DLavieGuidedActivity::class.java)
-                                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    }
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            CircularProgressIndicator(color = CandyCyan, strokeWidth = 2.5.dp)
-                            Text("Memuat sesi...", color = SoftText, fontSize = 13.sp)
-                        }
-                    }
-                } else if (maintenanceChecked && maintenanceState?.enabled == true
-                    && maintenanceState?.scope == "full" && !allowOfflineBypass) {
-                    // ── Full-screen maintenance (Bug 2) ──
-                    val currentMaint = maintenanceState!!
-                    FullScreenMaintenance(currentMaint) {
-                        // onRetry — re-check maintenance, lalu bypass kalau allow_offline_play=true
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                runCatching { maintenanceState = fetchMaintenanceInfo(api) }
-                            }
-                            // Kalau masih full + allowOfflinePlay=true, bypass ke launcher.
-                            // Kalau sudah berubah ke partial/none, condition di atas otomatis dilewati.
-                            val m = maintenanceState
-                            if (m?.enabled == true && m.scope == "full" && m.allowOfflinePlay) {
-                                allowOfflineBypass = true
-                            } else if (m?.enabled != true || m.scope != "full") {
-                                allowOfflineBypass = false  // reset; user masuk normal
-                            }
-                        }
-                    }
-                } else if (!pinVerified && PinManager.hasPin(context)) {
-                    // Wait for PIN verification — show lock screen placeholder
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Icon(Icons.Rounded.Lock, null, tint = CandyCyan, modifier = Modifier.size(48.dp))
-                            Text("Masukkan PIN untuk lanjut", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            Text("Aktivitas PIN lock terbuka di layar lain", color = SoftText, fontSize = 12.sp)
-                            Spacer(Modifier.height(20.dp))
-                            Button(
-                                onClick = { PinLockActivity.launch(context, PinLockActivity.MODE_UNLOCK) },
-                                modifier = Modifier.height(48.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D))
-                            ) { Text("Buka PIN Lock", fontWeight = FontWeight.Black) }
-                        }
-                    }
-                } else {
-                    MainShell(
-                        api,
-                        maintenanceInfo = maintenanceState,
-                        onLogout = {
-                            // Fire logout telemetry BEFORE clearing session so user_id is still known.
-                            Telemetry.track(api, context, Telemetry.EVT_LOGOUT)
-                            api.logout()
-                            context.getSharedPreferences("dlavie_auth_session", Context.MODE_PRIVATE).edit().clear().apply()
-                            // Also clear PIN on logout for security
-                            PinManager.clearPin(context)
+                // Reusable logout lambda — fires telemetry before clearing session.
+                val logoutAction: () -> Unit = {
+                    Telemetry.track(api, context, Telemetry.EVT_LOGOUT)
+                    api.logout()
+                    context.getSharedPreferences("dlavie_auth_session", Context.MODE_PRIVATE).edit().clear().apply()
+                    // Also clear PIN on logout for security
+                    PinManager.clearPin(context)
+                    context.startActivity(
+                        Intent(context, DLavieGuidedActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+
+                when {
+                    // ── Belum login → redirect ke guided login ──
+                    !api.loggedIn() -> {
+                        LaunchedEffect(Unit) {
                             context.startActivity(
                                 Intent(context, DLavieGuidedActivity::class.java)
                                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
                             )
                         }
-                    )
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                CircularProgressIndicator(color = CandyCyan, strokeWidth = 2.5.dp)
+                                Text("Memuat sesi...", color = SoftText, fontSize = 13.sp)
+                            }
+                        }
+                    }
+
+                    // ── Staff bypass: skip maintenance entirely (Bug 3) ──
+                    isStaff -> {
+                        if (!pinVerified && PinManager.hasPin(context)) {
+                            PinLockPlaceholder(context)
+                        } else {
+                            MainShell(api, maintenanceInfo = null, onLogout = logoutAction)
+                        }
+                    }
+
+                    // ── Non-staff + scope=full → full-screen maintenance, NO enter button (Bug 1) ──
+                    // User TIDAK BISA masuk launcher sampai Dev Dashboard menonaktifkan maintenance.
+                    maintenanceChecked && maintenanceState?.enabled == true
+                            && maintenanceState?.scope == "full" -> {
+                        FullScreenMaintenance(maintenanceState!!) {
+                            // onEnter — tidak pernah dipanggil karena scope=full tidak punya button.
+                            // Tetap disediakan sebagai no-op supaya signature konsisten.
+                        }
+                    }
+
+                    // ── Non-staff + scope=partial → full-screen maintenance WITH "Masuk Launcher" (Bug 1) ──
+                    // Setelah tap, partialBypassed=true → user masuk launcher tapi Beranda & Update blur (Bug 2).
+                    maintenanceChecked && maintenanceState?.enabled == true
+                            && maintenanceState?.scope == "partial"
+                            && !partialBypassed -> {
+                        FullScreenMaintenance(maintenanceState!!) {
+                            partialBypassed = true
+                        }
+                    }
+
+                    // ── PIN lock (non-staff, post-maintenance-check) ──
+                    !pinVerified && PinManager.hasPin(context) -> {
+                        PinLockPlaceholder(context)
+                    }
+
+                    // ── Default: masuk launcher dengan maintenance info (untuk blur overlay Bug 2) ──
+                    else -> {
+                        MainShell(api, maintenanceInfo = maintenanceState, onLogout = logoutAction)
+                    }
                 }
             }
         }
     }
 }
 
-// ─── Full-screen maintenance (Bug 2: scope = "full") ──────────────────────────
+/**
+ * PIN lock placeholder — shown when user has PIN set but hasn't verified yet.
+ * User taps "Buka PIN Lock" to launch PinLockActivity for verification.
+ */
+@Composable
+private fun PinLockPlaceholder(context: android.content.Context) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Rounded.Lock, null, tint = CandyCyan, modifier = Modifier.size(48.dp))
+            Text("Masukkan PIN untuk lanjut", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("Aktivitas PIN lock terbuka di layar lain", color = SoftText, fontSize = 12.sp)
+            Spacer(Modifier.height(20.dp))
+            Button(
+                onClick = { PinLockActivity.launch(context, PinLockActivity.MODE_UNLOCK) },
+                modifier = Modifier.height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D))
+            ) { Text("Buka PIN Lock", fontWeight = FontWeight.Black) }
+        }
+    }
+}
+
+// ─── Full-screen maintenance (Bug 1: scope = "full" | "partial") ──────────────
+// scope=full    → TIDAK ADA button "Masuk". User tidak bisa masuk launcher.
+// scope=partial → ADA button "Masuk Launcher" (always enabled). Tap → onEnter → blur Beranda & Update.
 @Composable
 fun FullScreenMaintenance(
     maintenance: MaintenanceInfo,
-    onRetry: () -> Unit
+    onEnter: () -> Unit  // dipanggil saat user tap "Masuk Launcher" (hanya untuk scope=partial)
 ) {
     Box(
         Modifier.fillMaxSize().background(Carbon),
@@ -409,31 +444,35 @@ fun FullScreenMaintenance(
 
             Spacer(Modifier.height(20.dp))
 
-            // "Masuk" button — hanya enabled jika allow_offline_play = true
-            Button(
-                onClick = onRetry,
-                enabled = maintenance.allowOfflinePlay,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (maintenance.allowOfflinePlay) CandyCyan else Surface2,
-                    contentColor = if (maintenance.allowOfflinePlay) Carbon else SoftText,
-                    disabledContainerColor = Surface2,
-                    disabledContentColor = SoftText
-                )
-            ) {
-                Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
+            // ── Bug 1: HANYA tampilkan button jika scope=partial ──
+            // scope=full → TIDAK ADA button "Masuk" sama sekali.
+            if (maintenance.scope == "partial") {
+                Button(
+                    onClick = onEnter,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CandyCyan,
+                        contentColor = Carbon
+                    )
+                ) {
+                    Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Masuk Launcher", fontWeight = FontWeight.Black)
+                }
                 Text(
-                    if (maintenance.allowOfflinePlay) "Masuk Launcher" else "Maintenance Aktif",
-                    fontWeight = FontWeight.Black
-                )
-            }
-
-            if (!maintenance.allowOfflinePlay) {
-                Text(
-                    "Launcher tidak bisa diakses saat maintenance penuh. Coba lagi nanti.",
+                    "Beberapa fitur dibatasi. Komunitas & Profil tetap tersedia.",
                     color = SubText, fontSize = 11.sp, textAlign = TextAlign.Center
+                )
+            } else {
+                // scope=full — tidak ada button. User tidak bisa masuk launcher.
+                Text(
+                    "Launcher tidak dapat diakses saat maintenance penuh.",
+                    color = SubText, fontSize = 12.sp, textAlign = TextAlign.Center
+                )
+                Text(
+                    "Silakan coba lagi nanti.",
+                    color = SubText, fontSize = 12.sp, textAlign = TextAlign.Center
                 )
             }
 
@@ -506,11 +545,34 @@ fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLog
             },
             modifier       = Modifier.fillMaxSize().padding(bottom = 100.dp)
         ) { target ->
+            // ── Bug 2: Partial maintenance → Beranda & Update blur total ──
+            val isPartialMaintenance = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"
+
             when (target) {
-                Page.Home   -> HomeScreen(api, maintenanceInfo = maintenanceInfo, onNav = { page = it })
-                Page.Update -> UpdateScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
-                Page.Chat   -> CommunityScreen(api)
-                Page.Me     -> ProfileScreen(api, onLogout)
+                Page.Home   -> Box {
+                    HomeScreen(api, maintenanceInfo = maintenanceInfo, onNav = { page = it })
+                    if (isPartialMaintenance) {
+                        PartialMaintenanceOverlay(
+                            title   = "Beranda Diblokir",
+                            message = "Maintenance mode aktif. Hanya Komunitas & Profil yang tersedia.",
+                            onNavChat = { page = Page.Chat },
+                            onNavMe   = { page = Page.Me }
+                        )
+                    }
+                }
+                Page.Update -> Box {
+                    UpdateScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
+                    if (isPartialMaintenance) {
+                        PartialMaintenanceOverlay(
+                            title   = "Update Diblokir",
+                            message = "Maintenance mode aktif.",
+                            onNavChat = { page = Page.Chat },
+                            onNavMe   = { page = Page.Me }
+                        )
+                    }
+                }
+                Page.Chat   -> CommunityScreen(api)   // normal, no blur
+                Page.Me     -> ProfileScreen(api, onLogout)   // normal, no blur
             }
         }
         FloatingNav(
@@ -542,6 +604,65 @@ fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLog
                         activeBanner = null
                     }
                 )
+            }
+        }
+    }
+}
+
+// ─── Partial maintenance blur overlay (Bug 2) ──────────────────────────────────
+// Saat scope=partial, Beranda & Update ditutup overlay gelap + blur,
+// user TIDAK BISA interact dengan content di belakangnya.
+// Komunitas & Profil tetap normal.
+@Composable
+private fun PartialMaintenanceOverlay(
+    title: String,
+    message: String,
+    onNavChat: () -> Unit,
+    onNavMe: () -> Unit
+) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xCC000000))   // 80% black tint
+            .blur(20.dp),                     // total blur untuk content di belakang
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 24.dp)
+        ) {
+            Icon(Icons.Rounded.Lock, null, tint = AmberWarn, modifier = Modifier.size(48.dp))
+            Spacer(Modifier.height(12.dp))
+            Text(
+                title,
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                message,
+                color = SoftText,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onNavChat,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CandyCyan,
+                        contentColor = Carbon
+                    )
+                ) { Text("Ke Komunitas", fontWeight = FontWeight.Bold) }
+                Button(
+                    onClick = onNavMe,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CandyBlue,
+                        contentColor = Color.White
+                    )
+                ) { Text("Ke Profil", fontWeight = FontWeight.Bold) }
             }
         }
     }

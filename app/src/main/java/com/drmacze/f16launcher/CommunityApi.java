@@ -212,11 +212,23 @@ public class CommunityApi {
     }
 
     /**
-     * Fetch recent sent notification campaigns ordered by created_at desc.
+     * Fetch recent sent notification campaigns ordered by sent_at desc.
+     *
+     * Bug 4 fix:
+     *   - auth=true (pakai user access token, supaya RLS check auth.uid() pass).
+     *   - Filter sent_at=not.null (hanya yang sudah dikirim).
+     *   - Order by sent_at.desc (bukan created_at.desc, supaya yang baru dikirim di atas).
+     *   - Limit max 20 (sebelumnya 50, terlalu banyak untuk inline banner).
+     *
+     * RLS requirement: notification_campaigns harus punya policy SELECT untuk
+     * all authenticated users (lihat supabase-fix-v6-notif-rls.sql).
      */
     public JSONArray getNotifications(int limit) throws Exception {
-        int safe = Math.max(1, Math.min(limit, 50));
-        return new JSONArray(request("GET", "/rest/v1/notification_campaigns?sent_at=not.null&order=created_at.desc&limit=" + safe + "&select=id,created_by,title,body,target,action,sent_at,created_at", null, true, (String) null));
+        int safe = Math.max(1, Math.min(limit, 20));
+        return new JSONArray(request("GET",
+            "/rest/v1/notification_campaigns?sent_at=not.null&order=sent_at.desc&limit=" + safe +
+            "&select=id,created_by,title,body,target,action,sent_at,created_at",
+            null, true, (String) null));  // auth=true → pakai user access token (RLS)
     }
 
     /**

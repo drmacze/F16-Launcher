@@ -1,76 +1,151 @@
 package com.drmacze.f16launcher
 
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.media.MediaPlayer
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
-import kotlin.math.sin
 import kotlin.math.exp
+import kotlin.math.sin
 
 /**
  * Synthesized sound effects for DLavie launcher.
  *
  * Two flavours:
- *  - playShinyChime() → cinematic splash sound (low drone + soft pad + subtle sparkle).
- *  - playSoftTick()   → lightweight button-press tick.
+ *  - playShinyChime(context) → cinematic splash sound (low drone + soft pad + subtle sparkle).
+ *  - playSoftTick()          → lightweight button-press tick.
  *
- * Pure math, no external audio file needed. Must be called from IO dispatcher.
+ * **Bug 5 fix:** `playShinyChime` sekarang pakai MediaPlayer + raw WAV resource
+ * (`R.raw.splash_sound`) yang di-generate dari `scripts/gen_splash_wav.py`.
+ * MediaPlayer jauh lebih reliable di semua device dibanding AudioTrack.MODE_STATIC
+ * (yang sering silent-fail di Android 12+ karena buffer size validation).
+ *
+ * Fallback: kalau MediaPlayer.create() return null (mis. resource corrupt),
+ * pakai AudioTrack MODE_STREAM sebagai backup. Kalau itu juga gagal, silent fail.
  */
 object SoundEffectHelper {
 
+    private const val TAG = "SoundEffectHelper"
     private const val SAMPLE_RATE = 44100
-    private const val DURATION_SEC = 2.3  // cinematic duration (was 1.1 for old chime)
+    private const val DURATION_SEC = 2.3  // cinematic duration (matches raw WAV length)
+    private const val CINEMATIC_DURATION_SEC = 2.3
 
     /**
-     * Cinematic splash sound — low drone + soft pad + subtle sparkle.
-     * Lebih elegant & tidak annoying dibanding chime lama (880/1760/2640Hz).
+     * Cinematic splash sound — primary path pakai MediaPlayer + raw WAV.
      *
-     * Layers:
-     *  - 110Hz (A2) drone — body, slow attack, with slight detune for warmth
-     *  - 220Hz (A3) — warmth
-     *  - 440Hz (A4) — soft pad, slow vibrato
-     *  - 880Hz (A5) — subtle sparkle, very low amplitude, short (first 1 second only)
+     * WAV file di `res/raw/splash_sound.wav` berisi cinematic sound yang sama
+     * dengan [generateCinematicSound] (110Hz drone + 220Hz warmth + 440Hz pad
+     * + 880Hz sparkle, master envelope + lowpass filter, total 2.3s).
      *
-     * Envelope: slow attack 300ms, sustain 500ms, long release 1500ms.
-     * Simple one-pole lowpass filter for warmer sound.
-     * Total: ~2.3 seconds.
+     * Keunggulan MediaPlayer:
+     *  - Reliable di semua Android version (minSdk 24+).
+     *  - Tidak peduli buffer size, audio routing, atau DOZE mode.
+     *  - Built-in volume & focus handling.
      *
-     * Suspends until playback finishes.
+     * Fallback: kalau MediaPlayer null, coba AudioTrack MODE_STREAM dengan
+     * generated samples (chunked write untuk reliability).
+     *
+     * Suspends until playback finishes (atau timeout 3s).
      */
-    suspend fun playShinyChime() = withContext(Dispatchers.IO) {
+    suspend fun playShinyChime(context: Context) = withContext(Dispatchers.IO) {
+        // ── Primary path: MediaPlayer + raw WAV ──
+        var played = false
+        var mp: MediaPlayer? = null
         try {
-            val samples = generateCinematicSound()
-            val audioTrack = AudioTrack.Builder()
-                .setAudioAttributes(
+            mp = MediaPlayer.create(context, R.raw.splash_sound)
+            if (mp != null) {
+                mp.setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_MEDIA)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
                 )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setSampleRate(SAMPLE_RATE)
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                        .build()
-                )
-                .setBufferSizeInBytes(samples.size * 2)
-                .setTransferMode(AudioTrack.MODE_STATIC)
-                .build()
+                mp.setOnCompletionListener { it.release() }
+                mp.setOnErrorListener { _, what, extra ->
+                    Log.w(TAG, "MediaPlayer error: what=$what extra=$extra")
+                    false  // let OnCompletionListener handle release
+                }
+                mp.start()
+                played = true
+                // Wait for playback to finish (WAV duration ~2.3s) + 200ms buffer.
+                delay((CINEMATIC_DURATION_SEC * 1000).toLong() + 200)
+            } else {
+                Log.w(TAG, "MediaPlayer.create returned null — falling back to AudioTrack")
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "MediaPlayer failed: ${e.message} — falling back to AudioTrack")
+            try { mp?.release() } catch (_: Throwable) {}
+        }
 
-            // Write PCM samples (halve amplitude to avoid clipping from layered sum)
-            val pcm16 = ShortArray(samples.size) { (samples[it] * Short.MAX_VALUE * 0.5f).toInt().toShort() }
-            audioTrack.write(pcm16, 0, pcm16.size)
-            audioTrack.setNotificationMarkerPosition(pcm16.size)
-            audioTrack.play()
+        // ── Fallback: AudioTrack MODE_STREAM (chunked write) ──
+        if (!played) {
+            try {
+                playShinyChimeAudioTrack()
+            } catch (e: Throwable) {
+                Log.w(TAG, "AudioTrack fallback also failed: ${e.message}")
+            }
+        }
+    }
 
-            // Wait for playback to finish (DURATION_SEC)
-            kotlinx.coroutines.delay((DURATION_SEC * 1000).toLong() + 100)
-            audioTrack.stop()
-            audioTrack.release()
-        } catch (_: Throwable) { /* silent fail — sound is non-critical */ }
+    /**
+     * Legacy no-arg entry point — DEPRECATED.
+     * Hanya dipanggil dari code lama yang tidak punya Context. No-op + log warning.
+     *
+     * Caller sebaiknya update ke `playShinyChime(context: Context)`.
+     */
+    suspend fun playShinyChime() {
+        Log.w(TAG, "playShinyChime() called without Context — no-op. Use playShinyChime(context) instead.")
+    }
+
+    /**
+     * AudioTrack fallback: pakai MODE_STREAM + chunked write (lebih reliable
+     * dari MODE_STATIC yang sering silent-fail di Android 12+).
+     *
+     * Generate cinematic samples on-the-fly, write dalam chunk 1 detik.
+     */
+    private suspend fun playShinyChimeAudioTrack() {
+        val samples = generateCinematicSound()
+        val audioTrack = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setSampleRate(SAMPLE_RATE)
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build()
+            )
+            .setBufferSizeInBytes(SAMPLE_RATE)  // small buffer for streaming (~1s)
+            .setTransferMode(AudioTrack.MODE_STREAM)  // STREAM, not STATIC
+            .build()
+
+        audioTrack.play()
+
+        // Halve amplitude to avoid clipping from layered sum.
+        val pcm16 = ShortArray(samples.size) {
+            (samples[it] * Short.MAX_VALUE * 0.5f).toInt().toShort()
+        }
+        var written = 0
+        val chunkSize = SAMPLE_RATE  // 1 second chunks
+        while (written < pcm16.size) {
+            val toWrite = minOf(chunkSize, pcm16.size - written)
+            audioTrack.write(pcm16, written, toWrite)
+            written += toWrite
+        }
+
+        // Wait for playback to finish.
+        delay((CINEMATIC_DURATION_SEC * 1000).toLong() + 200)
+        try { audioTrack.stop() } catch (_: Throwable) {}
+        try { audioTrack.release() } catch (_: Throwable) {}
     }
 
     /**
@@ -81,6 +156,8 @@ object SoundEffectHelper {
      *  - Sparkle (880Hz) — only in first 1 second, very low amplitude
      *  - Master envelope: attack 300ms (quadratic), sustain 500ms, exponential release 1500ms
      *  - One-pole lowpass filter for warmer overall tone
+     *
+     * Identik dengan `scripts/gen_splash_wav.py` (raw WAV resource).
      */
     private fun generateCinematicSound(): FloatArray {
         val totalSamples = (SAMPLE_RATE * DURATION_SEC).toInt()
@@ -176,9 +253,11 @@ object SoundEffectHelper {
                 .build()
             track.write(pcm16, 0, pcm16.size)
             track.play()
-            kotlinx.coroutines.delay(120)
+            delay(120)
             track.stop()
             track.release()
-        } catch (_: Throwable) { }
+        } catch (e: Throwable) {
+            Log.w(TAG, "playSoftTick failed: ${e.message}")
+        }
     }
 }
