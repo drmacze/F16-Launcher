@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.valentinilk.shimmer.ShimmerBounds
 import com.valentinilk.shimmer.rememberShimmer
 import com.valentinilk.shimmer.shimmer
 import kotlinx.coroutines.delay
@@ -73,8 +74,8 @@ fun TTShimmerBox(
     modifier: Modifier = Modifier,
     shape: RoundedCornerShape = TTShapes.small
 ) {
-    // compose-shimmer 1.2.0 API: rememberShimmer() tanpa parameter
-    val shimmerInstance = rememberShimmer()
+    // compose-shimmer 1.2.0 API: rememberShimmer dengan explicit ShimmerBounds
+    val shimmerInstance = rememberShimmer(shimmerBounds = ShimmerBounds.Window)
     Box(
         modifier
             .clip(shape)
