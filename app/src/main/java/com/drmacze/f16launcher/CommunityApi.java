@@ -27,7 +27,27 @@ public class CommunityApi {
 
     public CommunityApi(Context ctx) { prefs = ctx.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE); }
 
-    public boolean loggedIn() { return !prefs.getString("access_token", "").isEmpty() && !prefs.getString("user_id", "").isEmpty(); }
+    public boolean loggedIn() {
+        String token = prefs.getString("access_token", "");
+        if (token.isEmpty() || prefs.getString("user_id", "").isEmpty()) return false;
+        // Cek apakah token akan expired dalam 5 menit ke depan
+        try {
+            String[] parts = token.split("\\.");
+            if (parts.length >= 2) {
+                String payload = parts[1];
+                String padded = payload + "=".repeat((4 - payload.length() % 4) % 4);
+                byte[] decoded = android.util.Base64.decode(padded, android.util.Base64.URL_SAFE);
+                JSONObject jwt = new JSONObject(new String(decoded));
+                long exp = jwt.optLong("exp", 0) * 1000L;
+                long now = System.currentTimeMillis();
+                // Kalau expired dalam 5 menit, coba refresh (async, non-blocking)
+                if (exp > 0 && exp - now < 300_000L) {
+                    new Thread(() -> { try { refreshToken(); } catch (Throwable ignored) {} }).start();
+                }
+            }
+        } catch (Throwable ignored) { }
+        return true;
+    }
     public String userId() { return prefs.getString("user_id", ""); }
     public String token() { return prefs.getString("access_token", ""); }
     public String username() { return prefs.getString("username", ""); }
@@ -209,6 +229,26 @@ public class CommunityApi {
     }
 
     private String request(String method, String path, Object body, boolean auth, String prefer) throws Exception {
+        // First attempt
+        try {
+            return doRequest(method, path, body, auth, prefer);
+        } catch (IllegalStateException e) {
+            // Kalau JWT expired (401), coba refresh token lalu retry sekali
+            if (auth && e.getMessage() != null && e.getMessage().contains("401")) {
+                try {
+                    refreshToken();
+                } catch (Throwable refreshErr) {
+                    // Refresh gagal — throw original error
+                    throw e;
+                }
+                // Retry dengan token baru
+                return doRequest(method, path, body, auth, prefer);
+            }
+            throw e;
+        }
+    }
+
+    private String doRequest(String method, String path, Object body, boolean auth, String prefer) throws Exception {
         URL url = new URL(SUPABASE_URL + path);
         HttpURLConnection c = (HttpURLConnection) url.openConnection();
         c.setRequestMethod(method);
