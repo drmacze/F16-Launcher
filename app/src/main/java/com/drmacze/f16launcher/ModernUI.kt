@@ -499,14 +499,14 @@ fun ModernStatusChip(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(76.dp)
-                .clip(RoundedCornerShape(20.dp))
+                .clip(TTShapes.card)
                 .clickable(interactionSource = interactionSource, indication = null) { onClick() },
-            shape = RoundedCornerShape(20.dp),
+            shape = TTShapes.card,
             color = Color(0xCC0B1320),
             border = BorderStroke(1.dp, borderColor)
         ) {
             Column(
-                Modifier.padding(12.dp),
+                Modifier.padding(TTSpacing.md),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.Start
             ) {
@@ -520,7 +520,7 @@ fun ModernStatusChip(
                         null, tint = iconTint, modifier = Modifier.size(14.dp)
                     )
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(TTSpacing.sm))
                 Text(
                     label, color = SubText, fontSize = 9.sp,
                     fontWeight = FontWeight.Black, maxLines = 1,

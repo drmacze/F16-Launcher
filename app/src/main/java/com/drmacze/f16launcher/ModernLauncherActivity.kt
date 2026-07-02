@@ -12,10 +12,12 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -28,6 +30,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -67,6 +71,7 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
@@ -80,6 +85,7 @@ import androidx.compose.material.icons.rounded.SportsSoccer
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Verified
@@ -100,16 +106,20 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -503,10 +513,62 @@ fun FullScreenMaintenance(
 @Composable
 fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLogout: () -> Unit) {
     val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
     var page by remember { mutableStateOf(Page.Home) }
 
     // ── Active notification banner state (Module 3: Push Notification Receiver) ──
     var activeBanner by remember { mutableStateOf<NotificationItem?>(null) }
+
+    // ── Phase 2: Game Detail screen state ──
+    // Saat user tap TTGameCard di Beranda, set showGameDetail=true + capture state.
+    // GameDetailScreen rendered sebagai overlay (menggantikan AnimatedContent).
+    var showGameDetail by remember { mutableStateOf(false) }
+    var detailGameInstalled     by remember { mutableStateOf(false) }
+    var detailAvgRating         by remember { mutableStateOf(0.0) }
+    var detailRatingCount       by remember { mutableStateOf(0) }
+    var detailMaintenanceBlocked by remember { mutableStateOf(false) }
+
+    // ── Phase 2: Lifted download state (shared antara HomeScreen & GameDetailScreen) ──
+    // dlProgress: -1f = idle, 0f..0.99f = downloading, 2f = done (waiting install)
+    var dlProgress by remember { mutableStateOf(-1f) }
+    var dlError    by remember { mutableStateOf("") }
+
+    fun startDownload() {
+        if (dlProgress >= 0f && dlProgress < 2f) return  // already downloading
+        dlProgress = 0f; dlError = ""
+        // Telemetry: download_apk event — fire-and-forget.
+        Telemetry.track(api, context, Telemetry.EVT_DOWNLOAD_APK, mapOf("source" to "github_releases", "url" to FIFA_APK_URL))
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val outDir  = java.io.File(context.getExternalFilesDir(null), "public-install").also { it.mkdirs() }
+                    val apkFile = java.io.File(outDir, "DLavie26.apk")
+                    val conn    = URL(FIFA_APK_URL).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 30_000; conn.readTimeout = 120_000; conn.connect()
+                    val total   = conn.contentLengthLong.toFloat().coerceAtLeast(1f)
+                    val buf     = ByteArray(16 * 1024)
+                    conn.inputStream.use { inp ->
+                        apkFile.outputStream().use { out ->
+                            var n: Int; var read = 0L
+                            while (inp.read(buf).also { n = it } != -1) {
+                                out.write(buf, 0, n); read += n
+                                dlProgress = (read / total).coerceIn(0f, 0.99f)
+                            }
+                        }
+                    }
+                    apkFile
+                }
+            }.onSuccess { apkFile ->
+                dlProgress = 2f
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context, "${context.packageName}.files", apkFile)
+                context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                })
+            }.onFailure { dlError = it.message ?: "Unduhan gagal. Periksa koneksi internet."; dlProgress = -1f }
+        }
+    }
 
     LaunchedEffect(Unit) {
         // Fire app_open telemetry as soon as the shell mounts.
@@ -542,6 +604,26 @@ fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLog
     }
 
     Box(Modifier.fillMaxSize()) {
+        // ── Phase 2: GameDetailScreen overlay (replaces page content saat aktif) ──
+        if (showGameDetail) {
+            GameDetailScreen(
+                onBack = { showGameDetail = false },
+                onPlay = {
+                    launchGame(context)
+                    showGameDetail = false
+                },
+                onDownload = {
+                    showGameDetail = false
+                    // Trigger download via lifted state (dlProgress/dlError/startDownload)
+                    // — user kembali ke Beranda dan download otomatis dimulai.
+                    startDownload()
+                },
+                gameInstalled      = detailGameInstalled,
+                avgRating          = detailAvgRating,
+                ratingCount        = detailRatingCount,
+                maintenanceBlocked = detailMaintenanceBlocked
+            )
+        } else {
         AnimatedContent(
             targetState    = page,
             label          = "page_anim",
@@ -564,7 +646,21 @@ fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLog
 
             when (target) {
                 Page.Home   -> Box {
-                    HomeScreen(api, maintenanceInfo = maintenanceInfo, onNav = { page = it })
+                    HomeScreen(
+                        api             = api,
+                        maintenanceInfo = maintenanceInfo,
+                        onNav           = { page = it },
+                        dlProgress      = dlProgress,
+                        dlError         = dlError,
+                        startDownload   = { startDownload() },
+                        onGameCardClick = { inst, avg, count, blocked ->
+                            detailGameInstalled      = inst
+                            detailAvgRating          = avg
+                            detailRatingCount        = count
+                            detailMaintenanceBlocked = blocked
+                            showGameDetail           = true
+                        }
+                    )
                     if (isPartialMaintenance) {
                         PartialMaintenanceOverlay(
                             title   = "Beranda Diblokir",
@@ -589,13 +685,18 @@ fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLog
                 Page.Me     -> ProfileScreen(api, onLogout)   // normal, no blur
             }
         }
-        FloatingNav(
-            page     = page,
-            onPage   = { page = it },
-            modifier = Modifier.align(Alignment.BottomCenter)
-                               .navigationBarsPadding()
-                               .padding(bottom = 12.dp)
-        )
+        } // end if (showGameDetail) else { ... }
+
+        // ── FloatingNav tetap accessible dari Home (tidak tampil saat GameDetail aktif) ──
+        if (!showGameDetail) {
+            FloatingNav(
+                page     = page,
+                onPage   = { page = it },
+                modifier = Modifier.align(Alignment.BottomCenter)
+                                   .navigationBarsPadding()
+                                   .padding(bottom = 12.dp)
+            )
+        }
 
         // ── Notification banner overlay (slides down from the top) ──
         activeBanner?.let { banner ->
@@ -797,7 +898,17 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
 // ─── Home screen ──────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNav: (Page) -> Unit) {
+fun HomeScreen(
+    api: CommunityApi,
+    maintenanceInfo: MaintenanceInfo? = null,
+    onNav: (Page) -> Unit,
+    // ── Phase 2: lifted download state (shared dengan MainShell & GameDetailScreen) ──
+    dlProgress: Float = -1f,
+    dlError: String = "",
+    startDownload: () -> Unit = {},
+    // ── Phase 2: tap TTGameCard → navigate ke GameDetailScreen ──
+    onGameCardClick: (gameInstalled: Boolean, avgRating: Double, ratingCount: Int, maintenanceBlocked: Boolean) -> Unit = { _, _, _, _ -> }
+) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
@@ -871,46 +982,6 @@ fun HomeScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNa
     }
 
     LaunchedEffect(Unit) { loadAllData() }
-
-    // ── In-app APK download state ──
-    var dlProgress by remember { mutableStateOf(-1f) }
-    var dlError    by remember { mutableStateOf("") }
-
-    fun startDownload() {
-        dlProgress = 0f; dlError = ""
-        // Telemetry: download_apk event — fire-and-forget.
-        Telemetry.track(api, context, Telemetry.EVT_DOWNLOAD_APK, mapOf("source" to "github_releases", "url" to FIFA_APK_URL))
-        scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val outDir  = java.io.File(context.getExternalFilesDir(null), "public-install").also { it.mkdirs() }
-                    val apkFile = java.io.File(outDir, "DLavie26.apk")
-                    val conn    = URL(FIFA_APK_URL).openConnection() as HttpURLConnection
-                    conn.connectTimeout = 30_000; conn.readTimeout = 120_000; conn.connect()
-                    val total   = conn.contentLengthLong.toFloat().coerceAtLeast(1f)
-                    val buf     = ByteArray(16 * 1024)
-                    conn.inputStream.use { inp ->
-                        apkFile.outputStream().use { out ->
-                            var n: Int; var read = 0L
-                            while (inp.read(buf).also { n = it } != -1) {
-                                out.write(buf, 0, n); read += n
-                                dlProgress = (read / total).coerceIn(0f, 0.99f)
-                            }
-                        }
-                    }
-                    apkFile
-                }
-            }.onSuccess { apkFile ->
-                dlProgress = 2f
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    context, "${context.packageName}.files", apkFile)
-                context.startActivity(Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-                })
-            }.onFailure { dlError = it.message ?: "Unduhan gagal. Periksa koneksi internet."; dlProgress = -1f }
-        }
-    }
 
     // ── Pulse animation (for play state) ──
     val infiniteTransition = rememberInfiniteTransition(label = "home_pulse")
@@ -1235,6 +1306,8 @@ fun HomeScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNa
         }
 
         // ── Game Card: "DLavie 26: Football Game" (TapTap-style TTGameCard) ──
+        // Phase 2 fix: saat setupState==LOADING, tampilkan TTGameCardSkeleton
+        // (bukan card dengan data kosong) untuk loading state yang konsisten.
         // Tombol adaptif: Dapatkan / Mainkan / Diblokir Maintenance.
         // Inline download progress + error ditampilkan di bawah card (TTGameCard
         // tidak punya slot untuk itu, jadi kita wrap dalam Column).
@@ -1251,6 +1324,15 @@ fun HomeScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNa
             gameInstalled      -> ({ launchGame(context) })
             else               -> ({ if (dlProgress < 0f) startDownload() })
         }
+        // Phase 2: tap card body → navigate ke GameDetailScreen (pass state ke MainShell)
+        val ttCardClick: () -> Unit = {
+            onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked)
+        }
+
+        if (setupState == SetupState.LOADING) {
+            // Loading state: skeleton (bukan card dengan data kosong)
+            TTGameCardSkeleton()
+        } else {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             TTGameCard(
                 title          = "DLavie 26: Football Game",
@@ -1261,7 +1343,7 @@ fun HomeScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNa
                 buttonLabel    = ttButtonLabel,
                 buttonEnabled  = ttButtonEnabled,
                 onButtonClick  = ttButtonClick,
-                onClick        = { if (gameInstalled && !maintenanceBlocked) launchGame(context) }
+                onClick        = ttCardClick
             )
             // Inline download progress (kalau sedang unduh dari tombol "Dapatkan")
             AnimatedVisibility(
@@ -1297,6 +1379,7 @@ fun HomeScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNa
                 }
             }
         }
+        } // end if (setupState == LOADING) else { ... }
 
         // ── Section "Trusted by DLavie" (TapTap-style header dengan verified icon) ──
         TTSectionHeader(title = "Trusted by DLavie", icon = Icons.Rounded.Verified)
@@ -1581,17 +1664,18 @@ fun HomeScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNa
             }
         }
 
-        // ── Berita / Feed (Module 5: improved with type icons + pinned/official badges) ───
+        // ── Berita / Feed (Phase 2: TapTap-style TTTappableCard dengan press animation) ───
+        // Setiap feed item dibungkus TTTappableCard — press scale spring bounce.
+        // Header pakai TTSectionHeader (TapTap design system) untuk konsistensi.
         AnimatedVisibility(visible = feed.isNotEmpty(), enter = fadeIn(tween(400)), exit = fadeOut()) {
-            GlassCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Notifications, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Berita Terbaru", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                }
-                Spacer(Modifier.height(10.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
+                TTSectionHeader(title = "Berita Terbaru", icon = Icons.Rounded.Notifications)
                 feed.take(4).forEach { item ->
-                    FeedRow(item)
+                    TTTappableCard(
+                        onClick = { /* future: open feed detail in browser/webview */ }
+                    ) {
+                        FeedRow(item)
+                    }
                 }
             }
         }
@@ -1977,16 +2061,18 @@ fun NotificationListDialog(
     )
 }
 
-// ─── Feed row (Module 5 — icon per type, pinned indicator, official badge) ────
+// ─── Feed row (Phase 2: TapTap-style, wrapped dalam TTTappableCard) ────────────
+// Padding horizontal disesuaikan supaya nyaman di dalam TTTappableCard (yang
+// tidak punya internal padding sendiri).
 @Composable
 fun FeedRow(item: FeedItem) {
     val icon     = feedIcon(item.type)
     val iconTint = feedColor(item.type)
     Row(
         Modifier.fillMaxWidth()
-            .padding(vertical = 6.dp),
+            .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md),
         verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(TTSpacing.md)
     ) {
         // Per-type icon (announcement / event / patch / update / info / default)
         Box(
@@ -2761,15 +2847,75 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
     }
 }
 
-// ─── Community / Chat screen ──────────────────────────────────────────────────
+// ─── Community / Chat screen (Phase 2: HorizontalPager dengan 3 tab) ──────────
+// Tab 1: Diskusi — list topics (reuse existing ChannelPanel + TopicPanel + ThreadPanel)
+// Tab 2: FAQ — list FAQ items (Supabase faq_items or static fallback)
+// Tab 3: Support — list support tickets (Supabase support_tickets)
+//
+// Setiap tab pakai shimmer skeleton (TTGameCardSkeleton) saat loading, dan
+// TTTappableCard untuk setiap item (press scale spring bounce).
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommunityScreen(api: CommunityApi) {
+    val pagerState = rememberPagerState(pageCount = { 3 })
+    val scope = rememberCoroutineScope()
+    val tabs = listOf("Diskusi", "FAQ", "Support")
+
+    Column(Modifier.fillMaxSize().background(Carbon)) {
+        // ── Tab bar (sticky di top, custom indicator) ──
+        TabRow(
+            selectedTabIndex = pagerState.currentPage,
+            containerColor = Carbon,
+            contentColor = CandyCyan,
+            indicator = { tabPositions ->
+                Box(
+                    Modifier
+                        .tabIndicatorOffset(tabPositions[pagerState.currentPage])
+                        .height(3.dp)
+                        .padding(horizontal = 20.dp)
+                        .background(CandyCyan, RoundedCornerShape(3.dp))
+                )
+            }
+        ) {
+            tabs.forEachIndexed { index, title ->
+                Tab(
+                    selected = pagerState.currentPage == index,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                    text = {
+                        Text(
+                            title,
+                            fontWeight = if (pagerState.currentPage == index) FontWeight.Black else FontWeight.Normal,
+                            color = if (pagerState.currentPage == index) Color.White else SoftText
+                        )
+                    }
+                )
+            }
+        }
+
+        // ── Pager content (swipe antar tab) ──
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            when (page) {
+                0 -> DiscussionTab(api)
+                1 -> FAQTab(api)
+                2 -> SupportTab(api)
+            }
+        }
+    }
+}
+
+// ─── Discussion tab (reuse existing community logic, TTTappableCard for topics) ─
+@Composable
+private fun DiscussionTab(api: CommunityApi) {
     val scope = rememberCoroutineScope()
     var categories       by remember { mutableStateOf<List<CategoryItem>>(emptyList()) }
     var selectedCategory by remember { mutableStateOf<CategoryItem?>(null) }
     var topics           by remember { mutableStateOf<List<TopicItem>>(emptyList()) }
     var selectedTopic    by remember { mutableStateOf<TopicItem?>(null) }
     var posts            by remember { mutableStateOf<List<PostItem>>(emptyList()) }
+    var loading          by remember { mutableStateOf(true) }
     var status           by remember { mutableStateOf("Memuat komunitas…") }
     var title            by remember { mutableStateOf("") }
     var body             by remember { mutableStateOf("") }
@@ -2821,23 +2967,270 @@ fun CommunityScreen(api: CommunityApi) {
             topics           = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
             status           = if (topics.isEmpty()) "Belum ada topik." else "Siap."
         } catch (t: Throwable) { status = "Error komunitas: ${t.message}" }
+        loading = false
     }
 
-    Box(Modifier.fillMaxSize().padding(14.dp)) {
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            ChannelPanel(categories, selectedCategory) { selectedCategory = it; selectedTopic = null; posts = emptyList(); loadTopics() }
-            TopicPanel(status, title, body, topics, selectedTopic,
-                onTitle = { title = it }, onBody = { body = it },
-                onCreate = { createTopic() }, onSelect = { t -> selectedTopic = t; loadPosts(t) })
-            ThreadPanel(selectedTopic, posts, reply, onReply = { reply = it }, onSend = { sendReply() })
+    Box(Modifier.fillMaxSize().padding(TTSpacing.lg)) {
+        if (loading) {
+            // Shimmer skeleton saat loading
+            Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
+                TTGameCardSkeleton()
+                TTGameCardSkeleton()
+                TTGameCardSkeleton()
+            }
+        } else {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
+            ) {
+                ChannelPanel(categories, selectedCategory) { selectedCategory = it; selectedTopic = null; posts = emptyList(); loadTopics() }
+                TopicPanel(status, title, body, topics, selectedTopic,
+                    onTitle = { title = it }, onBody = { body = it },
+                    onCreate = { createTopic() }, onSelect = { t -> selectedTopic = t; loadPosts(t) })
+                ThreadPanel(selectedTopic, posts, reply, onReply = { reply = it }, onSend = { sendReply() })
+            }
         }
     }
 }
 
-// ─── Profile / Me screen ──────────────────────────────────────────────────────
+// ─── FAQ tab (Supabase faq_items or static fallback) ───────────────────────────
+private data class FaqItem(val id: String, val question: String, val answer: String, val category: String)
+
+@Composable
+private fun FAQTab(api: CommunityApi) {
+    var items by remember { mutableStateOf<List<FaqItem>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var expandedId by remember { mutableStateOf<String?>(null) }
+
+    // Static fallback (kalau Supabase faq_items tabel belum ada / kosong)
+    val staticFaqs = remember {
+        listOf(
+            FaqItem("static-1", "🛡 Cara aktifkan Shizuku?", "Buka Shizuku → Pairing/Start → kembali ke DLavie → Izinkan akses. Shizuku dipakai untuk patch file game tanpa root.", "setup"),
+            FaqItem("static-2", "📁 Apa itu Base Data?", "OBB dan data utama FIFA 16. Patch tidak bekerja kalau base belum lengkap. Buka FIFA 16 sekali untuk download OBB otomatis.", "setup"),
+            FaqItem("static-3", "🌐 Cara cek versi game?", "Buka tab Update. Local dan Latest dibandingkan dari backend Supabase. Kalau Latest > Local, ada patch yang bisa di-apply.", "update"),
+            FaqItem("static-4", "⚽ Kenapa game crash saat dibuka?", "Pastikan: (1) Base Data sudah terdownload, (2) patch sudah di-apply via tab Update, (3) storage permission granted. Kalau masih crash, hapus data game lalu reinstall patch.", "troubleshoot"),
+            FaqItem("static-5", "🔑 Lupa PIN launcher?", "Login ulang dengan email + password. Setelah login, PIN lama otomatis di-reset. Setup PIN baru di Profile → Akun & Keamanan.", "account"),
+            FaqItem("static-6", "👥 Cara gabung komunitas?", "Buka tab Komunitas → Diskusi. Pilih saluran (kategori) → buat topik baru atau reply topik existing. Butuh akun DLavie yang sudah login.", "community")
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        try {
+            val arr = withContext(Dispatchers.IO) { api.faqItems() }
+            val fetched = (0 until arr.length()).mapNotNull { i ->
+                runCatching {
+                    val o = arr.getJSONObject(i)
+                    FaqItem(
+                        id = o.optString("id"),
+                        question = o.optString("question"),
+                        answer = o.optString("answer"),
+                        category = o.optString("category", "general")
+                    )
+                }.getOrNull()
+            }
+            items = if (fetched.isNotEmpty()) fetched else staticFaqs
+        } catch (_: Throwable) {
+            items = staticFaqs  // fail-open: pakai static FAQ
+        }
+        loading = false
+    }
+
+    Box(Modifier.fillMaxSize().padding(TTSpacing.lg)) {
+        if (loading) {
+            Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
+                TTGameCardSkeleton()
+                TTGameCardSkeleton()
+                TTGameCardSkeleton()
+            }
+        } else {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+            ) {
+                TTSectionHeader(title = "Pertanyaan Umum", icon = Icons.Rounded.HelpOutline)
+                items.forEach { item ->
+                    TTTappableCard(
+                        onClick = { expandedId = if (expandedId == item.id) null else item.id }
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                Modifier.size(32.dp)
+                                    .background(CandyCyan.copy(0.12f), TTShapes.small),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Rounded.HelpOutline, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(TTSpacing.md))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    item.question,
+                                    color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                                    maxLines = if (expandedId == item.id) 10 else 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (expandedId == item.id) {
+                                    Spacer(Modifier.height(TTSpacing.xs))
+                                    Text(
+                                        item.answer,
+                                        color = SoftText, fontSize = 12.sp, lineHeight = 17.sp
+                                    )
+                                }
+                            }
+                            Icon(
+                                if (expandedId == item.id) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                null, tint = SoftText, modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── Support tab (Supabase support_tickets or empty state) ─────────────────────
+private data class SupportTicket(
+    val id: String, val subject: String, val body: String,
+    val status: String, val priority: String, val createdAt: String
+)
+
+@Composable
+private fun SupportTab(api: CommunityApi) {
+    var tickets by remember { mutableStateOf<List<SupportTicket>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        try {
+            val arr = withContext(Dispatchers.IO) { api.supportTickets() }
+            tickets = (0 until arr.length()).mapNotNull { i ->
+                runCatching {
+                    val o = arr.getJSONObject(i)
+                    SupportTicket(
+                        id = o.optString("id"),
+                        subject = o.optString("subject", "(Tanpa subjek)"),
+                        body = o.optString("body", ""),
+                        status = o.optString("status", "open"),
+                        priority = o.optString("priority", "normal"),
+                        createdAt = o.optString("created_at", "").take(10)
+                    )
+                }.getOrNull()
+            }
+        } catch (t: Throwable) {
+            error = t.message ?: "Gagal memuat tiket support"
+        }
+        loading = false
+    }
+
+    Box(Modifier.fillMaxSize().padding(TTSpacing.lg)) {
+        if (loading) {
+            Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
+                TTGameCardSkeleton()
+                TTGameCardSkeleton()
+                TTGameCardSkeleton()
+            }
+        } else if (tickets.isEmpty()) {
+            // Empty state
+            Column(
+                Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Rounded.SupportAgent, null, tint = SubText, modifier = Modifier.size(64.dp))
+                Spacer(Modifier.height(TTSpacing.lg))
+                Text("Belum ada tiket support", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.height(TTSpacing.xs))
+                Text(
+                    if (error.isNotEmpty()) "Tiket support belum tersedia di akun ini.\n$error"
+                    else "Kalau kamu butuh bantuan, hubungi developer via komunitas atau email support@dlavie.com.",
+                    color = SoftText, fontSize = 12.sp, lineHeight = 17.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        } else {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+            ) {
+                TTSectionHeader(title = "Tiket Support Kamu", icon = Icons.Rounded.SupportAgent)
+                tickets.forEach { t ->
+                    val statusColor = when (t.status.lowercase()) {
+                        "open" -> AmberWarn
+                        "in_progress", "pending" -> CandyCyan
+                        "resolved", "closed" -> NeonGreen
+                        else -> SoftText
+                    }
+                    val priorityColor = when (t.priority.lowercase()) {
+                        "urgent", "high" -> DangerRed
+                        "normal", "medium" -> AmberWarn
+                        "low" -> SubText
+                        else -> SoftText
+                    }
+                    TTTappableCard(onClick = { /* future: open ticket detail */ }) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    Modifier.size(32.dp)
+                                        .background(statusColor.copy(0.12f), TTShapes.small),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Rounded.SupportAgent, null, tint = statusColor, modifier = Modifier.size(18.dp))
+                                }
+                                Spacer(Modifier.width(TTSpacing.md))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        t.subject,
+                                        color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text("#${t.id.take(8)} · ${t.createdAt}", color = SubText, fontSize = 10.sp)
+                                }
+                                // Status pill
+                                Surface(
+                                    color = statusColor.copy(0.12f),
+                                    border = BorderStroke(1.dp, statusColor.copy(0.35f)),
+                                    shape = TTShapes.chip
+                                ) {
+                                    Text(
+                                        t.status.uppercase(),
+                                        color = statusColor, fontSize = 9.sp, fontWeight = FontWeight.Black,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                            if (t.body.isNotEmpty()) {
+                                Spacer(Modifier.height(TTSpacing.xs))
+                                Text(
+                                    t.body,
+                                    color = SoftText, fontSize = 11.sp, lineHeight = 15.sp,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(Modifier.height(TTSpacing.xs))
+                            // Priority pill
+                            Surface(
+                                color = priorityColor.copy(0.10f),
+                                border = BorderStroke(1.dp, priorityColor.copy(0.30f)),
+                                shape = TTShapes.chip
+                            ) {
+                                Text(
+                                    "PRIORITY: ${t.priority.uppercase()}",
+                                    color = priorityColor, fontSize = 9.sp, fontWeight = FontWeight.Black,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── Profile / Me screen (Phase 2: TapTap-style polish) ──────────────────────
 @Composable
 fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
     val context       = LocalContext.current
@@ -2859,11 +3252,12 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.xl),
+        verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
     ) {
 
         // ── Hero Avatar Card (atau shimmer skeleton saat loading) ──
+        // Phase 2 polish: gradient border + glow + rotating gradient ring + tap-to-edit
         if (profileLoading) {
             // TapTap-style shimmer skeleton sebagai placeholder
             TTGameCardSkeleton()
@@ -2878,7 +3272,7 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(TTSpacing.lg)
             ) {
                 // Avatar with gradient ring + glow — tap to expand "Ganti Profil" section
                 Box(
@@ -2947,65 +3341,87 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
                         "@${api.username().ifEmpty { "unknown" }}",
                         color = SoftText, fontSize = 12.sp
                     )
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(TTSpacing.sm))
                     ModernPill(role.uppercase(), roleBadgeColor(role))
+                    Spacer(Modifier.height(TTSpacing.xs))
+                    // "Tap avatar untuk edit profil" hint — muted text kecil di bawah role pill
+                    Text(
+                        "Tap avatar untuk edit profil ↓",
+                        color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium
+                    )
                 }
-                // "Tap avatar untuk edit profil" hint — muted text kecil di bawah role pill
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Tap avatar untuk edit profil ↓",
-                    color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium
-                )
-            }
-            Spacer(Modifier.height(14.dp))
-            // Account details tiles
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MiniStatusTile("Game", if (gameInstalled) "Terinstall" else "Belum ada", gameInstalled, Modifier.weight(1f))
-                MiniStatusTile("Sesi", "Aktif", true, Modifier.weight(1f))
-                MiniStatusTile("Server", "Online", true, Modifier.weight(1f))
             }
         }
         } // end if (profileLoading) else { ... }
 
-        // ── Game action ──
-        GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.SportsSoccer, null, tint = NeonGreen, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("FIFA 16 Mobile", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        // ── Phase 2: Stats row (extracted dari hero card, pakai TTShapes.cardLarge) ──
+        // Tiga status tile: Game installed, Sesi, Server. Press scale + tappable.
+        if (!profileLoading) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
+                ProfileStatTile(
+                    label = "Game",
+                    value = if (gameInstalled) "Terinstall" else "Belum ada",
+                    ok = gameInstalled,
+                    modifier = Modifier.weight(1f)
+                )
+                ProfileStatTile(
+                    label = "Sesi",
+                    value = "Aktif",
+                    ok = true,
+                    modifier = Modifier.weight(1f)
+                )
+                ProfileStatTile(
+                    label = "Server",
+                    value = "Online",
+                    ok = true,
+                    modifier = Modifier.weight(1f)
+                )
             }
-            Spacer(Modifier.height(10.dp))
-            if (gameInstalled) {
-                Button(
-                    onClick  = { launchGame(context) },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    shape    = RoundedCornerShape(14.dp),
-                    colors   = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B))
+        }
+
+        // ── Game action (TapTap-style TTTappableCard) ──
+        if (!profileLoading) {
+            TTTappableCard(
+                onClick = { if (gameInstalled) launchGame(context) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Main FIFA 16", fontWeight = FontWeight.Bold)
+                    Box(
+                        Modifier.size(36.dp)
+                            .background(NeonGreen.copy(0.12f), TTShapes.small),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.SportsSoccer, null, tint = NeonGreen, modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.width(TTSpacing.md))
+                    Column(Modifier.weight(1f)) {
+                        Text("FIFA 16 Mobile", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
+                        Text(
+                            if (gameInstalled) "Tap untuk mainkan" else "Game belum terinstall",
+                            color = SoftText, fontSize = 11.sp
+                        )
+                    }
+                    if (gameInstalled) {
+                        Icon(Icons.Rounded.PlayCircle, null, tint = NeonGreen, modifier = Modifier.size(24.dp))
+                    }
                 }
-            } else {
-                GlassInfoBox(Icons.Rounded.Info, CandyCyan, "Game belum terinstall. Kembali ke Beranda untuk mengunduh dan menginstal FIFA 16.")
             }
         }
 
         // ── Info akun ──
         GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.AccountCircle, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Detail Akun", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(10.dp))
+            TTSectionHeader(title = "Detail Akun", icon = Icons.Rounded.AccountCircle)
+            Spacer(Modifier.height(TTSpacing.sm))
             ProfRow("Username",    "@${api.username().ifEmpty { "-" }}")
             ProfRow("Nama",        api.displayName().ifEmpty { "-" })
             ProfRow("Role",        role.replaceFirstChar { it.uppercase() })
             ProfRow("Server",      "DLavie Cloud")
         }
 
-        // ── Akun & Keamanan (Account Settings) ──
+        // ── Akun & Keamanan (Account Settings — TTTappableCard per section) ──
         AccountSettingsCard(
             api = api,
             context = context,
@@ -3015,60 +3431,109 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
 
         // ── Keamanan ──
         GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Security, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Keamanan", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(8.dp))
+            TTSectionHeader(title = "Keamanan", icon = Icons.Rounded.Security)
+            Spacer(Modifier.height(TTSpacing.sm))
             listOf(
                 "Sesi terenkripsi — diperbarui otomatis setiap 50 menit.",
                 "Setiap pembaruan diverifikasi sebelum diterapkan.",
                 "Data login tidak pernah disimpan di penyimpanan lokal."
             ).forEach { text ->
-                Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+                ) {
                     Icon(Icons.Rounded.CheckCircle, null, tint = NeonGreen, modifier = Modifier.size(13.dp).padding(top = 2.dp))
                     Text(text, color = SoftText, fontSize = 12.sp, lineHeight = 16.sp)
                 }
             }
         }
 
-        // ── Logout ──
+        // ── Logout (Phase 2: pakai TTShapes.button + design system baru) ──
         AnimatedContent(targetState = confirmLogout, label = "logout") { confirm ->
             if (!confirm) {
                 OutlinedButton(
                     onClick  = { confirmLogout = true },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    shape    = RoundedCornerShape(14.dp),
-                    border   = BorderStroke(1.dp, DangerRed.copy(0.4f))
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape    = TTShapes.button,
+                    border   = BorderStroke(1.dp, DangerRed.copy(0.45f)),
+                    colors   = ButtonDefaults.outlinedButtonColors(contentColor = DangerRed)
                 ) {
-                    Text("Keluar dari Akun", color = DangerRed, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Rounded.Cancel, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(TTSpacing.sm))
+                    Text("Keluar dari Akun", color = DangerRed, fontWeight = FontWeight.Black, fontSize = 14.sp)
                 }
             } else {
-                GlassCard(borderColor = DangerRed.copy(0.5f)) {
-                    Text("Konfirmasi Keluar", color = DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(4.dp))
+                GlassCard(borderColor = DangerRed.copy(0.55f)) {
+                    Text("Konfirmasi Keluar", color = DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                    Spacer(Modifier.height(TTSpacing.xs))
                     Text("Kamu harus login kembali setelah keluar.", color = SoftText, fontSize = 13.sp)
-                    Spacer(Modifier.height(14.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Spacer(Modifier.height(TTSpacing.md))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
                         OutlinedButton(
                             onClick  = { confirmLogout = false },
                             modifier = Modifier.weight(1f).height(48.dp),
-                            shape    = RoundedCornerShape(12.dp),
-                            border   = BorderStroke(1.dp, GlassStroke)
-                        ) { Text("Batal", color = SoftText) }
+                            shape    = TTShapes.button,
+                            border   = BorderStroke(1.dp, GlassStroke),
+                            colors   = ButtonDefaults.outlinedButtonColors(contentColor = SoftText)
+                        ) { Text("Batal", fontWeight = FontWeight.Bold) }
                         Button(
                             onClick  = onLogout,
                             modifier = Modifier.weight(1f).height(48.dp),
-                            shape    = RoundedCornerShape(12.dp),
-                            colors   = ButtonDefaults.buttonColors(containerColor = DangerRed)
-                        ) { Text("Keluar", fontWeight = FontWeight.Bold) }
+                            shape    = TTShapes.button,
+                            colors   = ButtonDefaults.buttonColors(
+                                containerColor = DangerRed,
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Icon(Icons.Rounded.Cancel, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(TTSpacing.xs))
+                            Text("Keluar", fontWeight = FontWeight.Black)
+                        }
                     }
                 }
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(TTSpacing.sm))
+    }
+}
+
+// ─── Profile stat tile (Phase 2: TapTap-style, pakai TTShapes.cardLarge) ──────
+@Composable
+private fun ProfileStatTile(
+    label: String,
+    value: String,
+    ok: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val color by animateColorAsState(
+        if (ok) NeonGreen else DangerRed,
+        tween(400), label = "stat_tile_c_$label"
+    )
+    Card(
+        modifier = modifier,
+        shape = TTShapes.cardLarge,
+        colors = CardDefaults.cardColors(containerColor = GlassBase),
+        border = BorderStroke(1.dp, if (ok) NeonGreen.copy(0.25f) else DangerRed.copy(0.25f))
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(TTSpacing.md),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                Modifier.size(24.dp).clip(CircleShape).background(color.copy(0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (ok) Icons.Rounded.CheckCircle else Icons.Rounded.Cancel,
+                    null, tint = color, modifier = Modifier.size(16.dp)
+                )
+            }
+            Spacer(Modifier.height(TTSpacing.xs))
+            Text(label, color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Black, maxLines = 1)
+            Text(value, color = color, fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
@@ -3483,6 +3948,7 @@ fun AccountSettingsCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -3492,23 +3958,37 @@ private fun SettingRow(
     onToggle: () -> Unit,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
 ) {
-    Surface(
-        color = Color(0xFF0F1828),
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, if (expanded) CandyCyan.copy(0.5f) else GlassStroke)
+    // Phase 2: TTTappableCard style — press scale spring bounce on header row
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "setting_row_press"
+    )
+    Card(
+        modifier = Modifier.fillMaxWidth().scale(scale),
+        shape = TTShapes.button,
+        colors = CardDefaults.cardColors(containerColor = GlassBase),
+        border = BorderStroke(1.dp, if (expanded) CandyCyan.copy(0.5f) else GlassStroke),
+        interactionSource = interactionSource,
+        onClick = onToggle
     ) {
         Column {
             Row(
-                Modifier.fillMaxWidth().clickable { onToggle() }.padding(14.dp),
+                Modifier.fillMaxWidth().padding(TTSpacing.md),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
-                    Modifier.size(32.dp).background(CandyBlue.copy(0.12f), RoundedCornerShape(10.dp)),
+                    Modifier.size(32.dp).background(CandyBlue.copy(0.12f), TTShapes.small),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(icon, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
                 }
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(TTSpacing.md))
                 Column(Modifier.weight(1f)) {
                     Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Text(subtitle, color = SoftText, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -3519,7 +3999,7 @@ private fun SettingRow(
                 )
             }
             AnimatedVisibility(expanded) {
-                Column(Modifier.padding(horizontal = 14.dp).padding(bottom = 14.dp), content = content)
+                Column(Modifier.padding(horizontal = TTSpacing.md).padding(bottom = TTSpacing.md), content = content)
             }
         }
     }

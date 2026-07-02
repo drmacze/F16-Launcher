@@ -354,6 +354,36 @@ public class CommunityApi {
         return new JSONArray(request("GET", "/rest/v1/community_categories?select=id,slug,name,description&order=sort_order.asc", null, false, false));
     }
 
+    /**
+     * Fetch FAQ items from Supabase (faq_items table).
+     * Schema (assumed):
+     *   id, question, answer, category, sort_order, published, created_at
+     * Public read (anon key) — does NOT require login.
+     * Returns empty array kalau tabel belum ada / error (fail-open).
+     */
+    public JSONArray faqItems() throws Exception {
+        return new JSONArray(request("GET",
+            "/rest/v1/faq_items?published=eq.true&order=sort_order.asc&limit=50"
+                + "&select=id,question,answer,category,sort_order",
+            null, false, false));
+    }
+
+    /**
+     * Fetch current user's support tickets from Supabase (support_tickets table).
+     * Schema (assumed):
+     *   id, user_id, subject, body, status, priority, created_at, updated_at
+     * Auth read (pakai user access token, RLS owner-only).
+     * Returns empty array kalau tabel belum ada / error / user belum punya tiket.
+     */
+    public JSONArray supportTickets() throws Exception {
+        if (!loggedIn()) return new JSONArray();
+        return new JSONArray(request("GET",
+            "/rest/v1/support_tickets?user_id=eq." + enc(userId())
+                + "&order=created_at.desc&limit=50"
+                + "&select=id,subject,body,status,priority,created_at,updated_at",
+            null, true, false));
+    }
+
     public JSONArray topics(String categoryId) throws Exception {
         String path = "/rest/v1/topics?select=id,category_id,author_id,title,body,reply_count,last_post_at,created_at,is_pinned&order=last_post_at.desc&limit=40";
         if (categoryId != null && !categoryId.isEmpty()) path = "/rest/v1/topics?category_id=eq." + enc(categoryId) + "&select=id,category_id,author_id,title,body,reply_count,last_post_at,created_at,is_pinned&order=last_post_at.desc&limit=40";
