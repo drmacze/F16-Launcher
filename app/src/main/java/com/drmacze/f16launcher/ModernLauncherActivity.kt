@@ -3,9 +3,13 @@ package com.drmacze.f16launcher
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -67,6 +71,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Image
@@ -130,6 +135,7 @@ import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -171,6 +177,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -294,13 +301,22 @@ enum class Page(val label: String, val navIcon: ImageVector) {
 class ModernLauncherActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { DLavieModernApp() }
+        // Pre-create notification channel (idempotent) so the channel is ready
+        // before any local notification fires (Android O+).
+        NotificationHelper.createChannel(this)
+        setContent { DLavieModernApp(initialPostId = intent?.getStringExtra("post_id")) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Update intent so subsequent DLavieModernApp reads pick up the new post_id.
+        setIntent(intent)
     }
 }
 
 // ─── Root composable ──────────────────────────────────────────────────────────
 @Composable
-fun DLavieModernApp() {
+fun DLavieModernApp(initialPostId: String? = null) {
     val context = LocalContext.current
     val api     = remember { CommunityApi(context) }
     var pinVerified by remember { mutableStateOf(!PinManager.hasPin(context)) }
@@ -443,7 +459,7 @@ fun DLavieModernApp() {
                         if (!pinVerified && PinManager.hasPin(context)) {
                             PinLockPlaceholder(context)
                         } else {
-                            MainShell(api, maintenanceInfo = null, onLogout = logoutAction)
+                            MainShell(api, maintenanceInfo = null, onLogout = logoutAction, initialPostId = initialPostId)
                         }
                     }
 
@@ -474,7 +490,7 @@ fun DLavieModernApp() {
 
                     // ── Default: masuk launcher dengan maintenance info (untuk blur overlay Bug 2) ──
                     else -> {
-                        MainShell(api, maintenanceInfo = maintenanceState, onLogout = logoutAction)
+                        MainShell(api, maintenanceInfo = maintenanceState, onLogout = logoutAction, initialPostId = initialPostId)
                     }
                 }
             }
@@ -596,10 +612,19 @@ fun FullScreenMaintenance(
 // ─── Main shell ───────────────────────────────────────────────────────────────
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLogout: () -> Unit) {
+fun MainShell(
+    api: CommunityApi,
+    maintenanceInfo: MaintenanceInfo? = null,
+    onLogout: () -> Unit,
+    initialPostId: String? = null
+) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
-    var page by remember { mutableStateOf(Page.Home) }
+    // ── Phase 2 Community: deep-link dari notification tap ──
+    // Jika initialPostId != null, default page = Chat (Komunitas) supaya user
+    // langsung lihat feed. Kita juga tampilkan toast singkat untuk konfirmasi.
+    var page by remember { mutableStateOf(if (initialPostId != null) Page.Chat else Page.Home) }
+    val pendingPostId = remember { mutableStateOf(initialPostId) }
 
     // ── Active notification banner state (Module 3: Push Notification Receiver) ──
     var activeBanner by remember { mutableStateOf<NotificationItem?>(null) }
@@ -683,6 +708,63 @@ fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLog
             runCatching {
                 val fresh = withContext(Dispatchers.IO) { fetchUnseenNotifications(context, api) }
                 if (fresh != null) activeBanner = fresh
+            }
+        }
+    }
+
+    // ── Phase 2 Community: request POST_NOTIFICATIONS permission (Android 13+) ──
+    // Diperlukan supaya NotificationHelper.showNotification() bisa menampilkan notif.
+    // Pada Android < 13, permission otomatis granted saat install.
+    val notificationPermission = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ /* granted -> no-op; user bisa enable later via system settings */ }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    // ── Phase 2 Community: poll for new posts from followed users every 60s ──
+    // Setelah dapat post baru → fire local notification via NotificationHelper.
+    // lastCheckTime di-init ke now() agar tidak spam notif untuk post lama saat app baru dibuka.
+    LaunchedEffect(Unit) {
+        var lastCheckTime = System.currentTimeMillis()
+        while (true) {
+            delay(60_000L)  // check every 60s
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    if (api.loggedIn()) {
+                        val followsArr = api.fetchFollowingIds()
+                        if (followsArr.length() > 0) {
+                            val follows = mutableListOf<String>()
+                            for (i in 0 until followsArr.length()) {
+                                follows.add(followsArr.getJSONObject(i).optString("following_id", ""))
+                            }
+                            val newPosts = api.fetchNewPostsFromFollowing(follows, lastCheckTime)
+                            if (newPosts.length() > 0) {
+                                for (i in 0 until newPosts.length()) {
+                                    val post = newPosts.getJSONObject(i)
+                                    val postId = post.optString("id", "")
+                                    val title = post.optString("title", "")
+                                    val authorId = post.optString("author_id", "")
+                                    val author = runCatching { api.getProfileById(authorId) }
+                                        .getOrNull() ?: JSONObject()
+                                    val authorName = author.optString("display_name",
+                                        author.optString("username", "User"))
+                                    NotificationHelper.showNotification(
+                                        context = context,
+                                        title  = "Post baru dari $authorName",
+                                        body   = title.ifBlank { "Cek post terbaru di komunitas." },
+                                        postId = postId
+                                    )
+                                }
+                                // Update lastCheckTime ke now() supaya next poll hanya cari post setelah ini.
+                                lastCheckTime = System.currentTimeMillis()
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -812,7 +894,11 @@ fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLog
                                             )
                                         }
                                     }
-                                    Page.Chat   -> CommunityScreen(api)   // normal, no blur
+                                    Page.Chat   -> CommunityScreen(
+                                        api             = api,
+                                        pendingPostId   = pendingPostId.value,
+                                        onConsumePostId = { pendingPostId.value = null }
+                                    )   // normal, no blur
                                     Page.Me     -> ProfileScreen(
                                         api                     = api,
                                         onLogout                = onLogout,
@@ -3046,7 +3132,11 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
 //   - profiles            → author avatar / username / role
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CommunityScreen(api: CommunityApi) {
+fun CommunityScreen(
+    api: CommunityApi,
+    pendingPostId: String? = null,
+    onConsumePostId: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
     val haptic  = LocalHapticFeedback.current
@@ -3073,10 +3163,14 @@ fun CommunityScreen(api: CommunityApi) {
     var likeState   by remember { mutableStateOf<Map<String, Pair<Boolean, Int>>>(emptyMap()) }
     // Saved state (post_id -> saved)
     var savedState  by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+    // ── Phase 2: Comment count state (post_id -> count) ──
+    var commentCountState by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
 
-    // Create post sheet + report dialog
+    // Create post sheet + report dialog + comments sheet
     var showCreateSheet by remember { mutableStateOf(false) }
     var reportTarget    by remember { mutableStateOf<FeedPostData?>(null) }
+    // ── Phase 2: post yang comment-sheet-nya sedang dibuka (null = tutup) ──
+    var commentsTarget  by remember { mutableStateOf<FeedPostData?>(null) }
 
     val role     = remember { api.role().ifBlank { "user" } }
     val roleBadge = role.uppercase()
@@ -3168,6 +3262,15 @@ fun CommunityScreen(api: CommunityApi) {
                     likeState = likeState + newLike
                 }
 
+                // ── Phase 2: Fetch comment count per post (public read, fire-and-forget per post) ──
+                val newCommentCounts = withContext(Dispatchers.IO) {
+                    raw.associate { p ->
+                        try { p.id to api.getCommentCount(p.id) }
+                        catch (_: Throwable) { p.id to 0 }
+                    }
+                }
+                commentCountState = commentCountState + newCommentCounts
+
                 // ── Apply role + date filters (client-side) ──
                 var filtered = raw
                 if (roleFilter != null) {
@@ -3201,6 +3304,19 @@ fun CommunityScreen(api: CommunityApi) {
 
     // Reload when tab or sort changes (role/date filters apply client-side → also reload)
     LaunchedEffect(selectedTab, sortBy, roleFilter, dateFilterMillis) { loadPosts() }
+
+    // ── Phase 2: Deep-link dari notification tap ──
+    // Saat pendingPostId di-set (dari MainShell), cari post di feed dan auto-open comments sheet.
+    // Konsumsi pendingPostId (set null) setelah diproses supaya tidak re-trigger.
+    LaunchedEffect(pendingPostId, posts) {
+        val pid = pendingPostId ?: return@LaunchedEffect
+        if (posts.isEmpty()) return@LaunchedEffect
+        val match = posts.firstOrNull { it.id == pid }
+        if (match != null) {
+            commentsTarget = match
+            onConsumePostId()
+        }
+    }
 
     // ── Date picker dialog (By Date filter) ──
     if (showDatePicker) {
@@ -3251,6 +3367,20 @@ fun CommunityScreen(api: CommunityApi) {
                     }
                 }
                 reportTarget = null
+            }
+        )
+    }
+
+    // ── Phase 2: Comments bottom sheet ──
+    commentsTarget?.let { target ->
+        CommentsBottomSheet(
+            postId    = target.id,
+            api       = api,
+            onDismiss = { commentsTarget = null },
+            onCommentAdded = {
+                // Optimistic +1 ke comment count
+                val cur = commentCountState[target.id] ?: 0
+                commentCountState = commentCountState + (target.id to (cur + 1))
             }
         )
     }
@@ -3346,11 +3476,13 @@ fun CommunityScreen(api: CommunityApi) {
                                     val author = authorCache[post.authorId]
                                     val like = likeState[post.id] ?: (false to 0)
                                     val saved = savedState[post.id] ?: false
+                                    val commentCount = commentCountState[post.id] ?: 0
                                     FeedPostCard(
                                         post = post,
                                         author = author,
                                         liked = like.first,
                                         likeCount = like.second,
+                                        commentCount = commentCount,
                                         saved = saved,
                                         loggedIn = api.loggedIn(),
                                         onLike = {
@@ -3374,6 +3506,10 @@ fun CommunityScreen(api: CommunityApi) {
                                                     toast("Gagal: ${t.message}")
                                                 }
                                             }
+                                        },
+                                        onOpenComments = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            commentsTarget = post
                                         },
                                         onSave = {
                                             if (!api.loggedIn()) {
@@ -3403,7 +3539,15 @@ fun CommunityScreen(api: CommunityApi) {
                                             }
                                             context.startActivity(Intent.createChooser(shareIntent, "Bagikan Post"))
                                         },
-                                        onReport = { reportTarget = post }
+                                        onReport = { reportTarget = post },
+                                        onOpenVideo = { url ->
+                                            runCatching {
+                                                context.startActivity(
+                                                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                )
+                                            }.onFailure { toast("Tidak bisa membuka URL") }
+                                        }
                                     )
                                 }
                             }
@@ -3581,12 +3725,15 @@ private fun FeedPostCard(
     author: AuthorInfo?,
     liked: Boolean,
     likeCount: Int,
+    commentCount: Int,
     saved: Boolean,
     loggedIn: Boolean,
     onLike: () -> Unit,
+    onOpenComments: () -> Unit,
     onSave: () -> Unit,
     onShare: () -> Unit,
-    onReport: () -> Unit
+    onReport: () -> Unit,
+    onOpenVideo: (String) -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     // Like bounce: scale up briefly when liked toggles
@@ -3595,6 +3742,8 @@ private fun FeedPostCard(
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
         label = "like_bounce"
     )
+    // ── Phase 2: detect video URL in body (YouTube/TikTok) ──
+    val videoEmbed = remember(post.body) { extractVideoEmbed(post.body) }
 
     TTTappableCard(onClick = { /* future: open post detail */ }) {
         Column(Modifier.fillMaxWidth()) {
@@ -3658,9 +3807,78 @@ private fun FeedPostCard(
                     )
                 }
 
+                // ── Phase 2: Video embed preview (YouTube thumbnail / TikTok badge) ──
+                if (videoEmbed != null) {
+                    Spacer(Modifier.height(TTSpacing.md))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.Black)
+                            .clickable { onOpenVideo(videoEmbed.originalUrl) }
+                    ) {
+                        if (videoEmbed.thumbnailUrl != null) {
+                            AsyncImage(
+                                model = videoEmbed.thumbnailUrl,
+                                contentDescription = "Thumbnail ${videoEmbed.platform}",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            // TikTok — tidak ada thumbnail publik. Tampilkan placeholder gradien.
+                            Box(
+                                Modifier.fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(Color(0xFF111111), Color(0xFF222222))
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("TIKTOK", color = Color.White.copy(0.85f),
+                                        fontSize = 11.sp, fontWeight = FontWeight.Black,
+                                        letterSpacing = 2.sp)
+                                    Spacer(Modifier.height(4.dp))
+                                    Text("Tap untuk buka di browser",
+                                        color = Color.White.copy(0.6f), fontSize = 10.sp)
+                                }
+                            }
+                        }
+                        // Dark overlay supaya play icon kontras
+                        Box(
+                            Modifier.fillMaxSize().background(Color.Black.copy(0.28f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Rounded.PlayCircle,
+                                contentDescription = "Putar video",
+                                tint = Color.White,
+                                modifier = Modifier.size(48.dp)
+                            )
+                        }
+                        // Platform badge (top-left)
+                        Surface(
+                            color = Color.Black.copy(0.55f),
+                            shape = TTShapes.chip,
+                            modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                        ) {
+                            Text(
+                                videoEmbed.platform.uppercase(),
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 1.sp,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+
                 Spacer(Modifier.height(TTSpacing.md))
 
-                // Author + timestamp + like + menu
+                // Author + timestamp + like + comment + menu
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Avatar (circular, initial letter with gradient)
                     AuthorAvatar(author = author)
@@ -3702,6 +3920,31 @@ private fun FeedPostCard(
                         Text(
                             if (likeCount > 0) likeCount.toString() else "",
                             color = if (liked) NeonGreen else SoftText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(Modifier.width(TTSpacing.xs))
+
+                    // ── Phase 2: Comment button (chat bubble + count) ──
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .clip(TTShapes.chip)
+                            .clickable { onOpenComments() }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.ChatBubbleOutline,
+                            contentDescription = "Komentar",
+                            tint = SoftText,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            if (commentCount > 0) commentCount.toString() else "",
+                            color = SoftText,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -3833,7 +4076,8 @@ private fun CreatePostSheet(
     onPosted: () -> Unit,
     onError: (String) -> Unit
 ) {
-    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
@@ -3841,13 +4085,41 @@ private fun CreatePostSheet(
     var type by remember { mutableStateOf("community") }
     var typeMenuOpen by remember { mutableStateOf(false) }
     var posting by remember { mutableStateOf(false) }
+    // ── Phase 2: gallery picker state ──
+    var uploading by remember { mutableStateOf(false) }
 
     val types = listOf("community" to "Community", "developer" to "Developer",
         "update" to "Update", "tutorial" to "Tutorial", "bugfix" to "Bugfix")
     val typeLabel = types.firstOrNull { it.first == type }?.second ?: "Community"
 
+    // ── Phase 2: Gallery picker (ActivityResultContracts.PickVisualMedia) ──
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                uploading = true
+                try {
+                    val url = withContext(Dispatchers.IO) {
+                        val inputStream = context.contentResolver.openInputStream(uri)
+                            ?: throw IllegalStateException("Tidak bisa membuka gambar.")
+                        val bytes = inputStream.use { it.readBytes() }
+                        if (bytes.isEmpty()) throw IllegalStateException("Gambar kosong.")
+                        val filename = "post_${System.currentTimeMillis()}.jpg"
+                        api.uploadImage(bytes, filename)
+                    }
+                    imageUrl = url
+                } catch (t: Throwable) {
+                    onError("Gagal upload gambar: ${t.message}")
+                } finally {
+                    uploading = false
+                }
+            }
+        }
+    }
+
     ModalBottomSheet(
-        onDismissRequest = { if (!posting) onDismiss() },
+        onDismissRequest = { if (!posting && !uploading) onDismiss() },
         sheetState = sheetState,
         containerColor = GlassBase,
         dragHandle = null
@@ -3862,7 +4134,7 @@ private fun CreatePostSheet(
                 Text("Buat Post Baru", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
                 Spacer(Modifier.weight(1f))
                 Box(
-                    Modifier.size(32.dp).clip(CircleShape).clickable { if (!posting) onDismiss() },
+                    Modifier.size(32.dp).clip(CircleShape).clickable { if (!posting && !uploading) onDismiss() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(Icons.Rounded.Close, contentDescription = "Tutup", tint = SoftText, modifier = Modifier.size(20.dp))
@@ -3893,11 +4165,70 @@ private fun CreatePostSheet(
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
             )
 
-            // Image URL input (optional — Phase 1: paste URL)
+            // ── Phase 2: Image picker (gallery) + preview ──
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    enabled = !uploading && !posting,
+                    shape = TTShapes.button,
+                    border = BorderStroke(1.dp, GlassStroke),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color.White,
+                        containerColor = Color.White.copy(0.04f)
+                    )
+                ) {
+                    if (uploading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Mengunggah…", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    } else {
+                        Icon(Icons.Rounded.Image, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Pilih Gambar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (imageUrl.isNotBlank()) {
+                    Spacer(Modifier.weight(1f))
+                    Box {
+                        AsyncImage(
+                            model = imageUrl,
+                            contentDescription = "Preview gambar",
+                            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                        // Tiny remove button
+                        Box(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 6.dp, y = (-6).dp)
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(0.75f))
+                                .clickable { if (!posting) imageUrl = "" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Hapus gambar",
+                                tint = Color.White, modifier = Modifier.size(12.dp))
+                        }
+                    }
+                }
+            }
+
+            // Image URL input (optional — manual paste sebagai fallback)
             OutlinedTextField(
                 value = imageUrl,
                 onValueChange = { imageUrl = it },
-                label = { Text("URL Gambar (opsional)", fontSize = 12.sp, color = SubText) },
+                label = { Text("URL Gambar (opsional — atau pilih dari gallery di atas)", fontSize = 12.sp, color = SubText) },
                 leadingIcon = { Icon(Icons.Rounded.Image, null, tint = SubText, modifier = Modifier.size(18.dp)) },
                 modifier = Modifier.fillMaxWidth(),
                 shape = TTShapes.input,
@@ -3936,7 +4267,7 @@ private fun CreatePostSheet(
                 onClick = {
                     if (title.trim().length < 3) { onError("Judul minimal 3 karakter."); return@Button }
                     if (body.trim().isEmpty()) { onError("Deskripsi wajib diisi."); return@Button }
-                    if (posting) return@Button
+                    if (posting || uploading) return@Button
                     posting = true
                     scope.launch {
                         try {
@@ -3951,7 +4282,7 @@ private fun CreatePostSheet(
                         }
                     }
                 },
-                enabled = !posting,
+                enabled = !posting && !uploading,
                 modifier = Modifier.fillMaxWidth(),
                 shape = TTShapes.button,
                 colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
@@ -4024,6 +4355,258 @@ private fun ReportPostDialog(
     )
 }
 
+// ─── Phase 2 Community: Comments bottom sheet ─────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CommentsBottomSheet(
+    postId: String,
+    api: CommunityApi,
+    onDismiss: () -> Unit,
+    onCommentAdded: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var comments by remember { mutableStateOf<List<CommentItem>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var commentText by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf("") }
+
+    fun toast(msg: String) {
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    fun loadComments() {
+        scope.launch {
+            loading = true
+            errorMsg = ""
+            try {
+                val list = withContext(Dispatchers.IO) {
+                    val arr = api.fetchComments(postId)
+                    val out = mutableListOf<CommentItem>()
+                    for (i in 0 until arr.length()) {
+                        val c = arr.getJSONObject(i)
+                        val uid = c.optString("user_id", "")
+                        val profile = runCatching { api.getProfileById(uid) }.getOrNull() ?: JSONObject()
+                        out.add(
+                            CommentItem(
+                                id          = c.optString("id"),
+                                userId      = uid,
+                                username    = profile.optString("username", "unknown"),
+                                displayName = profile.optString("display_name", "User"),
+                                body        = c.optString("body", ""),
+                                createdAt   = c.optString("created_at", "")
+                            )
+                        )
+                    }
+                    out
+                }
+                comments = list
+            } catch (t: Throwable) {
+                errorMsg = t.message ?: "Gagal memuat komentar"
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    LaunchedEffect(postId) { loadComments() }
+
+    ModalBottomSheet(
+        onDismissRequest = { if (!sending) onDismiss() },
+        sheetState = sheetState,
+        containerColor = GlassBase,
+        dragHandle = null
+    ) {
+        Column(
+            Modifier.fillMaxWidth().imePadding()
+                .padding(horizontal = TTSpacing.xl, vertical = TTSpacing.lg)
+                .heightIn(min = 280.dp, max = 560.dp)
+        ) {
+            // Header
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.ChatBubbleOutline, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Komentar", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.weight(1f))
+                Box(
+                    Modifier.size(32.dp).clip(CircleShape).clickable { if (!sending) onDismiss() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Tutup", tint = SoftText, modifier = Modifier.size(20.dp))
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+
+            // List / loading / empty
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    loading -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.md)) {
+                            repeat(2) { TTGameCardSkeleton() }
+                        }
+                    }
+                    errorMsg.isNotEmpty() && comments.isEmpty() -> {
+                        Column(
+                            Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(errorMsg, color = SoftText, fontSize = 12.sp, textAlign = TextAlign.Center)
+                            Spacer(Modifier.height(8.dp))
+                            TextButton(onClick = { loadComments() }) {
+                                Text("Coba lagi", color = Color.White)
+                            }
+                        }
+                    }
+                    comments.isEmpty() -> {
+                        Column(
+                            Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Rounded.ChatBubbleOutline, null, tint = SubText, modifier = Modifier.size(48.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("Belum ada komentar.", color = SubText, fontSize = 13.sp)
+                            Text("Jadilah yang pertama.", color = SubText, fontSize = 11.sp)
+                        }
+                    }
+                    else -> {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(bottom = 8.dp)
+                        ) {
+                            items(comments, key = { it.id }) { comment ->
+                                CommentRow(comment)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Comment input
+            if (!api.loggedIn()) {
+                Surface(
+                    color = Color.White.copy(0.04f),
+                    shape = TTShapes.input,
+                    border = BorderStroke(1.dp, GlassStroke)
+                ) {
+                    Text(
+                        "Login dulu untuk menulis komentar.",
+                        color = SubText, fontSize = 12.sp, textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(12.dp)
+                    )
+                }
+            } else {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    OutlinedTextField(
+                        value = commentText,
+                        onValueChange = { commentText = it },
+                        placeholder = { Text("Tulis komentar…", fontSize = 13.sp) },
+                        modifier = Modifier.weight(1f),
+                        shape = TTShapes.input,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color.White.copy(0.3f),
+                            unfocusedBorderColor = GlassStroke,
+                            cursorColor = Color.White,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedPlaceholderColor = SubText,
+                            unfocusedPlaceholderColor = SubText
+                        ),
+                        singleLine = false,
+                        maxLines = 3,
+                        textStyle = TextStyle(color = Color.White, fontSize = 13.sp, lineHeight = 18.sp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(
+                        onClick = {
+                            val text = commentText.trim()
+                            if (text.isEmpty() || sending) return@IconButton
+                            sending = true
+                            scope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) { api.addComment(postId, text) }
+                                    // Optimistic: tambahkan ke list lokal (display name = current user)
+                                    val me = CommentItem(
+                                        id          = "local_${System.currentTimeMillis()}",
+                                        userId      = api.userId(),
+                                        username    = api.username().ifBlank { "you" },
+                                        displayName = api.displayName().ifBlank { "You" },
+                                        body        = text,
+                                        createdAt   = java.text.SimpleDateFormat(
+                                            "yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US
+                                        ).format(java.util.Date())
+                                    )
+                                    comments = comments + me
+                                    commentText = ""
+                                    onCommentAdded()
+                                } catch (t: Throwable) {
+                                    toast("Gagal: ${t.message}")
+                                } finally {
+                                    sending = false
+                                }
+                            }
+                        },
+                        enabled = commentText.isNotBlank() && !sending
+                    ) {
+                        if (sending) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Rounded.Send,
+                                contentDescription = "Kirim komentar",
+                                tint = if (commentText.isNotBlank()) Color.White else SubText,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── Phase 2 Community: Single comment row ────────────────────────────────────
+@Composable
+private fun CommentRow(comment: CommentItem) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Box(
+            Modifier.size(32.dp).clip(CircleShape)
+                .background(Brush.linearGradient(listOf(Color.White.copy(0.22f), Color.White.copy(0.10f)))),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                comment.displayName.firstOrNull()?.uppercase() ?: "U",
+                color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    comment.displayName.ifBlank { comment.username.ifBlank { "Anonim" } },
+                    color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("·", color = SubText, fontSize = 11.sp)
+                Spacer(Modifier.width(6.dp))
+                Text(relativeTime(comment.createdAt), color = SubText, fontSize = 11.sp)
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(comment.body, color = SoftText, fontSize = 13.sp, lineHeight = 18.sp)
+        }
+    }
+}
+
 // ─── Community feed data models ────────────────────────────────────────────────
 private data class FeedPostData(
     val id: String,
@@ -4075,6 +4658,65 @@ fun relativeTime(iso: String): String {
         else        -> iso.take(10)
     }
 }
+
+// ─── Phase 2 Community: Video embed (YouTube / TikTok) ────────────────────────
+
+/** Detected video embed inside a post body. */
+data class VideoEmbed(
+    val platform: String,        // "youtube" | "tiktok"
+    val thumbnailUrl: String?,   // null for TikTok (no public thumbnail API)
+    val originalUrl: String      // full URL to open in browser
+)
+
+private val YOUTUBE_REGEX = Regex(
+    "(https?://)?(www\\.)?(youtube\\.com/watch\\?v=|youtu\\.be/|youtube\\.com/shorts/)([\\w-]{6,})"
+)
+private val TIKTOK_REGEX = Regex(
+    "(https?://)?(www\\.)?tiktok\\.com/@[\\w.]+/video/(\\d+)"
+)
+
+/**
+ * Cari URL YouTube atau TikTok di dalam teks post body.
+ * - YouTube: return thumbnail URL (img.youtube.com/vi/ID/hqdefault.jpg) + original watch URL.
+ * - TikTok: return null thumbnail (caller shows TikTok badge) + original URL.
+ * - Tidak ketemu: return null.
+ */
+fun extractVideoEmbed(text: String): VideoEmbed? {
+    if (text.isBlank()) return null
+    // YouTube
+    val ytMatch = YOUTUBE_REGEX.find(text)
+    if (ytMatch != null) {
+        val videoId = ytMatch.groupValues[4]
+        return VideoEmbed(
+            platform     = "youtube",
+            thumbnailUrl = "https://img.youtube.com/vi/$videoId/hqdefault.jpg",
+            originalUrl  = "https://www.youtube.com/watch?v=$videoId"
+        )
+    }
+    // TikTok
+    val ttMatch = TIKTOK_REGEX.find(text)
+    if (ttMatch != null) {
+        return VideoEmbed(
+            platform     = "tiktok",
+            thumbnailUrl = null,  // TikTok tidak punya public thumbnail API
+            originalUrl  = ttMatch.value.let {
+                if (it.startsWith("http")) it else "https://$it"
+            }
+        )
+    }
+    return null
+}
+
+// ─── Phase 2 Community: Comments ──────────────────────────────────────────────
+
+private data class CommentItem(
+    val id: String,
+    val userId: String,
+    val username: String,
+    val displayName: String,
+    val body: String,
+    val createdAt: String
+)
 
 // ─── Profile / Me screen (Phase 2: TapTap-style polish) ──────────────────────
 @Composable

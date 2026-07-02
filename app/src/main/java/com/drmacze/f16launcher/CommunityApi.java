@@ -282,6 +282,149 @@ public class CommunityApi {
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    //  Storage upload (Supabase Storage bucket 'community-images')
+    //  Bucket setup: see /home/z/my-project/download/supabase-fix-v9-storage.sql
+    //  Path: userId/timestamp.jpg — RLS enforces foldername(name)[1] = auth.uid()
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Upload image ke Supabase Storage bucket 'community-images'.
+     * Path: userId/filename.jpg (foldername(name)[1] must equal auth.uid() — RLS).
+     * Returns the public URL of the uploaded object.
+     *
+     * @param imageBytes raw JPEG bytes
+     * @param filename   e.g. "post_1234567890.jpg"
+     */
+    public String uploadImage(byte[] imageBytes, String filename) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login.");
+        if (imageBytes == null || imageBytes.length == 0) throw new IllegalArgumentException("Image bytes kosong.");
+        if (filename == null || filename.trim().isEmpty()) throw new IllegalArgumentException("Filename kosong.");
+
+        String path = userId() + "/" + filename;
+        String encodedPath = java.net.URLEncoder.encode(path, "UTF-8");
+        String uploadUrl = SUPABASE_URL + "/storage/v1/object/community-images/" + encodedPath;
+
+        HttpURLConnection conn = (HttpURLConnection) new URL(uploadUrl).openConnection();
+        try {
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(60000);
+            conn.setRequestProperty("apikey", SUPABASE_KEY);
+            conn.setRequestProperty("Authorization", "Bearer " + token());
+            conn.setRequestProperty("Content-Type", "image/jpeg");
+            conn.setRequestProperty("x-upsert", "true");
+            conn.getOutputStream().write(imageBytes);
+
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) {
+                String err = "";
+                java.io.InputStream errStream = conn.getErrorStream();
+                if (errStream != null) {
+                    try {
+                        java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(errStream));
+                        StringBuilder sb = new StringBuilder();
+                        String line;
+                        while ((line = br.readLine()) != null) sb.append(line).append('\n');
+                        err = sb.toString().trim();
+                    } catch (Throwable ignored) { }
+                }
+                throw new IllegalStateException("Upload gagal: HTTP " + code + (err.isEmpty() ? "" : " " + err));
+            }
+        } finally {
+            conn.disconnect();
+        }
+
+        // Return public URL (bucket is public)
+        return SUPABASE_URL + "/storage/v1/object/public/community-images/" + encodedPath;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Comments (feed_comments table)
+    //  Schema:
+    //    id uuid PK, post_id uuid FK feed_posts, user_id uuid FK profiles,
+    //    body text (1..2000), deleted boolean default false,
+    //    created_at timestamptz default now()
+    //  RLS: SELECT public (deleted=false), INSERT owner (user_id), DELETE owner
+    //  (see supabase-fix-v10-comments-phase2.sql for DELETE policy)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Fetch comments for a post (oldest first). Public read (deleted=false only). */
+    public JSONArray fetchComments(String postId) throws Exception {
+        return new JSONArray(request("GET",
+            "/rest/v1/feed_comments?post_id=eq." + enc(postId)
+                + "&order=created_at.asc&limit=200"
+                + "&select=id,post_id,user_id,body,created_at",
+            null, false, false));
+    }
+
+    /** Add comment to a post. Login required. Returns the created row. */
+    public JSONObject addComment(String postId, String body) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login.");
+        if (body == null || body.trim().isEmpty()) throw new IllegalArgumentException("Komentar kosong.");
+        JSONObject payload = new JSONObject()
+            .put("post_id", postId)
+            .put("user_id", userId())
+            .put("body", body.trim());
+        JSONArray arr = new JSONArray(request("POST", "/rest/v1/feed_comments",
+            payload, true, "return=representation"));
+        return arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
+    }
+
+    /** Delete (physical) a comment. Owner only (RLS enforced). */
+    public void deleteComment(String commentId) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login.");
+        request("DELETE", "/rest/v1/feed_comments?id=eq." + enc(commentId)
+            + "&user_id=eq." + enc(userId()), null, true, false);
+    }
+
+    /** Get comment count for a post. Public read. */
+    public int getCommentCount(String postId) throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/feed_comments?post_id=eq." + enc(postId) + "&deleted=eq.false&select=id",
+            null, false, false));
+        return arr.length();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Push notification polling — new posts from followed users
+    //  Used by MainShell's 60s polling loop to fire local notifications.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Get list of following user IDs. Login required. */
+    public JSONArray fetchFollowingIds() throws Exception {
+        if (!loggedIn()) return new JSONArray();
+        return new JSONArray(request("GET",
+            "/rest/v1/community_follows?follower_id=eq." + enc(userId()) + "&select=following_id",
+            null, true, false));
+    }
+
+    /**
+     * Fetch new posts from followed users since the given timestamp (epoch millis).
+     * Returns max 10 newest posts. Login required.
+     *
+     * @param followingIds  list of user IDs (from fetchFollowingIds)
+     * @param sinceTimestamp epoch millis (UTC). Posts with created_at &gt; this will be returned.
+     */
+    public JSONArray fetchNewPostsFromFollowing(java.util.List<String> followingIds, long sinceTimestamp) throws Exception {
+        if (followingIds == null || followingIds.isEmpty()) return new JSONArray();
+        StringBuilder inList = new StringBuilder();
+        for (int i = 0; i < followingIds.size(); i++) {
+            if (i > 0) inList.append(",");
+            inList.append(enc(followingIds.get(i)));
+        }
+        // Format timestamp as ISO-8601 UTC (Supabase timestamptz comparison)
+        String sinceIso = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+            .format(new java.util.Date(sinceTimestamp));
+        return new JSONArray(request("GET",
+            "/rest/v1/feed_posts?author_id=in.(" + inList + ")"
+                + "&created_at=gt." + enc(sinceIso)
+                + "&order=created_at.desc&limit=10"
+                + "&select=id,author_id,title,body,created_at",
+            null, true, false));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     //  Saved posts (saved_posts table) — bookmark feature
     //  Schema:
     //    post_id  uuid PK references feed_posts(id) on delete cascade
