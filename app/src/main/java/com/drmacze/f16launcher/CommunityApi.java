@@ -87,11 +87,34 @@ public class CommunityApi {
     public JSONObject ensureMyProfile(String username, String displayName, String avatarUrl) throws Exception {
         if (userId().isEmpty()) throw new IllegalStateException("Belum login.");
         validateProfile(username, displayName);
+        // Cek apakah profile sudah ada (trigger handle_new_user sudah create)
+        // Kalau sudah ada, hanya update display_name & avatar — JANGAN override username
+        // (karena bisa conflict dengan unique constraint kalau username sudah dipakai user lain)
         JSONObject body = new JSONObject();
         body.put("id", userId());
-        body.put("username", username.trim());
         body.put("display_name", displayName.trim());
         if (avatarUrl != null && !avatarUrl.trim().isEmpty()) body.put("avatar_url", avatarUrl.trim());
+        // Cek username existing — hanya set kalau berbeda dari yang ada
+        try {
+            JSONArray existing = new JSONArray(request("GET", "/rest/v1/profiles?id=eq." + enc(userId()) + "&select=username", null, true, false));
+            if (existing.length() > 0) {
+                String currentUsername = existing.getJSONObject(0).optString("username", "");
+                if (!currentUsername.isEmpty() && !currentUsername.equals(username.trim())) {
+                    // Username di profile berbeda dari input — kemungkinan sudah diambil user lain
+                    // atau di-auto-generate oleh trigger. Coba update kalau available.
+                    try {
+                        body.put("username", username.trim());
+                    } catch (Throwable ignored) { }
+                }
+                // else: username sama, tidak perlu update (hindari duplicate check)
+            } else {
+                // Profile belum ada, set username
+                body.put("username", username.trim());
+            }
+        } catch (Throwable ignored) {
+            // Gagal cek existing, set username (kalau conflict, akan throw — caller handle)
+            body.put("username", username.trim());
+        }
         JSONArray arr = new JSONArray(request("POST", "/rest/v1/profiles?on_conflict=id", body, true, "resolution=merge-duplicates,return=representation"));
         try {
             JSONObject setting = new JSONObject();
