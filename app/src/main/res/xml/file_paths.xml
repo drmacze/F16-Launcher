@@ -3,4 +3,7 @@
     <external-files-path
         name="public_install"
         path="public-install/" />
+    <cache-path
+        name="app_updates"
+        path="app-updates/" />
 </paths>

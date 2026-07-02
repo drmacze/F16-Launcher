@@ -280,6 +280,13 @@ fun DLavieModernApp() {
     var maintenanceChecked by remember { mutableStateOf(false) }
     var partialBypassed by remember { mutableStateOf(false) } // user tekan "Masuk Launcher" saat scope=partial
 
+    // ── App update state ──
+    var updateInfo by remember { mutableStateOf<AppUpdateChecker.UpdateInfo?>(null) }
+    var showUpdatePopup by remember { mutableStateOf(false) }
+    var updateDownloading by remember { mutableStateOf(false) }
+    var updateDownloadProgress by remember { mutableStateOf(0f) }
+    val updateScope = rememberCoroutineScope()
+
     // ── Staff bypass (Bug 3): admin/developer/moderator/owner skip maintenance entirely ──
     val userRole = api.role()
     val isStaff = userRole.equals("admin", ignoreCase = true)
@@ -303,6 +310,19 @@ fun DLavieModernApp() {
             }
         }
         maintenanceChecked = true
+    }
+
+    // ── Cek app update saat app dibuka ──
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val info = AppUpdateChecker.checkForUpdate()
+                if (info != null && info.isUpdateAvailable) {
+                    updateInfo = info
+                    showUpdatePopup = true
+                }
+            }
+        }
     }
 
     // Refresh pinVerified state on resume (after returning from PinLockActivity)
@@ -341,6 +361,33 @@ fun DLavieModernApp() {
                     context.startActivity(
                         Intent(context, DLavieGuidedActivity::class.java)
                             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+
+                // ── App Update Popup ──
+                if (showUpdatePopup && updateInfo != null) {
+                    AppUpdatePopup(
+                        info = updateInfo!!,
+                        downloading = updateDownloading,
+                        progress = updateDownloadProgress,
+                        onUpdate = {
+                            if (!updateDownloading) {
+                                updateDownloading = true
+                                updateDownloadProgress = 0f
+                                updateScope.launch {
+                                    val apkFile = withContext(Dispatchers.IO) {
+                                        AppUpdateChecker.downloadApk(context, updateInfo!!.apkUrl) { progress ->
+                                            updateDownloadProgress = progress
+                                        }
+                                    }
+                                    updateDownloading = false
+                                    if (apkFile != null && apkFile.exists()) {
+                                        AppUpdateChecker.installApk(context, apkFile)
+                                    }
+                                }
+                            }
+                        },
+                        onLater = { showUpdatePopup = false }
                     )
                 }
 
@@ -4156,6 +4203,93 @@ private fun ModernTextField(
             focusedTextColor = Color.White,
             unfocusedTextColor = Color.White
         )
+    )
+}
+
+// ─── App Update Popup ─────────────────────────────────────────────────────────
+@Composable
+fun AppUpdatePopup(
+    info: AppUpdateChecker.UpdateInfo,
+    downloading: Boolean,
+    progress: Float,
+    onUpdate: () -> Unit,
+    onLater: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { if (!downloading) onLater() },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.SystemUpdate, null, tint = Color.White, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Update Tersedia!", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    "Versi baru ${info.versionName} sudah tersedia.",
+                    color = SoftText, fontSize = 13.sp
+                )
+                Spacer(Modifier.height(8.dp))
+
+                // Release notes (truncate kalau terlalu panjang)
+                val notes = info.releaseNotes.take(500)
+                if (notes.isNotEmpty()) {
+                    Text(
+                        notes,
+                        color = SubText, fontSize = 11.sp, lineHeight = 15.sp,
+                        maxLines = 8,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Download progress
+                if (downloading) {
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color.White,
+                        trackColor = Surface2
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Mengunduh... ${(progress * 100).toInt()}%",
+                        color = SoftText, fontSize = 11.sp
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onUpdate,
+                enabled = !downloading,
+                shape = TTShapes.button,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Carbon
+                )
+            ) {
+                if (downloading) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Carbon, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Mengunduh...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                } else {
+                    Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Update Sekarang", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onLater,
+                enabled = !downloading
+            ) {
+                Text("Nanti saja", color = SubText, fontSize = 13.sp)
+            }
+        },
+        containerColor = GlassBase
     )
 }
 
