@@ -79,10 +79,25 @@ class ShinySplashActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize(), color = Color.Black) {
                     ShinySplashContent(
                         onFinished = {
-                            // Decide next destination based on auth state
-                            val session = loadSession(this)
-                            val target = if (session != null) {
-                                syncToCommunityPrefs(this, session)
+                            // Decide next destination based on auth state (read SharedPreferences directly)
+                            val prefs = getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
+                            val token = prefs.getString("access_token", null)
+                            val target = if (!token.isNullOrBlank()) {
+                                // Sync to community prefs (so CommunityApi works)
+                                val refresh = prefs.getString("refresh_token", "") ?: ""
+                                val email = prefs.getString("email", "") ?: ""
+                                // Decode user ID from JWT (sub claim)
+                                val userId = try {
+                                    val payload = token.split(".").getOrNull(1) ?: ""
+                                    val padded = payload + "=".repeat((4 - payload.length % 4) % 4)
+                                    val decoded = android.util.Base64.decode(padded, android.util.Base64.URL_SAFE)
+                                    org.json.JSONObject(String(decoded)).optString("sub", "")
+                                } catch (_: Exception) { "" }
+                                getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE).edit()
+                                    .putString("access_token", token)
+                                    .putString("refresh_token", refresh)
+                                    .putString("user_id", userId)
+                                    .apply()
                                 Intent(this, ModernLauncherActivity::class.java)
                             } else {
                                 Intent(this, DLavieGuidedActivity::class.java)
@@ -365,7 +380,7 @@ private fun ShinySilverText(
                         start = Offset(0f, 0f),
                         end = Offset(size.width, size.height)
                     )
-                    drawRect(brush = brush, size = size, blendMode = androidx.compose.ui.graphics.BlendMode.SrcAtop)
+                    drawRect(brush = brush, blendMode = androidx.compose.ui.graphics.BlendMode.SrcAtop)
                 }
         )
 
