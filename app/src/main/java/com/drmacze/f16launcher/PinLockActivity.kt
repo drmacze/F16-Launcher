@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -229,8 +230,8 @@ private fun PinLockScreen(
         }
         // Reset shake animation
         if (shake) {
-            kotlinx.coroutines.GlobalScope.launch {
-                delay(300)
+            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                kotlinx.coroutines.delay(300)
                 shake = false
             }
         }
@@ -388,8 +389,3 @@ private fun KeypadCircle(
         Icon(icon, null, tint = tint, modifier = Modifier.size(26.dp))
     }
 }
-
-// Helper extension for offset
-private fun Modifier.offset(x: androidx.compose.ui.unit.Dp) = this.then(
-    androidx.compose.foundation.layout.offset(x = x, y = 0.dp)
-)
