@@ -166,6 +166,182 @@ public class CommunityApi {
         return new JSONArray(request("GET", "/rest/v1/feed_posts?select=id,author_id,title,body,image_url,type,visibility,pinned,official,created_at&order=pinned.desc,created_at.desc&limit=10", null, true, (String) null));
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    //  Community follows (community_follows table — TapTap-style "Following")
+    //  Schema:
+    //    follower_id  uuid PK references profiles(id) on delete cascade
+    //    following_id uuid PK references profiles(id) on delete cascade
+    //    created_at   timestamptz default now()
+    //  RLS: SELECT public, INSERT/UPDATE/DELETE owner (follower) only.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Follow a user. Idempotent (on_conflict merge). Login required. */
+    public void followUser(String userId) throws Exception {
+        JSONObject body = new JSONObject().put("follower_id", userId()).put("following_id", userId);
+        request("POST", "/rest/v1/community_follows?on_conflict=follower_id,following_id", body, true, "resolution=merge-duplicates,return=minimal");
+    }
+
+    /** Unfollow a user. Login required. */
+    public void unfollowUser(String userId) throws Exception {
+        request("DELETE", "/rest/v1/community_follows?follower_id=eq." + enc(userId()) + "&following_id=eq." + enc(userId), null, true, false);
+    }
+
+    /** Check if current user follows a specific user. Login required. */
+    public boolean isFollowing(String userId) throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/community_follows?follower_id=eq." + enc(userId()) + "&following_id=eq." + enc(userId) + "&select=follower_id",
+            null, true, false));
+        return arr.length() > 0;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Feed posts — TapTap-style "For You" (global) + "Following" tabs
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Fetch feed posts for "For You" (global) — with filter. Public read. */
+    public JSONArray fetchFeedPostsGlobal(String sortBy, int limit) throws Exception {
+        String order = "created_at.desc";
+        if ("oldest".equals(sortBy)) order = "created_at.asc";
+        return new JSONArray(request("GET",
+            "/rest/v1/feed_posts?order=" + order + "&limit=" + limit +
+            "&select=id,author_id,title,body,image_url,type,pinned,official,created_at",
+            null, false, false));
+    }
+
+    /** Fetch feed posts for "Following" — only from followed users. Login required. */
+    public JSONArray fetchFeedPostsFollowing(String sortBy, int limit) throws Exception {
+        String order = "created_at.desc";
+        if ("oldest".equals(sortBy)) order = "created_at.asc";
+        // Get list of following IDs first
+        JSONArray follows = new JSONArray(request("GET",
+            "/rest/v1/community_follows?follower_id=eq." + enc(userId()) + "&select=following_id",
+            null, true, false));
+        if (follows.length() == 0) return new JSONArray();
+
+        StringBuilder inList = new StringBuilder();
+        for (int i = 0; i < follows.length(); i++) {
+            if (i > 0) inList.append(",");
+            inList.append(enc(follows.getJSONObject(i).getString("following_id")));
+        }
+
+        return new JSONArray(request("GET",
+            "/rest/v1/feed_posts?author_id=in.(" + inList + ")&order=" + order + "&limit=" + limit +
+            "&select=id,author_id,title,body,image_url,type,pinned,official,created_at",
+            null, true, false));
+    }
+
+    /** Create a new feed post with image. Login required. Returns the created row. */
+    public JSONObject createFeedPost(String title, String body, String imageUrl, String type) throws Exception {
+        JSONObject payload = new JSONObject()
+            .put("author_id", userId())
+            .put("title", title.trim())
+            .put("body", body.trim())
+            .put("type", type != null ? type : "community");
+        if (imageUrl != null && !imageUrl.trim().isEmpty()) payload.put("image_url", imageUrl.trim());
+
+        JSONArray arr = new JSONArray(request("POST", "/rest/v1/feed_posts",
+            payload, true, "return=representation"));
+        return arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Feed likes (feed_likes table)
+    //  Schema:
+    //    post_id  uuid PK references feed_posts(id) on delete cascade
+    //    user_id  uuid PK references profiles(id) on delete cascade
+    //    created_at timestamptz default now()
+    //  RLS: SELECT public, INSERT/DELETE owner only.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Like a post (insert into feed_likes). Login required. */
+    public void likePost(String postId) throws Exception {
+        JSONObject body = new JSONObject().put("post_id", postId).put("user_id", userId());
+        request("POST", "/rest/v1/feed_likes", body, true, "return=minimal");
+    }
+
+    /** Unlike a post. Login required. */
+    public void unlikePost(String postId) throws Exception {
+        request("DELETE", "/rest/v1/feed_likes?post_id=eq." + enc(postId) + "&user_id=eq." + enc(userId()),
+            null, true, false);
+    }
+
+    /** Get like count for a post. Public read. */
+    public int getPostLikeCount(String postId) throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/feed_likes?post_id=eq." + enc(postId) + "&select=post_id",
+            null, false, false));
+        return arr.length();
+    }
+
+    /** Check if current user liked a post. Login required. */
+    public boolean hasLikedPost(String postId) throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/feed_likes?post_id=eq." + enc(postId) + "&user_id=eq." + enc(userId()) + "&select=post_id",
+            null, true, false));
+        return arr.length() > 0;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Saved posts (saved_posts table) — bookmark feature
+    //  Schema:
+    //    post_id  uuid PK references feed_posts(id) on delete cascade
+    //    user_id  uuid PK references profiles(id) on delete cascade
+    //    created_at timestamptz default now()
+    //  RLS: SELECT/INSERT/DELETE owner only.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Save (bookmark) a post. Login required. */
+    public void savePost(String postId) throws Exception {
+        JSONObject body = new JSONObject().put("post_id", postId).put("user_id", userId());
+        request("POST", "/rest/v1/saved_posts?on_conflict=post_id,user_id", body, true,
+            "resolution=merge-duplicates,return=minimal");
+    }
+
+    /** Unsave (remove bookmark) a post. Login required. */
+    public void unsavePost(String postId) throws Exception {
+        request("DELETE", "/rest/v1/saved_posts?post_id=eq." + enc(postId) + "&user_id=eq." + enc(userId()),
+            null, true, false);
+    }
+
+    /** Check if current user saved a post. Login required. */
+    public boolean hasSavedPost(String postId) throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/saved_posts?post_id=eq." + enc(postId) + "&user_id=eq." + enc(userId()) + "&select=post_id",
+            null, true, false));
+        return arr.length() > 0;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Reports (reports table) — flag a post
+    //  Schema:
+    //    id uuid PK, reporter_id uuid, target_type text, target_id text,
+    //    category text, reason text, status report_status, created_at
+    //  RLS: INSERT owner (reporter) only.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Report a feed post. Login required. category: spam|inappropriate|other. */
+    public void reportPost(String postId, String category, String reason) throws Exception {
+        JSONObject body = new JSONObject()
+            .put("reporter_id", userId())
+            .put("target_type", "post")
+            .put("target_id", postId)
+            .put("category", category != null ? category : "other")
+            .put("reason", reason != null ? reason.trim() : "");
+        request("POST", "/rest/v1/reports", body, true, "return=minimal");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Profile lookup — for author info in feed cards
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Get profile by ID (for author info in feed). Public read. */
+    public JSONObject getProfileById(String profileId) throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/profiles?id=eq." + enc(profileId) + "&select=id,username,display_name,avatar_url,role",
+            null, false, false));
+        return arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
+    }
+
     /**
      * PATCH country column on the logged-in user's profile row.
      * Called after successful registration.

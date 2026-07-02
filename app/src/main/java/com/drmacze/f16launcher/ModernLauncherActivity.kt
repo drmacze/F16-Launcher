@@ -49,14 +49,34 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.BookmarkBorder
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Send
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material.icons.rounded.ThumbUpOffAlt
 import androidx.compose.material.icons.rounded.Article
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Campaign
@@ -99,8 +119,14 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -115,10 +141,11 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
@@ -150,12 +177,15 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.awaitCancellation
@@ -2999,241 +3029,712 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
     }
 }
 
-// ─── Community / Chat screen (Phase 2: HorizontalPager dengan 3 tab) ──────────
-// Tab 1: Diskusi — list topics (reuse existing ChannelPanel + TopicPanel + ThreadPanel)
-// Tab 2: FAQ — list FAQ items (Supabase faq_items or static fallback)
-// Tab 3: Support — list support tickets (Supabase support_tickets)
+// ─── Community screen — TapTap-style feed (Following / For You) ────────────────
+// Top bar: user role badge + tabs (Following | For You) + filter icon.
+// Feed: post cards with optional image, title, body, author avatar + username,
+//       relative timestamp, like button (animated bounce + haptic), three-dot
+//       menu (Report / Share / Save).
+// FAB: circular white "+" → create post bottom sheet (title + body + image URL + type).
+// Loading: shimmer skeletons. Pull-to-refresh. Empty states per tab.
 //
-// Setiap tab pakai shimmer skeleton (TTGameCardSkeleton) saat loading, dan
-// TTTappableCard untuk setiap item (press scale spring bounce).
+// Data sources (Supabase):
+//   - feed_posts          → global + following feed
+//   - community_follows   → "Following" tab author set
+//   - feed_likes          → like count + has-liked
+//   - saved_posts         → bookmark toggle
+//   - reports             → report-a-post
+//   - profiles            → author avatar / username / role
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommunityScreen(api: CommunityApi) {
-    val pagerState = rememberPagerState(pageCount = { 3 })
-    val scope = rememberCoroutineScope()
-    val tabs = listOf("Diskusi", "FAQ", "Support")
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+    val haptic  = LocalHapticFeedback.current
 
-    Column(Modifier.fillMaxSize().background(Carbon)) {
-        // ── Tab bar (sticky di top, custom indicator) ──
-        TabRow(
-            selectedTabIndex = pagerState.currentPage,
-            containerColor = Carbon,
-            contentColor = CandyCyan,
-            indicator = { tabPositions ->
-                Box(
-                    Modifier
-                        .tabIndicatorOffset(tabPositions[pagerState.currentPage])
-                        .height(3.dp)
-                        .padding(horizontal = 20.dp)
-                        .background(CandyCyan, RoundedCornerShape(3.dp))
+    // 0 = Following, 1 = For You (default to For You so feed is populated for new users)
+    var selectedTab by remember { mutableStateOf(1) }
+
+    // Filter state
+    var sortBy           by remember { mutableStateOf("newest") }        // newest | oldest
+    var roleFilter       by remember { mutableStateOf<String?>(null) }   // admin | developer | user | null
+    var dateFilterMillis by remember { mutableStateOf<Long?>(null) }     // epoch millis (UTC midnight) | null
+    var showFilterMenu   by remember { mutableStateOf(false) }
+    var showDatePicker   by remember { mutableStateOf(false) }
+
+    // Feed state
+    var posts     by remember { mutableStateOf<List<FeedPostData>>(emptyList()) }
+    var loading   by remember { mutableStateOf(true) }
+    var refreshing by remember { mutableStateOf(false) }
+    var errorMsg  by remember { mutableStateOf("") }
+
+    // Author cache (author_id -> AuthorInfo)
+    var authorCache by remember { mutableStateOf<Map<String, AuthorInfo>>(emptyMap()) }
+    // Like state (post_id -> Pair(liked, count))
+    var likeState   by remember { mutableStateOf<Map<String, Pair<Boolean, Int>>>(emptyMap()) }
+    // Saved state (post_id -> saved)
+    var savedState  by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+
+    // Create post sheet + report dialog
+    var showCreateSheet by remember { mutableStateOf(false) }
+    var reportTarget    by remember { mutableStateOf<FeedPostData?>(null) }
+
+    val role     = remember { api.role().ifBlank { "user" } }
+    val roleBadge = role.uppercase()
+
+    fun toast(msg: String) {
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    fun loadPosts() {
+        scope.launch {
+            if (posts.isEmpty()) loading = true
+            errorMsg = ""
+            try {
+                val arr = withContext(Dispatchers.IO) {
+                    if (selectedTab == 0) {
+                        if (!api.loggedIn()) JSONArray()
+                        else api.fetchFeedPostsFollowing(sortBy, 30)
+                    } else {
+                        api.fetchFeedPostsGlobal(sortBy, 30)
+                    }
+                }
+                val raw = (0 until arr.length()).mapNotNull { i ->
+                    runCatching {
+                        val o = arr.getJSONObject(i)
+                        FeedPostData(
+                            id        = o.optString("id"),
+                            authorId  = o.optString("author_id"),
+                            title     = o.optString("title"),
+                            body      = o.optString("body"),
+                            imageUrl  = o.optString("image_url", ""),
+                            type      = o.optString("type", "community"),
+                            pinned    = o.optBoolean("pinned"),
+                            official  = o.optBoolean("official"),
+                            createdAt = o.optString("created_at", "")
+                        )
+                    }.getOrNull()
+                }
+
+                // ── Fetch author profiles (only missing ones) ──
+                val missing = raw.map { it.authorId }.distinct()
+                    .filter { it.isNotBlank() && !authorCache.containsKey(it) }
+                if (missing.isNotEmpty()) {
+                    val fetched = withContext(Dispatchers.IO) {
+                        missing.associateWith { id ->
+                            try {
+                                val p = api.getProfileById(id)
+                                AuthorInfo(
+                                    id          = id,
+                                    username    = p.optString("username", ""),
+                                    displayName = p.optString("display_name", ""),
+                                    avatarUrl   = p.optString("avatar_url", ""),
+                                    role        = p.optString("role", "user")
+                                )
+                            } catch (_: Throwable) {
+                                AuthorInfo(id, "", "Anonim", "", "user")
+                            }
+                        }
+                    }
+                    authorCache = authorCache + fetched
+                }
+
+                // ── Fetch like + saved state per post (concurrent-safe sequential) ──
+                if (api.loggedIn()) {
+                    val newLike = withContext(Dispatchers.IO) {
+                        raw.associate { p ->
+                            try {
+                                val count = api.getPostLikeCount(p.id)
+                                val liked = api.hasLikedPost(p.id)
+                                p.id to (liked to count)
+                            } catch (_: Throwable) { p.id to (false to 0) }
+                        }
+                    }
+                    val newSaved = withContext(Dispatchers.IO) {
+                        raw.associate { p ->
+                            try { p.id to api.hasSavedPost(p.id) }
+                            catch (_: Throwable) { p.id to false }
+                        }
+                    }
+                    likeState  = likeState + newLike
+                    savedState = savedState + newSaved
+                } else {
+                    // Not logged in: only public like counts, no liked/saved flags.
+                    val newLike = withContext(Dispatchers.IO) {
+                        raw.associate { p ->
+                            try { p.id to (false to api.getPostLikeCount(p.id)) }
+                            catch (_: Throwable) { p.id to (false to 0) }
+                        }
+                    }
+                    likeState = likeState + newLike
+                }
+
+                // ── Apply role + date filters (client-side) ──
+                var filtered = raw
+                if (roleFilter != null) {
+                    filtered = filtered.filter { post ->
+                        (authorCache[post.authorId]?.role?.lowercase() ?: "user") == roleFilter
+                    }
+                }
+                if (dateFilterMillis != null) {
+                    val startMs = dateFilterMillis!!
+                    val endMs   = startMs + 24L * 60L * 60L * 1000L
+                    filtered = filtered.filter { post ->
+                        val ts = parseIsoToMillis(post.createdAt)
+                        ts in startMs until endMs
+                    }
+                }
+                // Pinned first, then by createdAt desc
+                filtered = filtered.sortedWith(
+                    compareByDescending<FeedPostData> { it.pinned }
+                        .thenByDescending { it.createdAt }
                 )
+                posts = filtered
+            } catch (t: Throwable) {
+                errorMsg = t.message ?: "Gagal memuat feed"
+                posts = emptyList()
+            } finally {
+                loading = false
+                refreshing = false
+            }
+        }
+    }
+
+    // Reload when tab or sort changes (role/date filters apply client-side → also reload)
+    LaunchedEffect(selectedTab, sortBy, roleFilter, dateFilterMillis) { loadPosts() }
+
+    // ── Date picker dialog (By Date filter) ──
+    if (showDatePicker) {
+        val dpState = rememberDatePickerState()
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDatePicker = false
+                    val ms = dpState.selectedDateMillis
+                    if (ms != null) { dateFilterMillis = ms }
+                }) { Text("Pilih", color = Color.White) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Batal", color = SoftText) }
             }
         ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = pagerState.currentPage == index,
-                    onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                    text = {
-                        Text(
-                            title,
-                            fontWeight = if (pagerState.currentPage == index) FontWeight.Black else FontWeight.Normal,
-                            color = if (pagerState.currentPage == index) Color.White else SoftText
-                        )
-                    }
-                )
-            }
-        }
-
-        // ── Pager content (swipe antar tab) ──
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize()
-        ) { page ->
-            when (page) {
-                0 -> DiscussionTab(api)
-                1 -> FAQTab(api)
-                2 -> SupportTab(api)
-            }
-        }
-    }
-}
-
-// ─── Discussion tab (reuse existing community logic, TTTappableCard for topics) ─
-@Composable
-private fun DiscussionTab(api: CommunityApi) {
-    val scope = rememberCoroutineScope()
-    var categories       by remember { mutableStateOf<List<CategoryItem>>(emptyList()) }
-    var selectedCategory by remember { mutableStateOf<CategoryItem?>(null) }
-    var topics           by remember { mutableStateOf<List<TopicItem>>(emptyList()) }
-    var selectedTopic    by remember { mutableStateOf<TopicItem?>(null) }
-    var posts            by remember { mutableStateOf<List<PostItem>>(emptyList()) }
-    var loading          by remember { mutableStateOf(true) }
-    var status           by remember { mutableStateOf("Memuat komunitas…") }
-    var title            by remember { mutableStateOf("") }
-    var body             by remember { mutableStateOf("") }
-    var reply            by remember { mutableStateOf("") }
-
-    fun loadPosts(topic: TopicItem) {
-        scope.launch {
-            try { posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) } }
-            catch (t: Throwable) { status = "Gagal memuat percakapan: ${t.message}" }
-        }
-    }
-    fun loadTopics() {
-        scope.launch {
-            try {
-                topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
-                status = if (topics.isEmpty()) "Belum ada topik." else "${topics.size} topik tersedia."
-            } catch (t: Throwable) { status = "Gagal memuat topik: ${t.message}" }
-        }
-    }
-    fun createTopic() {
-        val cat = selectedCategory ?: run { status = "Pilih saluran terlebih dahulu."; return }
-        if (title.trim().length < 4 || body.trim().isEmpty()) { status = "Judul minimal 4 karakter dan isi wajib diisi."; return }
-        scope.launch {
-            try {
-                val newTopic = withContext(Dispatchers.IO) { api.createTopic(cat.id, title, body) }
-                title = ""; body = ""
-                topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(cat.id)) }
-                selectedTopic = topics.firstOrNull { it.id == newTopic.optString("id") }
-                status = "Topik berhasil dibuat."
-            } catch (t: Throwable) { status = "Gagal: ${t.message}" }
-        }
-    }
-    fun sendReply() {
-        val topic = selectedTopic ?: run { status = "Pilih topik terlebih dahulu."; return }
-        if (reply.trim().isEmpty()) return
-        scope.launch {
-            try {
-                withContext(Dispatchers.IO) { api.createPost(topic.id, "", reply) }
-                reply = ""
-                posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) }
-            } catch (t: Throwable) { status = "Gagal mengirim: ${t.message}" }
+            DatePicker(state = dpState)
         }
     }
 
-    LaunchedEffect(Unit) {
-        try {
-            categories       = withContext(Dispatchers.IO) { jsonCategories(api.categories()) }
-            selectedCategory = categories.firstOrNull()
-            topics           = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
-            status           = if (topics.isEmpty()) "Belum ada topik." else "Siap."
-        } catch (t: Throwable) { status = "Error komunitas: ${t.message}" }
-        loading = false
-    }
-
-    Box(Modifier.fillMaxSize().padding(TTSpacing.lg)) {
-        if (loading) {
-            // Shimmer skeleton saat loading
-            Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
-                TTGameCardSkeleton()
-                TTGameCardSkeleton()
-                TTGameCardSkeleton()
-            }
-        } else {
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
-            ) {
-                ChannelPanel(categories, selectedCategory) { selectedCategory = it; selectedTopic = null; posts = emptyList(); loadTopics() }
-                TopicPanel(status, title, body, topics, selectedTopic,
-                    onTitle = { title = it }, onBody = { body = it },
-                    onCreate = { createTopic() }, onSelect = { t -> selectedTopic = t; loadPosts(t) })
-                ThreadPanel(selectedTopic, posts, reply, onReply = { reply = it }, onSend = { sendReply() })
-            }
-        }
-    }
-}
-
-// ─── FAQ tab (Supabase faq_items or static fallback) ───────────────────────────
-private data class FaqItem(val id: String, val question: String, val answer: String, val category: String)
-
-@Composable
-private fun FAQTab(api: CommunityApi) {
-    var items by remember { mutableStateOf<List<FaqItem>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    var expandedId by remember { mutableStateOf<String?>(null) }
-
-    // Static fallback (kalau Supabase faq_items tabel belum ada / kosong)
-    val staticFaqs = remember {
-        listOf(
-            FaqItem("static-1", "🛡 Cara aktifkan Shizuku?", "Buka Shizuku → Pairing/Start → kembali ke DLavie → Izinkan akses. Shizuku dipakai untuk patch file game tanpa root.", "setup"),
-            FaqItem("static-2", "📁 Apa itu Base Data?", "OBB dan data utama FIFA 16. Patch tidak bekerja kalau base belum lengkap. Buka FIFA 16 sekali untuk download OBB otomatis.", "setup"),
-            FaqItem("static-3", "🌐 Cara cek versi game?", "Buka tab Update. Local dan Latest dibandingkan dari backend Supabase. Kalau Latest > Local, ada patch yang bisa di-apply.", "update"),
-            FaqItem("static-4", "⚽ Kenapa game crash saat dibuka?", "Pastikan: (1) Base Data sudah terdownload, (2) patch sudah di-apply via tab Update, (3) storage permission granted. Kalau masih crash, hapus data game lalu reinstall patch.", "troubleshoot"),
-            FaqItem("static-5", "🔑 Lupa PIN launcher?", "Login ulang dengan email + password. Setelah login, PIN lama otomatis di-reset. Setup PIN baru di Profile → Akun & Keamanan.", "account"),
-            FaqItem("static-6", "👥 Cara gabung komunitas?", "Buka tab Komunitas → Diskusi. Pilih saluran (kategori) → buat topik baru atau reply topik existing. Butuh akun DLavie yang sudah login.", "community")
+    // ── Create post bottom sheet ──
+    if (showCreateSheet) {
+        CreatePostSheet(
+            api = api,
+            onDismiss = { showCreateSheet = false },
+            onPosted = {
+                showCreateSheet = false
+                toast("Post terkirim!")
+                loading = true
+                loadPosts()
+            },
+            onError = { msg -> toast(msg) }
         )
     }
 
-    LaunchedEffect(Unit) {
-        try {
-            val arr = withContext(Dispatchers.IO) { api.faqItems() }
-            val fetched = (0 until arr.length()).mapNotNull { i ->
-                runCatching {
-                    val o = arr.getJSONObject(i)
-                    FaqItem(
-                        id = o.optString("id"),
-                        question = o.optString("question"),
-                        answer = o.optString("answer"),
-                        category = o.optString("category", "general")
-                    )
-                }.getOrNull()
+    // ── Report dialog ──
+    reportTarget?.let { target ->
+        ReportPostDialog(
+            onDismiss = { reportTarget = null },
+            onSubmit = { category, reason ->
+                scope.launch {
+                    try {
+                        withContext(Dispatchers.IO) { api.reportPost(target.id, category, reason) }
+                        toast("Laporan terkirim. Terima kasih.")
+                    } catch (t: Throwable) {
+                        toast("Gagal melaporkan: ${t.message}")
+                    }
+                }
+                reportTarget = null
             }
-            items = if (fetched.isNotEmpty()) fetched else staticFaqs
-        } catch (_: Throwable) {
-            items = staticFaqs  // fail-open: pakai static FAQ
-        }
-        loading = false
+        )
     }
 
-    Box(Modifier.fillMaxSize().padding(TTSpacing.lg)) {
-        if (loading) {
-            Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
-                TTGameCardSkeleton()
-                TTGameCardSkeleton()
-                TTGameCardSkeleton()
+    Box(Modifier.fillMaxSize().background(Carbon)) {
+        // Subtle halftone texture behind the feed
+        HalftoneBackground(modifier = Modifier.fillMaxSize(), alpha = 0.3f)
+
+        Column(Modifier.fillMaxSize()) {
+            // ── Top Bar: role badge | tabs | filter icon ──
+            CommunityTopBar(
+                roleBadge = roleBadge,
+                roleColor = roleBadgeColor(role),
+                selectedTab = selectedTab,
+                onTabSelect = { selectedTab = it },
+                showFilterMenu = showFilterMenu,
+                onToggleFilter = { showFilterMenu = !showFilterMenu },
+                onFilterSelect = { choice ->
+                    showFilterMenu = false
+                    when (choice) {
+                        "newest"         -> { sortBy = "newest"; roleFilter = null; dateFilterMillis = null }
+                        "oldest"         -> { sortBy = "oldest"; roleFilter = null; dateFilterMillis = null }
+                        "role_admin"     -> roleFilter = "admin"
+                        "role_developer" -> roleFilter = "developer"
+                        "role_member"    -> roleFilter = "user"
+                        "date"           -> showDatePicker = true
+                    }
+                }
+            )
+
+            // ── Active filter chips row ──
+            if (roleFilter != null || dateFilterMillis != null) {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+                ) {
+                    if (roleFilter != null) {
+                        CommunityFilterChip(
+                            label = "Role: ${roleFilter!!.replaceFirstChar { it.uppercase() }}",
+                            onClear = { roleFilter = null }
+                        )
+                    }
+                    if (dateFilterMillis != null) {
+                        val dateStr = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault())
+                            .format(java.util.Date(dateFilterMillis!!))
+                        CommunityFilterChip(label = "Tanggal: $dateStr", onClear = { dateFilterMillis = null })
+                    }
+                }
             }
-        } else {
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)
-            ) {
-                TTSectionHeader(title = "Pertanyaan Umum", icon = Icons.Rounded.HelpOutline)
-                items.forEach { item ->
-                    TTTappableCard(
-                        onClick = { expandedId = if (expandedId == item.id) null else item.id }
-                    ) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                Modifier.size(32.dp)
-                                    .background(CandyCyan.copy(0.12f), TTShapes.small),
-                                contentAlignment = Alignment.Center
+
+            // ── Feed (pull-to-refresh + lazy list) — takes remaining space below top bar ──
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                PullToRefreshBox(
+                    isRefreshing = refreshing,
+                    onRefresh = {
+                        if (!refreshing) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            refreshing = true
+                            loadPosts()
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    when {
+                        loading -> {
+                            Column(
+                                Modifier.fillMaxSize().padding(TTSpacing.lg).verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
                             ) {
-                                Icon(Icons.Rounded.HelpOutline, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
+                                repeat(4) { TTGameCardSkeleton() }
                             }
-                            Spacer(Modifier.width(TTSpacing.md))
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    item.question,
-                                    color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                                    maxLines = if (expandedId == item.id) 10 else 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                if (expandedId == item.id) {
-                                    Spacer(Modifier.height(TTSpacing.xs))
-                                    Text(
-                                        item.answer,
-                                        color = SoftText, fontSize = 12.sp, lineHeight = 17.sp
+                        }
+                        posts.isEmpty() -> {
+                            CommunityEmptyState(
+                                isFollowing = selectedTab == 0,
+                                loggedIn = api.loggedIn(),
+                                errorMsg = errorMsg,
+                                onRetry = { loading = true; loadPosts() },
+                                onSwitchToForYou = { selectedTab = 1 }
+                            )
+                        }
+                        else -> {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(
+                                    start = TTSpacing.lg, end = TTSpacing.lg,
+                                    top = TTSpacing.md, bottom = 96.dp
+                                ),
+                                verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
+                            ) {
+                                items(posts, key = { it.id }) { post ->
+                                    val author = authorCache[post.authorId]
+                                    val like = likeState[post.id] ?: (false to 0)
+                                    val saved = savedState[post.id] ?: false
+                                    FeedPostCard(
+                                        post = post,
+                                        author = author,
+                                        liked = like.first,
+                                        likeCount = like.second,
+                                        saved = saved,
+                                        loggedIn = api.loggedIn(),
+                                        onLike = {
+                                            if (!api.loggedIn()) {
+                                                toast("Login dulu untuk like post")
+                                                return@FeedPostCard
+                                            }
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            val wasLiked = likeState[post.id]?.first ?: false
+                                            val curCount = likeState[post.id]?.second ?: 0
+                                            // Optimistic update
+                                            likeState = likeState + (post.id to (!wasLiked to (curCount + if (wasLiked) -1 else 1)))
+                                            scope.launch {
+                                                try {
+                                                    withContext(Dispatchers.IO) {
+                                                        if (wasLiked) api.unlikePost(post.id) else api.likePost(post.id)
+                                                    }
+                                                } catch (t: Throwable) {
+                                                    // Revert
+                                                    likeState = likeState + (post.id to (wasLiked to curCount))
+                                                    toast("Gagal: ${t.message}")
+                                                }
+                                            }
+                                        },
+                                        onSave = {
+                                            if (!api.loggedIn()) {
+                                                toast("Login dulu untuk menyimpan post")
+                                                return@FeedPostCard
+                                            }
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            val wasSaved = savedState[post.id] ?: false
+                                            savedState = savedState + (post.id to !wasSaved)
+                                            scope.launch {
+                                                try {
+                                                    withContext(Dispatchers.IO) {
+                                                        if (wasSaved) api.unsavePost(post.id) else api.savePost(post.id)
+                                                    }
+                                                    toast(if (wasSaved) "Post dihapus dari simpanan." else "Post disimpan.")
+                                                } catch (t: Throwable) {
+                                                    savedState = savedState + (post.id to wasSaved)
+                                                    toast("Gagal: ${t.message}")
+                                                }
+                                            }
+                                        },
+                                        onShare = {
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_TEXT,
+                                                    "${post.title}\n\n${post.body}\n\n— via DLavie 26 Launcher")
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Bagikan Post"))
+                                        },
+                                        onReport = { reportTarget = post }
                                     )
                                 }
                             }
-                            Icon(
-                                if (expandedId == item.id) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                                null, tint = SoftText, modifier = Modifier.size(20.dp)
+                        }
+                    }
+                }
+
+                // ── FAB: create new post (bottom-right, circular white bg + black +) ──
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = TTSpacing.xl, bottom = TTSpacing.xxl)
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            if (!api.loggedIn()) {
+                                toast("Login dulu untuk membuat post")
+                            } else {
+                                showCreateSheet = true
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = "Buat post baru",
+                        tint = Color.Black, modifier = Modifier.size(28.dp))
+                }
+            }
+        }
+    }
+}
+
+// ─── Top bar: role badge + tabs + filter dropdown ──────────────────────────────
+@Composable
+private fun CommunityTopBar(
+    roleBadge: String,
+    roleColor: Color,
+    selectedTab: Int,
+    onTabSelect: (Int) -> Unit,
+    showFilterMenu: Boolean,
+    onToggleFilter: () -> Unit,
+    onFilterSelect: (String) -> Unit
+) {
+    Box {
+        Row(
+            Modifier.fillMaxWidth()
+                .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Left: user role badge
+            Surface(
+                color = roleColor.copy(0.15f),
+                border = BorderStroke(1.dp, roleColor.copy(0.40f)),
+                shape = TTShapes.chip
+            ) {
+                Text(
+                    roleBadge,
+                    color = roleColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                )
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // Center: tabs (Following | For You) — underline active
+            Row(horizontalArrangement = Arrangement.spacedBy(TTSpacing.lg)) {
+                CommunityTab("Following", selectedTab == 0) { onTabSelect(0) }
+                CommunityTab("For You", selectedTab == 1) { onTabSelect(1) }
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // Right: filter icon + dropdown
+            Box {
+                Box(
+                    Modifier.size(36.dp).clip(CircleShape)
+                        .background(Surface2)
+                        .clickable { onToggleFilter() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.FilterList, contentDescription = "Filter",
+                        tint = Color.White, modifier = Modifier.size(20.dp))
+                }
+                DropdownMenu(
+                    expanded = showFilterMenu,
+                    onDismissRequest = { onToggleFilter() }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Terbaru", color = Color.White, fontSize = 13.sp) },
+                        onClick = { onFilterSelect("newest") }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Terlama", color = Color.White, fontSize = 13.sp) },
+                        onClick = { onFilterSelect("oldest") }
+                    )
+                    Box(Modifier.height(1.dp).fillMaxWidth().background(Color.White.copy(0.08f)))
+                    DropdownMenuItem(
+                        text = { Text("By Role: Admin", color = Color.White, fontSize = 13.sp) },
+                        onClick = { onFilterSelect("role_admin") }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("By Role: Developer", color = Color.White, fontSize = 13.sp) },
+                        onClick = { onFilterSelect("role_developer") }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("By Role: Member", color = Color.White, fontSize = 13.sp) },
+                        onClick = { onFilterSelect("role_member") }
+                    )
+                    Box(Modifier.height(1.dp).fillMaxWidth().background(Color.White.copy(0.08f)))
+                    DropdownMenuItem(
+                        text = { Text("By Date…", color = Color.White, fontSize = 13.sp) },
+                        trailingIcon = { Icon(Icons.Rounded.CalendarMonth, null, tint = SoftText, modifier = Modifier.size(16.dp)) },
+                        onClick = { onFilterSelect("date") }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommunityTab(label: String, active: Boolean, onClick: () -> Unit) {
+    Column(
+        Modifier.clickable(onClick = onClick).padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            label,
+            color = if (active) Color.White else SubText,
+            fontSize = 15.sp,
+            fontWeight = if (active) FontWeight.Black else FontWeight.SemiBold
+        )
+        Spacer(Modifier.height(4.dp))
+        Box(
+            Modifier
+                .width(if (active) 24.dp else 0.dp)
+                .height(2.dp)
+                .background(Color.White, RoundedCornerShape(2.dp))
+        )
+    }
+}
+
+// ─── Active filter chip (clearable) ────────────────────────────────────────────
+@Composable
+private fun CommunityFilterChip(label: String, onClear: () -> Unit) {
+    Surface(
+        color = CandyCyan.copy(0.10f),
+        border = BorderStroke(1.dp, CandyCyan.copy(0.30f)),
+        shape = TTShapes.chip
+    ) {
+        Row(
+            Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Box(
+                Modifier.size(16.dp).clip(CircleShape).clickable { onClear() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.Close, contentDescription = "Hapus filter",
+                    tint = SoftText, modifier = Modifier.size(12.dp))
+            }
+        }
+    }
+}
+
+// ─── Feed post card (TapTap-style) ─────────────────────────────────────────────
+@Composable
+private fun FeedPostCard(
+    post: FeedPostData,
+    author: AuthorInfo?,
+    liked: Boolean,
+    likeCount: Int,
+    saved: Boolean,
+    loggedIn: Boolean,
+    onLike: () -> Unit,
+    onSave: () -> Unit,
+    onShare: () -> Unit,
+    onReport: () -> Unit
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    // Like bounce: scale up briefly when liked toggles
+    val likeScale by animateFloatAsState(
+        targetValue = if (liked) 1.15f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "like_bounce"
+    )
+
+    TTTappableCard(onClick = { /* future: open post detail */ }) {
+        Column(Modifier.fillMaxWidth()) {
+            // Optional image banner (16:9) — Coil AsyncImage
+            if (post.imageUrl.isNotBlank()) {
+                AsyncImage(
+                    model = post.imageUrl,
+                    contentDescription = post.title,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                )
+            }
+
+            Column(Modifier.padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md)) {
+                // Pinned / official badges row
+                if (post.pinned || post.official) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (post.pinned) {
+                            Surface(color = AmberWarn.copy(0.15f), shape = TTShapes.chip) {
+                                Row(Modifier.padding(horizontal = 7.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.PushPin, null, tint = AmberWarn, modifier = Modifier.size(10.dp))
+                                    Spacer(Modifier.width(3.dp))
+                                    Text("PINNED", color = AmberWarn, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
+                        if (post.official) {
+                            Surface(color = NeonGreen.copy(0.15f), shape = TTShapes.chip) {
+                                Row(Modifier.padding(horizontal = 7.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.Verified, null, tint = NeonGreen, modifier = Modifier.size(10.dp))
+                                    Spacer(Modifier.width(3.dp))
+                                    Text("OFFICIAL", color = NeonGreen, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(TTSpacing.sm))
+                }
+
+                // Title (bold white, 15sp)
+                Text(
+                    post.title,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // Body preview (gray, 13sp, 2 lines)
+                if (post.body.isNotBlank()) {
+                    Spacer(Modifier.height(TTSpacing.xs))
+                    Text(
+                        post.body,
+                        color = SoftText,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(Modifier.height(TTSpacing.md))
+
+                // Author + timestamp + like + menu
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Avatar (circular, initial letter with gradient)
+                    AuthorAvatar(author = author)
+                    Spacer(Modifier.width(TTSpacing.sm))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            author?.displayName?.ifBlank { author.username } ?: "Anonim",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Schedule, null, tint = SubText, modifier = Modifier.size(11.dp))
+                            Spacer(Modifier.width(3.dp))
+                            Text(relativeTime(post.createdAt), color = SubText, fontSize = 10.sp)
+                            if (post.type.isNotBlank() && post.type != "community") {
+                                Text(" · ${post.type}", color = SubText, fontSize = 10.sp)
+                            }
+                        }
+                    }
+
+                    // Like button (thumbs up + count) with bounce
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .clip(TTShapes.chip)
+                            .clickable { onLike() }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            if (liked) Icons.Rounded.ThumbUp else Icons.Rounded.ThumbUpOffAlt,
+                            contentDescription = "Like",
+                            tint = if (liked) NeonGreen else SoftText,
+                            modifier = Modifier.size(18.dp).scale(likeScale)
+                        )
+                        Text(
+                            if (likeCount > 0) likeCount.toString() else "",
+                            color = if (liked) NeonGreen else SoftText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(Modifier.width(TTSpacing.xs))
+
+                    // Three-dot menu (⋮)
+                    Box {
+                        Box(
+                            Modifier.size(32.dp).clip(CircleShape).clickable { menuOpen = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.MoreVert, contentDescription = "Menu",
+                                tint = SoftText, modifier = Modifier.size(18.dp))
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("🚩 Lapor", color = Color.White, fontSize = 13.sp) },
+                                onClick = { menuOpen = false; onReport() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("📤 Bagikan", color = Color.White, fontSize = 13.sp) },
+                                onClick = { menuOpen = false; onShare() }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (saved) "🔖 Hapus Simpanan" else "🔖 Simpan",
+                                        color = Color.White, fontSize = 13.sp
+                                    )
+                                },
+                                onClick = { menuOpen = false; onSave() }
                             )
                         }
                     }
@@ -3243,142 +3744,335 @@ private fun FAQTab(api: CommunityApi) {
     }
 }
 
-// ─── Support tab (Supabase support_tickets or empty state) ─────────────────────
-private data class SupportTicket(
-    val id: String, val subject: String, val body: String,
-    val status: String, val priority: String, val createdAt: String
-)
-
+// ─── Author avatar (circular, initial letter with gradient) ────────────────────
 @Composable
-private fun SupportTab(api: CommunityApi) {
-    var tickets by remember { mutableStateOf<List<SupportTicket>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf("") }
-
-    LaunchedEffect(Unit) {
-        try {
-            val arr = withContext(Dispatchers.IO) { api.supportTickets() }
-            tickets = (0 until arr.length()).mapNotNull { i ->
-                runCatching {
-                    val o = arr.getJSONObject(i)
-                    SupportTicket(
-                        id = o.optString("id"),
-                        subject = o.optString("subject", "(Tanpa subjek)"),
-                        body = o.optString("body", ""),
-                        status = o.optString("status", "open"),
-                        priority = o.optString("priority", "normal"),
-                        createdAt = o.optString("created_at", "").take(10)
-                    )
-                }.getOrNull()
-            }
-        } catch (t: Throwable) {
-            error = t.message ?: "Gagal memuat tiket support"
-        }
-        loading = false
-    }
-
-    Box(Modifier.fillMaxSize().padding(TTSpacing.lg)) {
-        if (loading) {
-            Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
-                TTGameCardSkeleton()
-                TTGameCardSkeleton()
-                TTGameCardSkeleton()
-            }
-        } else if (tickets.isEmpty()) {
-            // Empty state
-            Column(
-                Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(Icons.Rounded.SupportAgent, null, tint = SubText, modifier = Modifier.size(64.dp))
-                Spacer(Modifier.height(TTSpacing.lg))
-                Text("Belum ada tiket support", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                Spacer(Modifier.height(TTSpacing.xs))
-                Text(
-                    if (error.isNotEmpty()) "Tiket support belum tersedia di akun ini.\n$error"
-                    else "Kalau kamu butuh bantuan, hubungi developer via komunitas atau email support@dlavie.com.",
-                    color = SoftText, fontSize = 12.sp, lineHeight = 17.sp,
-                    textAlign = TextAlign.Center
-                )
-            }
+private fun AuthorAvatar(author: AuthorInfo?) {
+    val name = author?.displayName?.ifBlank { author.username } ?: "A"
+    val initial = name.firstOrNull()?.uppercaseChar()?.toString() ?: "A"
+    val avatarUrl = author?.avatarUrl ?: ""
+    Box(
+        Modifier.size(28.dp).clip(CircleShape)
+            .background(Brush.linearGradient(listOf(CandyCyan, CandyBlue))),
+        contentAlignment = Alignment.Center
+    ) {
+        if (avatarUrl.isNotBlank()) {
+            AsyncImage(
+                model = avatarUrl,
+                contentDescription = name,
+                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+            )
         } else {
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)
-            ) {
-                TTSectionHeader(title = "Tiket Support Kamu", icon = Icons.Rounded.SupportAgent)
-                tickets.forEach { t ->
-                    val statusColor = when (t.status.lowercase()) {
-                        "open" -> AmberWarn
-                        "in_progress", "pending" -> CandyCyan
-                        "resolved", "closed" -> NeonGreen
-                        else -> SoftText
-                    }
-                    val priorityColor = when (t.priority.lowercase()) {
-                        "urgent", "high" -> DangerRed
-                        "normal", "medium" -> AmberWarn
-                        "low" -> SubText
-                        else -> SoftText
-                    }
-                    TTTappableCard(onClick = { /* future: open ticket detail */ }) {
-                        Column(Modifier.fillMaxWidth().padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    Modifier.size(32.dp)
-                                        .background(statusColor.copy(0.12f), TTShapes.small),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Rounded.SupportAgent, null, tint = statusColor, modifier = Modifier.size(18.dp))
-                                }
-                                Spacer(Modifier.width(TTSpacing.md))
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        t.subject,
-                                        color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text("#${t.id.take(8)} · ${t.createdAt}", color = SubText, fontSize = 10.sp)
-                                }
-                                // Status pill
-                                Surface(
-                                    color = statusColor.copy(0.12f),
-                                    border = BorderStroke(1.dp, statusColor.copy(0.35f)),
-                                    shape = TTShapes.chip
-                                ) {
-                                    Text(
-                                        t.status.uppercase(),
-                                        color = statusColor, fontSize = 9.sp, fontWeight = FontWeight.Black,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                    )
-                                }
-                            }
-                            if (t.body.isNotEmpty()) {
-                                Spacer(Modifier.height(TTSpacing.xs))
-                                Text(
-                                    t.body,
-                                    color = SoftText, fontSize = 11.sp, lineHeight = 15.sp,
-                                    maxLines = 2, overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            Spacer(Modifier.height(TTSpacing.xs))
-                            // Priority pill
-                            Surface(
-                                color = priorityColor.copy(0.10f),
-                                border = BorderStroke(1.dp, priorityColor.copy(0.30f)),
-                                shape = TTShapes.chip
-                            ) {
-                                Text(
-                                    "PRIORITY: ${t.priority.uppercase()}",
-                                    color = priorityColor, fontSize = 9.sp, fontWeight = FontWeight.Black,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                )
-                            }
-                        }
+            Text(initial, color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Black)
+        }
+    }
+}
+
+// ─── Empty state ───────────────────────────────────────────────────────────────
+@Composable
+private fun CommunityEmptyState(
+    isFollowing: Boolean,
+    loggedIn: Boolean,
+    errorMsg: String,
+    onRetry: () -> Unit,
+    onSwitchToForYou: () -> Unit
+) {
+    Column(
+        Modifier.fillMaxSize().padding(TTSpacing.xl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            if (isFollowing) Icons.Rounded.AccountCircle else Icons.Rounded.Article,
+            contentDescription = null,
+            tint = SubText,
+            modifier = Modifier.size(64.dp)
+        )
+        Spacer(Modifier.height(TTSpacing.lg))
+        Text(
+            if (isFollowing) "Belum ada post dari yang kamu follow"
+            else "Belum ada post",
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Black,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(TTSpacing.xs))
+        Text(
+            when {
+                errorMsg.isNotEmpty() -> errorMsg
+                isFollowing && !loggedIn -> "Login dulu, lalu follow user lain untuk melihat post mereka di sini."
+                isFollowing -> "Follow user lain untuk melihat post mereka di sini."
+                else -> "Jadilah yang pertama membuat post di komunitas DLavie 26."
+            },
+            color = SoftText,
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(TTSpacing.lg))
+        Button(
+            onClick = { if (isFollowing) onSwitchToForYou() else onRetry() },
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+            shape = TTShapes.button
+        ) {
+            Text(
+                if (isFollowing) "Lihat For You" else "Coba lagi",
+                fontSize = 12.sp, fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+// ─── Create post bottom sheet ──────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CreatePostSheet(
+    api: CommunityApi,
+    onDismiss: () -> Unit,
+    onPosted: () -> Unit,
+    onError: (String) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var title by remember { mutableStateOf("") }
+    var body by remember { mutableStateOf("") }
+    var imageUrl by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("community") }
+    var typeMenuOpen by remember { mutableStateOf(false) }
+    var posting by remember { mutableStateOf(false) }
+
+    val types = listOf("community" to "Community", "developer" to "Developer",
+        "update" to "Update", "tutorial" to "Tutorial", "bugfix" to "Bugfix")
+    val typeLabel = types.firstOrNull { it.first == type }?.second ?: "Community"
+
+    ModalBottomSheet(
+        onDismissRequest = { if (!posting) onDismiss() },
+        sheetState = sheetState,
+        containerColor = GlassBase,
+        dragHandle = null
+    ) {
+        Column(
+            Modifier.fillMaxWidth().imePadding()
+                .padding(horizontal = TTSpacing.xl, vertical = TTSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
+        ) {
+            // Header
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Buat Post Baru", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.weight(1f))
+                Box(
+                    Modifier.size(32.dp).clip(CircleShape).clickable { if (!posting) onDismiss() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Tutup", tint = SoftText, modifier = Modifier.size(20.dp))
+                }
+            }
+
+            // Title input
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                label = { Text("Judul (wajib)", fontSize = 12.sp, color = SubText) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = TTShapes.input,
+                singleLine = true,
+                textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Next)
+            )
+
+            // Body input (multiline)
+            OutlinedTextField(
+                value = body,
+                onValueChange = { body = it },
+                label = { Text("Deskripsi (wajib)", fontSize = 12.sp, color = SubText) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+                shape = TTShapes.input,
+                minLines = 4,
+                textStyle = TextStyle(color = Color.White, fontSize = 14.sp, lineHeight = 19.sp),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+            )
+
+            // Image URL input (optional — Phase 1: paste URL)
+            OutlinedTextField(
+                value = imageUrl,
+                onValueChange = { imageUrl = it },
+                label = { Text("URL Gambar (opsional)", fontSize = 12.sp, color = SubText) },
+                leadingIcon = { Icon(Icons.Rounded.Image, null, tint = SubText, modifier = Modifier.size(18.dp)) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = TTShapes.input,
+                singleLine = true,
+                textStyle = TextStyle(color = Color.White, fontSize = 13.sp)
+            )
+
+            // Type dropdown
+            Box {
+                OutlinedTextField(
+                    value = typeLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Tipe Post", fontSize = 12.sp, color = SubText) },
+                    modifier = Modifier.fillMaxWidth().clickable { typeMenuOpen = true },
+                    shape = TTShapes.input,
+                    singleLine = true,
+                    trailingIcon = {
+                        Icon(if (typeMenuOpen) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            null, tint = SoftText, modifier = Modifier.size(18.dp))
+                    },
+                    textStyle = TextStyle(color = Color.White, fontSize = 14.sp)
+                )
+                DropdownMenu(expanded = typeMenuOpen, onDismissRequest = { typeMenuOpen = false }) {
+                    types.forEach { (value, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label, color = Color.White, fontSize = 13.sp) },
+                            onClick = { type = value; typeMenuOpen = false }
+                        )
                     }
                 }
             }
+
+            // Post button
+            Button(
+                onClick = {
+                    if (title.trim().length < 3) { onError("Judul minimal 3 karakter."); return@Button }
+                    if (body.trim().isEmpty()) { onError("Deskripsi wajib diisi."); return@Button }
+                    if (posting) return@Button
+                    posting = true
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                api.createFeedPost(title, body, imageUrl, type)
+                            }
+                            onPosted()
+                        } catch (t: Throwable) {
+                            onError("Gagal membuat post: ${t.message}")
+                        } finally {
+                            posting = false
+                        }
+                    }
+                },
+                enabled = !posting,
+                modifier = Modifier.fillMaxWidth(),
+                shape = TTShapes.button,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
+            ) {
+                if (posting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.Black,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text("Posting", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
         }
+    }
+}
+
+// ─── Report post dialog ────────────────────────────────────────────────────────
+@Composable
+private fun ReportPostDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (category: String, reason: String) -> Unit
+) {
+    val reasons = listOf("spam" to "Spam", "inappropriate" to "Konten tidak pantas", "other" to "Lainnya")
+    var selected by remember { mutableStateOf("spam") }
+    var detail by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Laporkan Post", color = Color.White, fontWeight = FontWeight.Black) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
+                Text("Pilih alasan:", color = SoftText, fontSize = 12.sp)
+                reasons.forEach { (value, label) ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { selected = value }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = selected == value,
+                            onClick = { selected = value },
+                            colors = RadioButtonDefaults.colors(selectedColor = Color.White, unselectedColor = SubText)
+                        )
+                        Spacer(Modifier.width(TTSpacing.sm))
+                        Text(label, color = Color.White, fontSize = 13.sp)
+                    }
+                }
+                OutlinedTextField(
+                    value = detail,
+                    onValueChange = { detail = it },
+                    label = { Text("Detail (opsional)", fontSize = 12.sp, color = SubText) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = TTShapes.input,
+                    minLines = 2,
+                    textStyle = TextStyle(color = Color.White, fontSize = 13.sp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSubmit(selected, detail) }) {
+                Text("Kirim Laporan", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Batal", color = SoftText) }
+        },
+        containerColor = GlassBase
+    )
+}
+
+// ─── Community feed data models ────────────────────────────────────────────────
+private data class FeedPostData(
+    val id: String,
+    val authorId: String,
+    val title: String,
+    val body: String,
+    val imageUrl: String,
+    val type: String,
+    val pinned: Boolean,
+    val official: Boolean,
+    val createdAt: String
+)
+
+private data class AuthorInfo(
+    val id: String,
+    val username: String,
+    val displayName: String,
+    val avatarUrl: String,
+    val role: String
+)
+
+// ─── Time helpers (SimpleDateFormat — safe on all API levels incl. 24/25) ──────
+/** Parse an ISO-8601 timestamptz (Supabase) to epoch millis (UTC). Returns 0 on failure. */
+fun parseIsoToMillis(iso: String): Long {
+    if (iso.isBlank()) return 0L
+    return try {
+        // Truncate to "yyyy-MM-dd'T'HH:mm:ss" (drop fractional + tz offset), assume UTC.
+        val core = iso.substringBefore('.').substringBefore('+').take(19)
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        sdf.parse(core)?.time ?: 0L
+    } catch (_: Throwable) { 0L }
+}
+
+/** Relative time in Indonesian: "baru saja" / "Xm" / "Xj" / "Xd" / date. */
+fun relativeTime(iso: String): String {
+    val ts = parseIsoToMillis(iso)
+    if (ts == 0L) return ""
+    val diff = System.currentTimeMillis() - ts
+    if (diff < 0) return "baru saja"
+    val mins  = diff / 60_000L
+    val hours = diff / 3_600_000L
+    val days  = diff / 86_400_000L
+    return when {
+        mins  < 1   -> "baru saja"
+        mins  < 60  -> "${mins}m"
+        hours < 24  -> "${hours}j"
+        days  < 30  -> "${days}d"
+        else        -> iso.take(10)
     }
 }
 
