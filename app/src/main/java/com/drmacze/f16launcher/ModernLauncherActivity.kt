@@ -846,19 +846,22 @@ fun GlassInfoBox(icon: ImageVector, color: Color, text: String) {
 }
 
 // ─── Update & Data screen ─────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UpdateScreen(onNav: (Page) -> Unit) {
     val context       = LocalContext.current
-    val gameInstalled = remember { isGameInstalled(context) }
-    var marker        by remember { mutableStateOf(readMarker()) }
-    val dataReady     = marker.startsWith("v26", ignoreCase = true)
-    var updateInfo    by remember { mutableStateOf<UpdateInfo?>(null) }
-    var loading       by remember { mutableStateOf(true) }
-    var updateError   by remember { mutableStateOf("") }
-    val scope         = rememberCoroutineScope()
+    // NOTE: All I/O moved to LaunchedEffect below — don't block main thread during composition.
+    // Initialize with safe defaults; real values populate from background.
+    var gameInstalled   by remember { mutableStateOf(false) }
+    var marker          by remember { mutableStateOf("") }
+    val dataReady       = marker.startsWith("v26", ignoreCase = true)
+    var updateInfo      by remember { mutableStateOf<UpdateInfo?>(null) }
+    var loading         by remember { mutableStateOf(true) }
+    var updateError     by remember { mutableStateOf("") }
+    val scope           = rememberCoroutineScope()
 
-    // All-Files Access permission state (for direct patch without Shizuku)
-    var filesAccessGranted by remember { mutableStateOf(StorageAccess.isGranted()) }
+    // All-Files Access permission state — loaded async
+    var filesAccessGranted by remember { mutableStateOf(false) }
 
     val patchLogs  = remember { mutableStateListOf<String>() }
     var patching   by remember { mutableStateOf(false) }
@@ -869,7 +872,7 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
     var patchDone  by remember { mutableStateOf(false) }
     var showLog    by remember { mutableStateOf(false) }
 
-    // Storage & backup state
+    // Storage & backup state — loaded async
     var freeBytes       by remember { mutableStateOf(0L) }
     var totalBytes      by remember { mutableStateOf(0L) }
     var backupCount     by remember { mutableStateOf(0) }
@@ -888,19 +891,35 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
         )
     }
 
+    // ── Async loaders — all I/O on Dispatchers.IO, never block main thread ──
+
+    /** Reload storage info + backup list in background. */
     fun refreshStorage() {
-        freeBytes = GameUtils.freeBytesSdcard()
-        totalBytes = GameUtils.totalBytesSdcard()
-        val backups = GameUtils.listBackups()
-        backupCount = backups.size
-        backupTotalSize = GameUtils.totalBackupSize()
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    freeBytes = GameUtils.freeBytesSdcard()
+                    totalBytes = GameUtils.totalBytesSdcard()
+                    val backups = GameUtils.listBackups()
+                    backupCount = backups.size
+                    // Use sum of backups already listed — avoid walking folder twice
+                    backupTotalSize = backups.sumOf { it.totalSize }
+                }
+            }
+        }
     }
 
+    /** Reload marker + storage (called after patch apply). */
     fun refresh() {
-        marker = readMarker()
-        refreshStorage()
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching { marker = readMarker() }
+            }
+            refreshStorage()
+        }
     }
 
+    /** Fetch update manifest from server. */
     fun checkUpdate() {
         loading = true; updateError = ""
         scope.launch {
@@ -921,9 +940,23 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
         }
     }
 
+    // ── Initial load: ALL heavy I/O in a single LaunchedEffect on IO dispatcher ──
     LaunchedEffect(Unit) {
+        // Load local state first (fast ops, but still off main thread)
+        withContext(Dispatchers.IO) {
+            runCatching { gameInstalled = isGameInstalled(context) }
+            runCatching { marker = readMarker() }
+            runCatching { filesAccessGranted = StorageAccess.isGranted() }
+            runCatching {
+                freeBytes = GameUtils.freeBytesSdcard()
+                totalBytes = GameUtils.totalBytesSdcard()
+                val backups = GameUtils.listBackups()
+                backupCount = backups.size
+                backupTotalSize = backups.sumOf { it.totalSize }
+            }
+        }
+        // Then fetch network data (slow op)
         checkUpdate()
-        refreshStorage()
     }
 
     Column(
@@ -1499,7 +1532,11 @@ fun CommunityScreen(api: CommunityApi) {
 @Composable
 fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
     val context       = LocalContext.current
-    val gameInstalled = remember { isGameInstalled(context) }
+    // Load gameInstalled async to avoid blocking main thread
+    var gameInstalled by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { runCatching { gameInstalled = isGameInstalled(context) } }
+    }
     var confirmLogout by remember { mutableStateOf(false) }
     val initial = api.displayName().firstOrNull()?.uppercaseChar()?.toString() ?: "D"
     val role    = api.role()
