@@ -20,8 +20,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class CommunityApi {
-    public static final String SUPABASE_URL = "https://dlbayuearegnpmgbxgcf.supabase.co";
-    public static final String SUPABASE_KEY = "sb_publishable_WTcSMf6hCutn5x-Ewd1iOQ_Qc8_dOq4";
+    public static final String SUPABASE_URL = "https://lvmucsxbmadtsgrxuwmo.supabase.co";
+    public static final String SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2bXVjc3hibWFkdHNncnh1d21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODUyODksImV4cCI6MjA5ODU2MTI4OX0.y-1sE6uYTn4Wbter6g6NozY6uojzD5x9YVeYif-5nJs";
 
     private final SharedPreferences prefs;
 

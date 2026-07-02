@@ -11,11 +11,11 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 35
-        versionCode 59
-        versionName '1.1.0-clean-splash'
-        buildConfigField "String", "SUPABASE_URL", '"https://dlbayuearegnpmgbxgcf.supabase.co"'
-        buildConfigField "String", "SUPABASE_ANON_KEY", '"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRsYmF5dWVhcmVnbnBtZ2J4Z2NmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxOTg3NTMsImV4cCI6MjA5MTc3NDc1M30.-3TazMdyoJJ6F8GKmrh2aMMDNK3gFN8NAJMvLB0D0iU"'
-        buildConfigField "String", "SUPABASE_PUB_KEY", '"sb_publishable_WTcSMf6hCutn5x-Ewd1iOQ_Qc8_dOq4"'
+        versionCode 60
+        versionName '1.1.1-supabase-migrate'
+        buildConfigField "String", "SUPABASE_URL", '"https://lvmucsxbmadtsgrxuwmo.supabase.co"'
+        buildConfigField "String", "SUPABASE_ANON_KEY", '"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2bXVjc3hibWFkdHNncnh1d21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODUyODksImV4cCI6MjA5ODU2MTI4OX0.y-1sE6uYTn4Wbter6g6NozY6uojzD5x9YVeYif-5nJs"'
+        buildConfigField "String", "SUPABASE_PUB_KEY", '"sb_publishable_aYFlbWVJMErOHwPsli33QQ_INJD9mhx"'
     }
 
     compileOptions {
