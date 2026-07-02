@@ -100,7 +100,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -127,18 +129,7 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 
-// ─── Design tokens ─────────────────────────────────────────────────────────────
-val Carbon      = Color(0xFF040810)
-val GlassBase   = Color(0xFF0C1422)
-val Surface2    = Color(0xFF111C2E)
-val CandyCyan   = Color(0xFF27C8FF)
-val CandyBlue   = Color(0xFF5F57FF)
-val NeonGreen   = Color(0xFF1FDD90)
-val SoftText    = Color(0xFF8899B0)
-val SubText     = Color(0xFF556070)
-val GlassStroke = Color(0x305D8DFF)
-val DangerRed   = Color(0xFFFF4D6D)
-val AmberWarn   = Color(0xFFFF9A30)
+// Design tokens sekarang ada di ModernUI.kt (premium palette v2.0)
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 private const val GAME_PKG         = "com.ea.gp.fifaworld"
@@ -276,7 +267,18 @@ fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
         AnimatedContent(
             targetState    = page,
             label          = "page_anim",
-            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
+            transitionSpec = {
+                (fadeIn(tween(380, easing = FastOutSlowInEasing)) +
+                 androidx.compose.animation.slideInHorizontally(
+                     initialOffsetX = { it / 12 },
+                     animationSpec = tween(380, easing = FastOutSlowInEasing)
+                 )) togetherWith
+                (fadeOut(tween(220)) +
+                 androidx.compose.animation.slideOutHorizontally(
+                     targetOffsetX = { -it / 24 },
+                     animationSpec = tween(280, easing = FastOutSlowInEasing)
+                 ))
+            },
             modifier       = Modifier.fillMaxSize().padding(bottom = 100.dp)
         ) { target ->
             when (target) {
@@ -296,75 +298,108 @@ fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
     }
 }
 
-// ─── Floating navigation bar ──────────────────────────────────────────────────
+// ─── Floating navigation bar (modern v2) ───────────────────────────────────────
 @Composable
 fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifier) {
     val infiniteTransition = rememberInfiniteTransition(label = "nav_glow")
     val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 0.65f,
-        animationSpec = infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        initialValue = 0.4f, targetValue = 0.75f,
+        animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "glow"
     )
 
     Box(modifier = modifier.widthIn(max = 600.dp).padding(horizontal = 16.dp)) {
-        // Glow backdrop
+        // Multi-layer glow backdrop (cyan + violet)
         Box(
             Modifier.matchParentSize()
                 .clip(RoundedCornerShape(36.dp))
-                .background(CandyBlue.copy(alpha = glowAlpha * 0.18f))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            CandyCyan.copy(alpha = glowAlpha * 0.10f),
+                            CandyBlue.copy(alpha = glowAlpha * 0.18f),
+                            PremiumViolet.copy(alpha = glowAlpha * 0.10f)
+                        )
+                    )
+                )
+                .blur(20.dp)
         )
         Surface(
             shape           = RoundedCornerShape(36.dp),
-            color           = Color(0xF00B1628),
-            border          = BorderStroke(1.dp, GlassStroke),
+            color           = Color(0xF00B1320),
+            border          = BorderStroke(1.dp, Brush.horizontalGradient(
+                listOf(GlassStroke, CandyCyan.copy(0.25f), GlassStroke)
+            )),
             shadowElevation = 24.dp,
             tonalElevation  = 0.dp
         ) {
             Row(
-                Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Page.values().forEach { item ->
-                    val selected   = page == item
-                    val bgAnim     by animateColorAsState(
-                        if (selected) CandyBlue else Color.Transparent,
-                        tween(300), label = "nav_bg"
+                    val selected  = page == item
+                    val bgAnim    by animateColorAsState(
+                        if (selected) CandyCyan else Color.Transparent,
+                        tween(380, easing = FastOutSlowInEasing), label = "nav_bg_${item.label}"
                     )
-                    val iconTint   by animateColorAsState(
-                        if (selected) Color.White else SubText,
-                        tween(300), label = "nav_tint"
+                    val iconTint  by animateColorAsState(
+                        if (selected) Carbon else SubText,
+                        tween(380, easing = FastOutSlowInEasing), label = "nav_tint_${item.label}"
                     )
-                    val scaleAnim  by animateFloatAsState(
-                        if (selected) 1f else 0.9f, tween(250), label = "nav_scale"
+                    val labelAlpha by animateFloatAsState(
+                        if (selected) 1f else 0.7f,
+                        tween(280), label = "nav_alpha_${item.label}"
+                    )
+                    val scaleAnim by animateFloatAsState(
+                        if (selected) 1f else 0.92f, tween(280, easing = FastOutSlowInEasing),
+                        label = "nav_scale_${item.label}"
+                    )
+                    val iconScale by animateFloatAsState(
+                        if (selected) 1.1f else 1f, tween(280, easing = FastOutSlowInEasing),
+                        label = "nav_iconscale_${item.label}"
                     )
 
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(58.dp)
+                            .height(56.dp)
                             .scale(scaleAnim)
                             .clip(RoundedCornerShape(28.dp))
-                            .background(bgAnim)
+                            .background(
+                                if (selected) Brush.horizontalGradient(
+                                    listOf(CandyCyan, CandyBlue.copy(0.85f))
+                                )
+                                else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
+                            )
                             .clickable { onPage(item) },
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
                                 item.navIcon,
                                 contentDescription = item.label,
                                 tint     = iconTint,
-                                modifier = Modifier.size(if (selected) 22.dp else 20.dp)
+                                modifier = Modifier.size(20.dp).scale(iconScale)
                             )
-                            Text(
-                                item.label,
-                                fontSize   = if (selected) 10.sp else 9.sp,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                color      = iconTint,
-                                maxLines   = 1
-                            )
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = selected,
+                                enter = androidx.compose.animation.fadeIn(tween(200)) +
+                                    androidx.compose.animation.expandHorizontally(tween(280, easing = FastOutSlowInEasing)),
+                                exit = androidx.compose.animation.fadeOut(tween(160)) +
+                                    androidx.compose.animation.shrinkHorizontally(tween(200, easing = FastOutSlowInEasing))
+                            ) {
+                                Text(
+                                    item.label,
+                                    fontSize   = 12.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color      = iconTint,
+                                    maxLines   = 1
+                                )
+                            }
                         }
                     }
                 }
@@ -488,34 +523,57 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
 
-        // ── Header ────────────────────────────────────────────────────────────
-        GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(50.dp)
-                        .background(
-                            Brush.linearGradient(listOf(CandyCyan, CandyBlue)),
-                            RoundedCornerShape(16.dp)
-                        ),
-                    contentAlignment = Alignment.Center
+        // ── Hero Header (premium gradient + glow) ──────────────────────────────
+        PremiumGlassCard(gradientBorder = true) {
+            // Subtle animated background glow inside header
+            val infiniteTransition = rememberInfiniteTransition(label = "hero_glow")
+            val heroGlow by infiniteTransition.animateFloat(
+                initialValue = 0.15f, targetValue = 0.35f,
+                animationSpec = infiniteRepeatable(tween(2000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                label = "hero_glow_val"
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                CandyCyan.copy(alpha = heroGlow * 0.4f),
+                                CandyBlue.copy(alpha = heroGlow * 0.3f),
+                                PremiumViolet.copy(alpha = heroGlow * 0.2f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            ) {
+                Row(
+                    Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("DL", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("DLavie 26", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
-                        DLBadge("PROD", NeonGreen)
+                    Box(
+                        Modifier.size(44.dp)
+                            .background(
+                                Brush.linearGradient(listOf(CandyCyan, CandyBlue, PremiumViolet)),
+                                RoundedCornerShape(14.dp)
+                            )
+                            .softGlow(CandyCyan, radius = 18f, alpha = 0.35f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("DL", color = Carbon, fontSize = 18.sp, fontWeight = FontWeight.Black)
                     }
-                    Text("FIFA 16 Mobile · Mod Launcher", color = SoftText, fontSize = 12.sp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("DLavie 26", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
+                            ModernPill("PROD", NeonGreen)
+                        }
+                        Text("FIFA 16 Mobile · Mod Launcher", color = SoftText, fontSize = 11.sp)
+                    }
+                    val name = api.displayName().ifEmpty { "Player" }.take(11)
+                    ModernPill("@$name", CandyCyan)
                 }
-                val name = api.displayName().ifEmpty { "Player" }.take(11)
-                DLBadge("@$name", CandyCyan)
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(0.dp)) {
-                Box(Modifier.weight(1f).height(2.dp)
-                    .background(Brush.horizontalGradient(listOf(CandyBlue, CandyCyan, NeonGreen)), RoundedCornerShape(1.dp)))
             }
         }
 
