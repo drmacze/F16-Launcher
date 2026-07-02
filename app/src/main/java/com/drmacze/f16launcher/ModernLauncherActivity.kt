@@ -1808,7 +1808,6 @@ fun RatingPopup(
     onSubmit: (rating: Int, review: String) -> Unit
 ) {
     var selectedRating by remember { mutableStateOf(currentRating) }
-    var hoveredRating by remember { mutableStateOf(0) }
     var review by remember { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
 
@@ -1830,25 +1829,25 @@ fun RatingPopup(
                 Text("Bagaimana pengalaman Anda?", color = SoftText, fontSize = 13.sp)
                 Spacer(Modifier.height(16.dp))
 
-                // 5 stars — tap to select, press-and-hold untuk hover preview
+                // 5 stars — tap to select (simple, no hover, no glitch)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (i in 1..5) {
-                        val filled = if (hoveredRating > 0) i <= hoveredRating else i <= selectedRating
+                        val filled = i <= selectedRating
+                        // Bounce animation saat star di-tap
+                        val scale by animateFloatAsState(
+                            targetValue = if (filled) 1.1f else 1f,
+                            animationSpec = tween(200, easing = FastOutSlowInEasing),
+                            label = "star_scale_$i"
+                        )
                         Icon(
                             if (filled) Icons.Rounded.Star else Icons.Rounded.StarBorder,
                             contentDescription = "$i star",
                             tint = if (filled) AmberWarn else Color(0xFF374151),
                             modifier = Modifier
                                 .size(40.dp)
-                                .clickable { selectedRating = i }
-                                .pointerInput(i) {
-                                    detectTapGestures(
-                                        onPress = {
-                                            hoveredRating = i
-                                            tryAwaitRelease()
-                                            hoveredRating = 0
-                                        }
-                                    )
+                                .scale(scale)
+                                .clickable {
+                                    selectedRating = i
                                 }
                         )
                     }
