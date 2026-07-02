@@ -63,14 +63,16 @@ import kotlin.math.sin
  *  - Pure black background (no gradient noise)
  *  - Solid typography (no buggy blend modes)
  *  - Minimal motion: smooth fade + subtle scale only
- *  - Sound chime plays once during hold phase
+ *  - Cinematic sound plays once during hold phase (low drone + soft pad)
  *  - Animated dots loader (3 pulsing dots) at bottom
  *
- * Flow (2.4s total):
- *  1. Fade in "DLavie" text (600ms)
- *  2. Hold + play chime (1000ms)
- *  3. Fade out (400ms)
- *  4. Navigate to next screen
+ * Flow (~3.4s total — extended for cinematic sound, was 2.6s):
+ *  1. Fade in "DLavie" text + scale-up (600-800ms, overlapping)
+ *  2. Fade in tagline (400ms)
+ *  3. Fade in dots loader (300ms)
+ *  4. Play cinematic sound + hold (2300ms) — drone + pad + sparkle
+ *  5. Fade out everything (500ms)
+ *  6. Navigate to next screen
  */
 class ShinySplashActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -130,27 +132,27 @@ private fun GrokStyleSplash(onFinished: () -> Unit) {
 
     // Phase machine
     LaunchedEffect(Unit) {
-        // Phase 1: Fade in "DLavie" with slight scale-up (600ms)
+        // Phase 1: Fade in "DLavie" with slight scale-up (600ms text alpha, 800ms scale, overlapping)
         kotlinx.coroutines.coroutineScope {
             launch { textAlpha.animateTo(1f, tween(600, easing = FastOutSlowInEasing)) }
             launch { textScale.animateTo(1f, tween(800, easing = FastOutSlowInEasing)) }
         }
 
-        // Phase 2: Fade in tagline (300ms, slight delay)
+        // Phase 2: Fade in tagline (400ms)
         taglineAlpha.animateTo(0.6f, tween(400, easing = FastOutSlowInEasing))
 
-        // Phase 3: Fade in dots loader
+        // Phase 3: Fade in dots loader (300ms)
         dotsAlpha.animateTo(1f, tween(300))
 
-        // Phase 4: Play chime + hold (1000ms)
+        // Phase 4: Play cinematic sound + hold (2300ms — drone + pad + sparkle)
         scope.launch { SoundEffectHelper.playShinyChime() }
-        delay(900)
+        delay(2300)
 
-        // Phase 5: Fade out everything (400ms)
+        // Phase 5: Fade out everything (500ms)
         kotlinx.coroutines.coroutineScope {
-            launch { textAlpha.animateTo(0f, tween(400, easing = FastOutSlowInEasing)) }
-            launch { taglineAlpha.animateTo(0f, tween(300)) }
-            launch { dotsAlpha.animateTo(0f, tween(300)) }
+            launch { textAlpha.animateTo(0f, tween(500, easing = FastOutSlowInEasing)) }
+            launch { taglineAlpha.animateTo(0f, tween(400)) }
+            launch { dotsAlpha.animateTo(0f, tween(400)) }
         }
 
         onFinished()

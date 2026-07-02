@@ -825,27 +825,113 @@ private fun registerWithUsernamePassword(context: Context, email: String, passwo
         val session = AuthSession(token, refresh, userEmail)
         saveSession(context, session)
         syncToCommunityPrefs(context, session)
-        if (userId.isNotBlank()) runCatching {
-            httpPostWithPrefer(
-                "/rest/v1/profiles",
-                token,
-                JSONObject().put("id", userId).put("username", username).put("display_name", displayName).put("country", country),
-                "resolution=merge-duplicates,return=minimal"
-            )
-        }
-        runCatching { httpPost("/rest/v1/rpc/dlavie_v2_create_profile_if_missing", token, JSONObject().put("p_display_name", displayName)) }
-        // PATCH profiles SET country = ? WHERE id = user_id — fire-and-forget, best-effort.
-        runCatching {
+
+        // ── FIX (Bug 1): Populate CommunityApi prefs via login + loadMyProfile ──
+        // Sebelumnya, POST /rest/v1/profiles dengan return=minimal tidak return data,
+        // dan RPC dlavie_v2_create_profile_if_missing tidak ada di project baru,
+        // jadi CommunityApi.username() / displayName() tetap empty setelah register.
+        //
+        // Sekarang: call CommunityApi.login(email, password, username, displayName, "")
+        //   - storeSessionIfPresent → save token + user_id ke dlavie_community prefs
+        //   - loadMyProfile()       → fetch profile dari DB, save username/display_name/role ke prefs
+        //
+        // Karena trigger handle_new_user butuh waktu untuk fire (async), retry 3x dengan delay.
+        var profileLoaded = false
+        try {
             val api = CommunityApi(context)
-            if (api.loggedIn()) api.updateCountry(country) else {
-                // Fallback: directly PATCH via HTTP if CommunityApi prefs aren't populated yet.
-                httpPatch("/rest/v1/profiles?id=eq." + userId, token, JSONObject().put("country", country))
+            for (attempt in 1..3) {
+                try {
+                    api.login(email, password, username, displayName, "")
+                    profileLoaded = true
+                    break
+                } catch (_: Exception) {
+                    if (attempt < 3) Thread.sleep(500L)
+                }
             }
+            if (!profileLoaded) {
+                // Fallback 1: manual ensureMyProfile
+                try { api.ensureMyProfile(username, displayName, "") } catch (_: Exception) { }
+            }
+            // Fallback 2: kalau profile masih belum ter-load, save prefs manual supaya
+            // CommunityApi.username() / displayName() minimal tidak empty.
+            if (!profileLoaded) {
+                val prefs = context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE)
+                prefs.edit()
+                    .putString("username", username)
+                    .putString("display_name", displayName)
+                    .putString("access_token", token)
+                    .putString("refresh_token", refresh)
+                    .putString("user_id", userId)
+                    .apply()
+            }
+            // Best-effort: PATCH country (fire-and-forget).
+            runCatching {
+                if (api.loggedIn()) api.updateCountry(country)
+                else httpPatch("/rest/v1/profiles?id=eq." + userId, token, JSONObject().put("country", country))
+            }
+        } catch (_: Exception) {
+            // CommunityApi totally broken — last resort: manual prefs save.
+            val prefs = context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE)
+            prefs.edit()
+                .putString("username", username)
+                .putString("display_name", displayName)
+                .putString("access_token", token)
+                .putString("refresh_token", refresh)
+                .putString("user_id", userId)
+                .apply()
         }
         AuthResult(session, "OK: akun dibuat. Selamat datang, $displayName!")
     }
 } catch (e: Exception) { AuthResult(null, "Error: ${e.message ?: "register gagal"}") }
-private fun authPassword(context: Context, path: String, email: String, password: String, okMessage: String): AuthResult = try { val json = httpPost(path, null, JSONObject().put("email", email).put("password", password)); val token = json.optString("access_token", ""); val refresh = json.optString("refresh_token", ""); val userEmail = json.optJSONObject("user")?.optString("email", email) ?: email; if (token.isBlank()) AuthResult(null, "Akun dibuat. Cek email lalu login.") else { val session = AuthSession(token, refresh, userEmail); saveSession(context, session); runCatching { httpPost("/rest/v1/rpc/dlavie_v2_create_profile_if_missing", session.accessToken, JSONObject().put("p_display_name", "DLavie Player")) }; AuthResult(session, okMessage) } } catch (e: Exception) { AuthResult(null, "Error: ${e.message ?: "auth gagal"}") }
+private fun authPassword(context: Context, path: String, email: String, password: String, okMessage: String): AuthResult = try {
+    val json = httpPost(path, null, JSONObject().put("email", email).put("password", password))
+    val token = json.optString("access_token", "")
+    val refresh = json.optString("refresh_token", "")
+    val userEmail = json.optJSONObject("user")?.optString("email", email) ?: email
+    val userId = json.optJSONObject("user")?.optString("id", "") ?: ""
+    if (token.isBlank()) AuthResult(null, "Akun dibuat. Cek email lalu login.") else {
+        val session = AuthSession(token, refresh, userEmail)
+        saveSession(context, session)
+        syncToCommunityPrefs(context, session)
+
+        // ── FIX (Bug 1): Populate CommunityApi prefs via login + loadMyProfile ──
+        // Sebelumnya hanya call RPC dlavie_v2_create_profile_if_missing yang tidak ada
+        // di project baru, jadi prefs dlavie_community (username/display_name) tetap empty.
+        // Sekarang: CommunityApi.login() → storeSessionIfPresent + loadMyProfile.
+        // Retry 3x karena trigger handle_new_user butuh waktu untuk fire (async).
+        try {
+            val api = CommunityApi(context)
+            var loaded = false
+            for (attempt in 1..3) {
+                try {
+                    api.login(email, password, "", "", "")
+                    loaded = true
+                    break
+                } catch (_: Exception) {
+                    if (attempt < 3) Thread.sleep(500L)
+                }
+            }
+            if (!loaded) {
+                // Trigger profile belum fire — save prefs minimal manual supaya user_id minimal ter-set.
+                val prefs = context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE)
+                prefs.edit()
+                    .putString("access_token", token)
+                    .putString("refresh_token", refresh)
+                    .putString("user_id", userId)
+                    .apply()
+            }
+        } catch (_: Exception) {
+            // CommunityApi totally broken — last resort: manual prefs save.
+            val prefs = context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE)
+            prefs.edit()
+                .putString("access_token", token)
+                .putString("refresh_token", refresh)
+                .putString("user_id", userId)
+                .apply()
+        }
+        AuthResult(session, okMessage)
+    }
+} catch (e: Exception) { AuthResult(null, "Error: ${e.message ?: "auth gagal"}") }
 private fun loadBootstrap(session: AuthSession): BootstrapState = try { val json = httpPost("/rest/v1/rpc/dlavie_v2_get_launcher_bootstrap", session.accessToken, JSONObject().put("p_local_version_code", LOCAL_VERSION_CODE)); parseBootstrap(json) } catch (e: Exception) { BootstrapState(loaded = false, error = e.message ?: "backend gagal") }
 private fun parseBootstrap(json: JSONObject): BootstrapState { val profile = json.optJSONObject("profile") ?: JSONObject(); val update = json.optJSONObject("update") ?: JSONObject(); val patch = update.optJSONObject("patch"); val maintenance = json.optJSONObject("maintenance") ?: JSONObject(); val notices = jsonArrayObjectsToTitles(json.optJSONArray("notices")); return BootstrapState(displayName = profile.optString("display_name", "DLavie Player"), role = profile.optString("role", "user"), maintenance = maintenance.optBoolean("enabled", false), maintenanceMessage = maintenance.optString("message", ""), latestVersionCode = update.optInt("latestVersionCode", 0), latestVersionName = update.optString("latestVersionName", "Belum dicek"), updateAvailable = update.optBoolean("updateAvailable", false), patchName = patch?.optString("name", "") ?: "", patchUrl = patch?.optString("url", "") ?: "", notices = notices, unreadNotifications = json.optInt("unreadNotifications", 0), loaded = true) }
 private fun createSupportTicket(session: AuthSession, message: String): String = try { val marker = guidedReadMarkerSmart(); val json = httpPost("/rest/v1/rpc/dlavie_v2_create_ticket", session.accessToken, JSONObject().put("p_title", "DLavie Support").put("p_category", "general").put("p_message", message).put("p_app_version", "0.19.0-login-foundation").put("p_local_version", LOCAL_VERSION_NAME).put("p_latest_version", "").put("p_data_marker", marker).put("p_shizuku_status", guidedShizukuState())); "OK: ticket dibuat #${json.optString("public_code", json.optString("id", ""))}" } catch (e: Exception) { "Error: ${e.message ?: "ticket gagal"}" }

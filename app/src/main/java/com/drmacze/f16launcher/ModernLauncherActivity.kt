@@ -178,13 +178,19 @@ data class UpdateInfo(
 
 /**
  * Maintenance mode info — dibaca dari Supabase app_config key="maintenance".
- * value jsonb shape: { enabled, title, message, allow_offline_play }
+ * value jsonb shape: { enabled, title, message, scope, allow_offline_play }
+ *
+ * scope:
+ *   - "none"    → maintenance disabled (default)
+ *   - "partial" → launcher bisa dibuka, tapi download/apply/launch diblokir
+ *   - "full"    → full-screen maintenance page, user tidak bisa masuk launcher
  */
 data class MaintenanceInfo(
     val enabled: Boolean,
     val title: String,
     val message: String,
-    val allowOfflinePlay: Boolean
+    val scope: String = "none",
+    val allowOfflinePlay: Boolean = true
 )
 
 /**
@@ -236,13 +242,27 @@ class ModernLauncherActivity : ComponentActivity() {
 fun DLavieModernApp() {
     val context = LocalContext.current
     val api     = remember { CommunityApi(context) }
+    val scope   = rememberCoroutineScope()
     var pinVerified by remember { mutableStateOf(!PinManager.hasPin(context)) }
+
+    // ── Maintenance state (Bug 2: full-screen + partial scope) ──
+    var maintenanceState by remember { mutableStateOf<MaintenanceInfo?>(null) }
+    var maintenanceChecked by remember { mutableStateOf(false) }
+    var allowOfflineBypass by remember { mutableStateOf(false) } // user tekan "Masuk" saat scope=full & allowOfflinePlay=true
 
     // If PIN is enabled and not yet verified, launch the PIN lock screen
     LaunchedEffect(Unit) {
         if (PinManager.hasPin(context) && !pinVerified) {
             PinLockActivity.launch(context, PinLockActivity.MODE_UNLOCK)
         }
+    }
+
+    // ── Fetch maintenance saat app dibuka (Bug 2) ──
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching { maintenanceState = fetchMaintenanceInfo(api) }
+        }
+        maintenanceChecked = true
     }
 
     // Refresh pinVerified state on resume (after returning from PinLockActivity)
@@ -284,6 +304,26 @@ fun DLavieModernApp() {
                             Text("Memuat sesi...", color = SoftText, fontSize = 13.sp)
                         }
                     }
+                } else if (maintenanceChecked && maintenanceState?.enabled == true
+                    && maintenanceState?.scope == "full" && !allowOfflineBypass) {
+                    // ── Full-screen maintenance (Bug 2) ──
+                    val currentMaint = maintenanceState!!
+                    FullScreenMaintenance(currentMaint) {
+                        // onRetry — re-check maintenance, lalu bypass kalau allow_offline_play=true
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                runCatching { maintenanceState = fetchMaintenanceInfo(api) }
+                            }
+                            // Kalau masih full + allowOfflinePlay=true, bypass ke launcher.
+                            // Kalau sudah berubah ke partial/none, condition di atas otomatis dilewati.
+                            val m = maintenanceState
+                            if (m?.enabled == true && m.scope == "full" && m.allowOfflinePlay) {
+                                allowOfflineBypass = true
+                            } else if (m?.enabled != true || m.scope != "full") {
+                                allowOfflineBypass = false  // reset; user masuk normal
+                            }
+                        }
+                    }
                 } else if (!pinVerified && PinManager.hasPin(context)) {
                     // Wait for PIN verification — show lock screen placeholder
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -301,27 +341,114 @@ fun DLavieModernApp() {
                         }
                     }
                 } else {
-                    MainShell(api) {
-                        // Fire logout telemetry BEFORE clearing session so user_id is still known.
-                        Telemetry.track(api, context, Telemetry.EVT_LOGOUT)
-                        api.logout()
-                        context.getSharedPreferences("dlavie_auth_session", Context.MODE_PRIVATE).edit().clear().apply()
-                        // Also clear PIN on logout for security
-                        PinManager.clearPin(context)
-                        context.startActivity(
-                            Intent(context, DLavieGuidedActivity::class.java)
-                                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    }
+                    MainShell(
+                        api,
+                        maintenanceInfo = maintenanceState,
+                        onLogout = {
+                            // Fire logout telemetry BEFORE clearing session so user_id is still known.
+                            Telemetry.track(api, context, Telemetry.EVT_LOGOUT)
+                            api.logout()
+                            context.getSharedPreferences("dlavie_auth_session", Context.MODE_PRIVATE).edit().clear().apply()
+                            // Also clear PIN on logout for security
+                            PinManager.clearPin(context)
+                            context.startActivity(
+                                Intent(context, DLavieGuidedActivity::class.java)
+                                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    )
                 }
             }
         }
     }
 }
 
+// ─── Full-screen maintenance (Bug 2: scope = "full") ──────────────────────────
+@Composable
+fun FullScreenMaintenance(
+    maintenance: MaintenanceInfo,
+    onRetry: () -> Unit
+) {
+    Box(
+        Modifier.fillMaxSize().background(Carbon),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.padding(32.dp)
+        ) {
+            // Big warning icon dengan pulse
+            val infiniteTransition = rememberInfiniteTransition(label = "maint_pulse")
+            val pulseScale by infiniteTransition.animateFloat(
+                initialValue = 1f, targetValue = 1.1f,
+                animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                label = "maint_pulse_scale"
+            )
+            Box(
+                Modifier.size(96.dp).scale(pulseScale)
+                    .background(AmberWarn.copy(0.12f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.Warning, null, tint = AmberWarn, modifier = Modifier.size(48.dp))
+            }
+
+            Text(
+                maintenance.title.ifEmpty { "Sistem Sedang Maintenance" },
+                color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center
+            )
+
+            if (maintenance.message.isNotEmpty()) {
+                Text(
+                    maintenance.message,
+                    color = SoftText, fontSize = 14.sp, lineHeight = 20.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            // "Masuk" button — hanya enabled jika allow_offline_play = true
+            Button(
+                onClick = onRetry,
+                enabled = maintenance.allowOfflinePlay,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (maintenance.allowOfflinePlay) CandyCyan else Surface2,
+                    contentColor = if (maintenance.allowOfflinePlay) Carbon else SoftText,
+                    disabledContainerColor = Surface2,
+                    disabledContentColor = SoftText
+                )
+            ) {
+                Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (maintenance.allowOfflinePlay) "Masuk Launcher" else "Maintenance Aktif",
+                    fontWeight = FontWeight.Black
+                )
+            }
+
+            if (!maintenance.allowOfflinePlay) {
+                Text(
+                    "Launcher tidak bisa diakses saat maintenance penuh. Coba lagi nanti.",
+                    color = SubText, fontSize = 11.sp, textAlign = TextAlign.Center
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "DLavie 26 · ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}",
+                color = SubText, fontSize = 10.sp
+            )
+        }
+    }
+}
+
 // ─── Main shell ───────────────────────────────────────────────────────────────
 @Composable
-fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
+fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLogout: () -> Unit) {
     val context = LocalContext.current
     var page by remember { mutableStateOf(Page.Home) }
 
@@ -380,8 +507,8 @@ fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
             modifier       = Modifier.fillMaxSize().padding(bottom = 100.dp)
         ) { target ->
             when (target) {
-                Page.Home   -> HomeScreen(api, onNav = { page = it })
-                Page.Update -> UpdateScreen(api, onNav  = { page = it })
+                Page.Home   -> HomeScreen(api, maintenanceInfo = maintenanceInfo, onNav = { page = it })
+                Page.Update -> UpdateScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
                 Page.Chat   -> CommunityScreen(api)
                 Page.Me     -> ProfileScreen(api, onLogout)
             }
@@ -533,7 +660,7 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
 // ─── Home screen ──────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
+fun HomeScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNav: (Page) -> Unit) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
@@ -545,8 +672,14 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
     var feed          by remember { mutableStateOf<List<FeedItem>>(emptyList()) }
 
     // ── Maintenance & notification banner state (Dev Dashboard integration) ──
-    var maintenanceState by remember { mutableStateOf<MaintenanceInfo?>(null) }
+    // maintenanceInfo (dari MainShell) dipakai untuk blocking logic (Bug 2).
+    // maintenanceState (lokal, di-refresh saat pull-to-refresh) dipakai untuk banner display.
+    var maintenanceState by remember { mutableStateOf(maintenanceInfo) }
     var latestNotif      by remember { mutableStateOf<NotifCampaign?>(null) }
+
+    // ── Bug 2: Partial maintenance blocking ──
+    // Kalau scope=partial, block download/apply/launch tapi allow komunitas & profile.
+    val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"
 
     // ── Pull-to-refresh state ──
     val pullState    = rememberPullToRefreshState()
@@ -680,6 +813,12 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                                 Text(
                                     m.message,
                                     color = SoftText, fontSize = 11.sp, lineHeight = 14.sp
+                                )
+                            }
+                            if (m.scope == "partial") {
+                                Text(
+                                    "Mode partial: download/apply/launch diblokir. Komunitas & Profil tetap bisa diakses.",
+                                    color = AmberWarn, fontSize = 10.sp, lineHeight = 13.sp
                                 )
                             }
                         }
@@ -834,21 +973,27 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                     // Download button with inline progress
                     Button(
                         onClick  = { if (dlProgress < 0f || dlProgress >= 2f) startDownload() },
-                        enabled  = dlProgress < 0f || dlProgress >= 2f,
+                        enabled  = !maintenanceBlocked && (dlProgress < 0f || dlProgress >= 2f),
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         shape    = RoundedCornerShape(18.dp),
                         colors   = ButtonDefaults.buttonColors(
                             containerColor = when {
+                                maintenanceBlocked -> Surface2
                                 dlProgress >= 2f -> NeonGreen
                                 dlProgress >= 0f -> CandyBlue.copy(0.6f)
                                 else             -> CandyBlue
                             },
-                            contentColor   = if (dlProgress >= 2f) Color(0xFF00150B) else Color.White,
-                            disabledContainerColor = CandyBlue.copy(0.4f),
-                            disabledContentColor   = Color.White.copy(0.7f)
+                            contentColor   = if (maintenanceBlocked) SoftText else if (dlProgress >= 2f) Color(0xFF00150B) else Color.White,
+                            disabledContainerColor = if (maintenanceBlocked) Surface2 else CandyBlue.copy(0.4f),
+                            disabledContentColor   = if (maintenanceBlocked) SoftText else Color.White.copy(0.7f)
                         )
                     ) {
                         when {
+                            maintenanceBlocked -> {
+                                Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(22.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Diblokir Maintenance", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                            }
                             dlProgress >= 2f -> {
                                 Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(22.dp))
                                 Spacer(Modifier.width(8.dp))
@@ -864,6 +1009,20 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                                 Spacer(Modifier.width(8.dp))
                                 Text("Unduh FIFA 16 Sekarang", fontSize = 15.sp, fontWeight = FontWeight.Black)
                             }
+                        }
+                    }
+
+                    AnimatedVisibility(visible = maintenanceBlocked) {
+                        Row(
+                            Modifier.padding(top = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(Icons.Rounded.Warning, null, tint = AmberWarn, modifier = Modifier.size(14.dp))
+                            Text(
+                                "Download APK diblokir saat maintenance mode aktif (scope: partial).",
+                                color = AmberWarn, fontSize = 12.sp
+                            )
                         }
                     }
 
@@ -919,14 +1078,26 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                     )
                     Spacer(Modifier.height(14.dp))
                     Button(
-                        onClick  = { launchGame(context) },
+                        onClick  = { if (!maintenanceBlocked) launchGame(context) },
+                        enabled  = !maintenanceBlocked,
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         shape    = RoundedCornerShape(18.dp),
-                        colors   = ButtonDefaults.buttonColors(containerColor = AmberWarn, contentColor = Color(0xFF1A0F00))
+                        colors   = ButtonDefaults.buttonColors(
+                            containerColor = if (maintenanceBlocked) Surface2 else AmberWarn,
+                            contentColor   = if (maintenanceBlocked) SoftText else Color(0xFF1A0F00),
+                            disabledContainerColor = Surface2,
+                            disabledContentColor   = SoftText
+                        )
                     ) {
-                        Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Buka FIFA 16 & Siapkan Data", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                        if (maintenanceBlocked) {
+                            Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(22.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Diblokir Maintenance", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                        } else {
+                            Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Buka FIFA 16 & Siapkan Data", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                        }
                     }
                 }
 
@@ -942,17 +1113,26 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                                 .background(NeonGreen.copy(alpha = glowAlpha), RoundedCornerShape(24.dp))
                         )
                         Button(
-                            onClick  = { launchGame(context) },
+                            onClick  = { if (!maintenanceBlocked) launchGame(context) },
+                            enabled  = !maintenanceBlocked,
                             modifier = Modifier.fillMaxWidth().height(64.dp),
                             shape    = RoundedCornerShape(24.dp),
                             colors   = ButtonDefaults.buttonColors(
-                                containerColor = NeonGreen,
-                                contentColor   = Color(0xFF00150B)
+                                containerColor = if (maintenanceBlocked) Surface2 else NeonGreen,
+                                contentColor   = if (maintenanceBlocked) SoftText else Color(0xFF00150B),
+                                disabledContainerColor = Surface2,
+                                disabledContentColor   = SoftText
                             )
                         ) {
-                            Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(26.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text("Main FIFA 16", fontSize = 19.sp, fontWeight = FontWeight.Black)
+                            if (maintenanceBlocked) {
+                                Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(26.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Text("Diblokir Maintenance", fontSize = 19.sp, fontWeight = FontWeight.Black)
+                            } else {
+                                Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(26.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Text("Main FIFA 16", fontSize = 19.sp, fontWeight = FontWeight.Black)
+                            }
                         }
                     }
 
@@ -1003,7 +1183,7 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                     value  = if (gameInstalled) "Terinstall" else "Belum ada",
                     ok     = gameInstalled,
                     modifier = Modifier.weight(1f)
-                ) { if (!gameInstalled) if (dlProgress < 0f) startDownload() }
+                ) { if (!gameInstalled && !maintenanceBlocked) if (dlProgress < 0f) startDownload() }
 
                 ModernStatusChip(
                     label  = "Data",
@@ -1198,8 +1378,10 @@ fun GlassInfoBox(icon: ImageVector, color: Color, text: String) {
 // ─── Update & Data screen ─────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UpdateScreen(api: CommunityApi, onNav: (Page) -> Unit) {
+fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNav: (Page) -> Unit) {
     val context       = LocalContext.current
+    // ── Bug 2: Partial maintenance blocking ──
+    val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"
     // NOTE: All I/O moved to LaunchedEffect below — don't block main thread during composition.
     // Initialize with safe defaults; real values populate from background.
     var gameInstalled   by remember { mutableStateOf(false) }
@@ -1642,17 +1824,21 @@ fun UpdateScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                 }
                 Button(
                     onClick  = { applyPatch() },
-                    enabled  = !patching && !loading && patchAvailable,
+                    enabled  = !maintenanceBlocked && !patching && !loading && patchAvailable,
                     modifier = Modifier.weight(2f).height(50.dp),
                     shape    = RoundedCornerShape(14.dp),
                     colors   = ButtonDefaults.buttonColors(
-                        containerColor         = if (patchAvailable) CandyCyan else NeonGreen,
-                        contentColor           = Color(0xFF00111D),
+                        containerColor         = if (maintenanceBlocked) Surface2 else if (patchAvailable) CandyCyan else NeonGreen,
+                        contentColor           = if (maintenanceBlocked) SoftText else Color(0xFF00111D),
                         disabledContainerColor = Surface2,
                         disabledContentColor   = SoftText
                     )
                 ) {
-                    if (patching) {
+                    if (maintenanceBlocked) {
+                        Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Diblokir Maintenance", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                    } else if (patching) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF00111D), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
                         Text("Memperbarui…", fontWeight = FontWeight.Black, fontSize = 13.sp)
@@ -1703,14 +1889,26 @@ fun UpdateScreen(api: CommunityApi, onNav: (Page) -> Unit) {
         // ── Play button (jika siap) ──
         AnimatedVisibility(dataReady && gameInstalled, enter = fadeIn(tween(400)), exit = fadeOut()) {
             Button(
-                onClick  = { launchGame(context) },
+                onClick  = { if (!maintenanceBlocked) launchGame(context) },
+                enabled  = !maintenanceBlocked,
                 modifier = Modifier.fillMaxWidth().height(58.dp),
                 shape    = RoundedCornerShape(20.dp),
-                colors   = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B))
+                colors   = ButtonDefaults.buttonColors(
+                    containerColor = if (maintenanceBlocked) Surface2 else NeonGreen,
+                    contentColor   = if (maintenanceBlocked) SoftText else Color(0xFF00150B),
+                    disabledContainerColor = Surface2,
+                    disabledContentColor   = SoftText
+                )
             ) {
-                Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(10.dp))
-                Text("Main FIFA 16 Sekarang", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                if (maintenanceBlocked) {
+                    Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("Diblokir Maintenance", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                } else {
+                    Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("Main FIFA 16 Sekarang", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                }
             }
         }
 
@@ -2635,10 +2833,11 @@ fun fetchMaintenanceInfo(api: CommunityApi): MaintenanceInfo {
             enabled         = obj.optBoolean("enabled", false),
             title           = obj.optString("title", ""),
             message         = obj.optString("message", ""),
+            scope           = obj.optString("scope", "none"),
             allowOfflinePlay = obj.optBoolean("allow_offline_play", true)
         )
     } catch (_: Throwable) {
-        MaintenanceInfo(enabled = false, title = "", message = "", allowOfflinePlay = true)
+        MaintenanceInfo(enabled = false, title = "", message = "", scope = "none", allowOfflinePlay = true)
     }
 }
 
