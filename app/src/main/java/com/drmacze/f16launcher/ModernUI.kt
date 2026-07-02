@@ -67,30 +67,18 @@ import androidx.compose.ui.unit.sp
 // MODERN DESIGN SYSTEM v2.0
 // Premium, aesthetic, clean — with depth, motion, and attention to detail
 // ═══════════════════════════════════════════════════════════════════════════════
+// NOTE: Base color tokens (Carbon, GlassBase, Surface2, Surface3, CandyCyan,
+// CandyBlue, NeonGreen, SoftText, SubText, GlassStroke, DangerRed, AmberWarn,
+// TapTapGreen, TapTapGold) sekarang ada di TapTapDesignSystem.kt sebagai
+// single source of truth. File ini hanya simpan extend "Premium*" palette
+// (untuk backward compat dengan komponen lama yang pakai premium tint).
 
 // ─── Premium Palette ───────────────────────────────────────────────────────────
-// Deep navy-black base with cool gradient overlays
-// Accent: electric cyan (primary), violet (secondary), emerald (success)
-// Premium gold accent for highlights & hero elements
-
+// Deep navy-black base with cool gradient overlays — dipakai untuk skeleton
+// shimmer background dan gradient border hero cards.
 val PremiumBg         = Color(0xFF050811)   // deepest base
 val PremiumSurface    = Color(0xFF0B1320)   // elevated surface
 val PremiumSurfaceHi  = Color(0xFF111B2E)   // highest surface
-
-// Replace old tokens with refined versions (kept names for backward compat)
-val Carbon      = Color(0xFF050811)
-val GlassBase   = Color(0xFF0B1320)
-val Surface2    = Color(0xFF111B2E)
-
-// Accent colors — slightly more refined & cohesive
-val CandyCyan   = Color(0xFF22D3EE)   // electric cyan, primary
-val CandyBlue   = Color(0xFF818CF8)   // soft violet, secondary
-val NeonGreen   = Color(0xFF34D399)   // emerald, success
-val SoftText    = Color(0xFFB0BEC5)   // soft body text
-val SubText     = Color(0xFF6B7280)   // muted
-val GlassStroke = Color(0x2A60A5FA)   // subtle blue tint
-val DangerRed   = Color(0xFFF87171)   // soft red
-val AmberWarn   = Color(0xFFFBBF24)   // gold warning
 
 // Premium gold accent (for hero elements only)
 val PremiumGold = Color(0xFFFCD34D)
