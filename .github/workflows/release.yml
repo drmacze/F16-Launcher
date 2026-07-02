@@ -1,0 +1,98 @@
+name: Auto Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      versionCode:
+        description: 'Version Code (e.g. 76)'
+        required: true
+        type: string
+      versionName:
+        description: 'Version Name (e.g. 1.7.5-stable)'
+        required: true
+        type: string
+      changelog:
+        description: 'Changelog (perubahan di versi ini)'
+        required: false
+        default: 'Bug fixes and improvements'
+        type: string
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Patch guided UX
+        run: python .github/scripts/patch_guided_ux.py
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set +e
+          gradle assembleDebug --stacktrace --console=plain > build.log 2>&1
+          code=$?
+          echo "$code" > build.exitcode
+          if [ "$code" -ne 0 ]; then
+            grep -nE "e: file:|error:|FAILURE:|What went wrong|Execution failed|Unresolved reference" build.log | head -160 || tail -220 build.log
+          fi
+          exit 0
+
+      - name: Fail if build failed
+        run: |
+          code=$(cat build.exitcode)
+          exit "$code"
+
+      - name: Download APK from artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DLavie-26-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.versionName }}
+          name: DLavie 26 Launcher ${{ inputs.versionName }}
+          body: |
+            # DLavie 26 Launcher ${{ inputs.versionName }}
+
+            versionCode: ${{ inputs.versionCode }}
+
+            ## Changelog
+
+            ${{ inputs.changelog }}
+
+            ## Build Info
+            - versionCode: ${{ inputs.versionCode }}
+            - versionName: ${{ inputs.versionName }}
+            - Date: ${{ github.run_id }}
+
+            ---
+            *Release otomatis dari Dev Dashboard — semua user akan dapat popup update saat membuka launcher.*
+          prerelease: false
+          files: app/build/outputs/apk/debug/*.apk
