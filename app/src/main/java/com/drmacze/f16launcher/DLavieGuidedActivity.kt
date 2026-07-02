@@ -160,15 +160,18 @@ private data class GuidedUpdateState(
     val knownIssues: List<String> = emptyList()
 )
 
+// v3.0 monochrome palette — match DLavie logo (white-on-black, halftone)
+// GuideGreen tetap vibrant (functional status: success/download).
+// GuideCyan/GuideRed/GuideAmber tetap vibrant untuk status indicators minimal.
 private val GuideGreen = Color(0xFF22E678)
 private val GuideCyan = Color(0xFF2ED3F6)
 private val GuideRed = Color(0xFFFF5B64)
 private val GuideAmber = Color(0xFFFFB84E)
 private val GuideWhite = Color(0xFFF4F7F5)
 private val GuideMuted = Color(0xFF8E9491)
-private val GuideDark = Color(0xFF020403)
-private val GuideCard = Color(0xDD101211)
-private val GuideBorder = Color(0xFF25302B)
+private val GuideDark = Color(0xFF0A0A0A)        // v3.0 near pure black (match logo)
+private val GuideCard = Color(0xDD111111)        // v3.0 monochrome card
+private val GuideBorder = Color(0x30FFFFFF)      // v3.0 subtle white border (halftone-like)
 private val GuideFont = FontFamily.SansSerif
 
 @Composable
@@ -185,7 +188,15 @@ private fun DLavieGuidedApp() {
 
     MaterialTheme(darkColorScheme(background = GuideDark, surface = GuideCard, primary = GuideGreen, secondary = GuideCyan, onBackground = GuideWhite, onSurface = GuideWhite)) {
         Surface(color = GuideDark, modifier = Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF082719), GuideDark, Color.Black), radius = 980f))) {
+            // v3.0: Halftone particle background (replaces green radial gradient)
+            Box(Modifier.fillMaxSize()) {
+                HalftoneBackground(
+                    modifier = Modifier.fillMaxSize(),
+                    dotSize = 2.5f,
+                    spacing = 24f,
+                    baseColor = HalftoneBright,
+                    alpha = 0.6f
+                )
                 if (maintenance.enabled && !showLogin) {
                     MaintenanceOverlay(
                         title        = maintenance.title,
@@ -241,13 +252,17 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(
-                Brush.radialGradient(
-                    listOf(Color(0xFF071A0F), Color(0xFF040806), Color.Black),
-                    radius = 1200f
-                )
-            )
+            .background(Color(0xFF0A0A0A))   // v3.0 near-black base
     ) {
+        // v3.0 halftone particle background (subtle)
+        HalftoneBackground(
+            modifier = Modifier.fillMaxSize(),
+            dotSize = 2.5f,
+            spacing = 22f,
+            baseColor = HalftoneBright,
+            alpha = 0.5f
+        )
+
         Column(
             Modifier
                 .fillMaxSize()
@@ -257,20 +272,14 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
         ) {
             Spacer(Modifier.height(56.dp))
 
-            // ── Logo + animated ring ──
+            // ── Logo + animated ring (v3.0 monochrome DL cover) ──
             Box(contentAlignment = Alignment.Center) {
-                Box(
-                    Modifier
-                        .size(96.dp)
-                        .background(
-                            Brush.linearGradient(listOf(Color(0xFF0E4228), Color(0xFF061810))),
-                            RoundedCornerShape(28.dp)
-                        )
-                        .border(1.5.dp, GuideGreen.copy(alpha = 0.40f), RoundedCornerShape(28.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("DL", color = GuideGreen, fontSize = 32.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont)
-                }
+                DLavieLogoCover(
+                    size = 96.dp,
+                    fontSize = 32.sp,
+                    shape = RoundedCornerShape(28.dp),
+                    borderWidth = 1.5.dp
+                )
             }
             Spacer(Modifier.height(18.dp))
             Text("DLavie 26", color = GuideWhite, fontSize = 30.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont)
@@ -285,12 +294,12 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
             )
             Spacer(Modifier.height(30.dp))
 
-            // ── Auth Card ──
+            // ── Auth Card (v3.0 monochrome) ──
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFF0C1510),
+                color = Color(0xDD111111),                // v3.0 monochrome card
                 shape = RoundedCornerShape(28.dp),
-                border = BorderStroke(1.dp, Color(0xFF1C2E22))
+                border = BorderStroke(1.dp, Color(0x30FFFFFF))   // v3.0 subtle white border
             ) {
                 Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
@@ -299,7 +308,7 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .background(Color(0xFF080D0A), RoundedCornerShape(14.dp))
+                                .background(Color(0xFF1A1A1A), RoundedCornerShape(14.dp))   // v3.0 monochrome
                                 .padding(4.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
@@ -631,7 +640,7 @@ private fun CountryPickerDropdown(
             onDismissRequest = { expanded = false },
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .background(Color(0xFF0A1510), RoundedCornerShape(14.dp))
+                .background(Color(0xFF1A1A1A), RoundedCornerShape(14.dp))   // v3.0 monochrome
                 .border(1.dp, GuideBorder, RoundedCornerShape(14.dp))
         ) {
             COUNTRY_LIST.forEach { name ->
@@ -752,7 +761,7 @@ private fun GuidedProfileScreen(session: AuthSession, onLogout: () -> Unit) {
         GuidedPageTitle("Profile", "Akun login, ticket, dan status DLavie.")
         GuidedPanel {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(74.dp).background(Brush.linearGradient(listOf(Color(0xFF063B27), Color(0xFF09110F))), RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(74.dp).background(Brush.linearGradient(listOf(Color(0xFF0A0A0A), Color(0xFF1A1A1A))), RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
                     Text(session.email.firstOrNull()?.uppercase() ?: "D", color = GuideGreen, fontSize = 31.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont)
                 }
                 Spacer(Modifier.width(14.dp))
@@ -784,14 +793,14 @@ private fun GuidedProfileScreen(session: AuthSession, onLogout: () -> Unit) {
 
 @Composable private fun GuidedPage(content: @Composable () -> Unit) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { content() } }
 @Composable private fun GuidedPanel(border: Color = GuideBorder, content: @Composable () -> Unit) { Surface(modifier = Modifier.fillMaxWidth(), color = GuideCard, shape = RoundedCornerShape(30.dp), border = BorderStroke(1.dp, border.copy(alpha = 0.85f))) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() } } }
-@Composable private fun GuidedHeaderCard(session: AuthSession, bootstrap: BootstrapState, marker: String) { GuidedPanel { Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(72.dp).background(Brush.linearGradient(listOf(Color(0xFF06462A), Color(0xFF07130F))), RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) { Text("DL", color = GuideGreen, fontSize = 29.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont) }; Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text("DLavie 26", color = GuideWhite, fontSize = 28.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(session.email, color = GuideMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) }; GuidedPill(if (marker.startsWith("v26")) "READY" else if (bootstrap.maintenance) "MAINT" else "SETUP", if (marker.startsWith("v26")) GuideGreen else GuideCyan) } } }
+@Composable private fun GuidedHeaderCard(session: AuthSession, bootstrap: BootstrapState, marker: String) { GuidedPanel { Row(verticalAlignment = Alignment.CenterVertically) { DLavieLogoCover(size = 72.dp, fontSize = 29.sp, shape = RoundedCornerShape(24.dp)); Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text("DLavie 26", color = GuideWhite, fontSize = 28.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(session.email, color = GuideMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) }; GuidedPill(if (marker.startsWith("v26")) "READY" else if (bootstrap.maintenance) "MAINT" else "SETUP", if (marker.startsWith("v26")) GuideGreen else GuideCyan) } } }
 @Composable private fun GuidedQuickSteps(marker: String, bootstrap: BootstrapState, openData: () -> Unit, openUpdate: () -> Unit, launch: () -> Unit) { GuidedPanel { Text("⚡ Langkah Cepat", color = GuideWhite, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont); Text("Ikuti urutan agar patch aktif dengan benar.", color = GuideMuted, fontSize = 13.sp, fontFamily = GuideFont); GuidedStepRow(1, "Cek Base Data", "Pastikan OBB dan marker siap.", if (marker.startsWith("v26")) "OK" else "WAJIB", "🔎", if (marker.startsWith("v26")) GuideGreen else GuideAmber, openData); GuidedStepRow(2, "Install Full Data", "Unduh dan pasang data utama.", if (marker.startsWith("v26")) "SELESAI" else "LANJUT", "⬇", GuideGreen, openData); GuidedStepRow(3, "Update Patch", "Cek versi dari backend.", if (bootstrap.updateAvailable) "TERSEDIA" else "CEK", "🌐", GuideCyan, openUpdate); GuidedStepRow(4, "Mainkan Game", "Launch setelah data siap.", if (marker.startsWith("v26")) "READY" else "NANTI", "🚀", Color(0xFFB783FF), launch) } }
-@Composable private fun GuidedStepRow(no: Int, title: String, subtitle: String, chip: String, icon: String, color: Color, onClick: () -> Unit) { Button(onClick = onClick, modifier = Modifier.fillMaxWidth().height(74.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xBB0C1110), contentColor = GuideWhite), contentPadding = PaddingValues(horizontal = 12.dp)) { Box(Modifier.size(28.dp).background(color, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) { Text(no.toString(), color = Color(0xFF001407), fontWeight = FontWeight.Black, fontSize = 13.sp) }; Spacer(Modifier.width(10.dp)); Text(icon, fontSize = 23.sp); Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) { Text(title, fontSize = 15.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(subtitle, color = GuideMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) }; GuidedPill(chip, color); Text("›", color = GuideMuted, fontSize = 20.sp) } }
+@Composable private fun GuidedStepRow(no: Int, title: String, subtitle: String, chip: String, icon: String, color: Color, onClick: () -> Unit) { Button(onClick = onClick, modifier = Modifier.fillMaxWidth().height(74.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xBB111111), contentColor = GuideWhite), contentPadding = PaddingValues(horizontal = 12.dp)) { Box(Modifier.size(28.dp).background(color, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) { Text(no.toString(), color = Color(0xFF001407), fontWeight = FontWeight.Black, fontSize = 13.sp) }; Spacer(Modifier.width(10.dp)); Text(icon, fontSize = 23.sp); Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) { Text(title, fontSize = 15.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(subtitle, color = GuideMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) }; GuidedPill(chip, color); Text("›", color = GuideMuted, fontSize = 20.sp) } }
 @Composable private fun GuidedPrimaryCta(title: String, subtitle: String, icon: String, onClick: () -> Unit) { Button(onClick = onClick, modifier = Modifier.fillMaxWidth().height(72.dp), shape = RoundedCornerShape(22.dp), colors = ButtonDefaults.buttonColors(containerColor = GuideGreen, contentColor = Color(0xFF001407)), contentPadding = PaddingValues(horizontal = 18.dp)) { Text(icon, fontSize = 23.sp); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) { Text(title, fontSize = 18.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(subtitle, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) }; Text("→", fontSize = 24.sp, fontWeight = FontWeight.Black) } }
-@Composable private fun GuidedMiniChip(title: String, value: String, icon: String, color: Color, modifier: Modifier) { Surface(modifier = modifier.height(74.dp), color = Color(0xCC101211), shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, GuideBorder)) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.Center) { Text(icon, fontSize = 18.sp); Text(title, color = GuideMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1); Text(value, color = color, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis) } } }
-@Composable private fun GuidedInfoBox(label: String, value: String, modifier: Modifier) { Surface(modifier = modifier.height(78.dp), color = Color(0xAA0A0D0C), shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, GuideBorder)) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.Center) { Text(label, color = GuideMuted, fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(value, color = GuideWhite, fontSize = 15.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) } } }
-@Composable private fun GuidedActionButton(label: String, color: Color, onClick: () -> Unit, enabled: Boolean = true) { Button(onClick = onClick, modifier = Modifier.fillMaxWidth().height(58.dp), enabled = enabled, shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color(0xFF001407), disabledContainerColor = Color(0xFF333635), disabledContentColor = GuideMuted)) { Text(label, fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont, maxLines = 1, overflow = TextOverflow.Ellipsis) } }
-@Composable private fun GuidedSmallAction(label: String, color: Color, onClick: () -> Unit, enabled: Boolean, modifier: Modifier) { Button(onClick = onClick, modifier = modifier.height(48.dp), enabled = enabled, shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color(0xFF001407), disabledContainerColor = Color(0xFF333635), disabledContentColor = GuideMuted), contentPadding = PaddingValues(horizontal = 8.dp)) { Text(label, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) } }
+@Composable private fun GuidedMiniChip(title: String, value: String, icon: String, color: Color, modifier: Modifier) { Surface(modifier = modifier.height(74.dp), color = Color(0xCC111111), shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, GuideBorder)) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.Center) { Text(icon, fontSize = 18.sp); Text(title, color = GuideMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1); Text(value, color = color, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis) } } }
+@Composable private fun GuidedInfoBox(label: String, value: String, modifier: Modifier) { Surface(modifier = modifier.height(78.dp), color = Color(0xAA0A0A0A), shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, GuideBorder)) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.Center) { Text(label, color = GuideMuted, fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(value, color = GuideWhite, fontSize = 15.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) } } }
+@Composable private fun GuidedActionButton(label: String, color: Color, onClick: () -> Unit, enabled: Boolean = true) { Button(onClick = onClick, modifier = Modifier.fillMaxWidth().height(58.dp), enabled = enabled, shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color(0xFF001407), disabledContainerColor = Color(0xFF2A2A2A), disabledContentColor = GuideMuted)) { Text(label, fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont, maxLines = 1, overflow = TextOverflow.Ellipsis) } }
+@Composable private fun GuidedSmallAction(label: String, color: Color, onClick: () -> Unit, enabled: Boolean, modifier: Modifier) { Button(onClick = onClick, modifier = modifier.height(48.dp), enabled = enabled, shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color(0xFF001407), disabledContainerColor = Color(0xFF2A2A2A), disabledContentColor = GuideMuted), contentPadding = PaddingValues(horizontal = 8.dp)) { Text(label, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) } }
 @Composable private fun GuidedPill(text: String, color: Color) { Surface(color = color.copy(alpha = 0.16f), border = BorderStroke(1.dp, color.copy(alpha = 0.58f)), shape = RoundedCornerShape(999.dp)) { Text(text, color = color, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), maxLines = 1, fontFamily = GuideFont) } }
 @Composable private fun GuidedPageTitle(title: String, subtitle: String) { Column { Text(title, color = GuideWhite, fontSize = 34.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(subtitle, color = GuideMuted, fontSize = 14.sp, maxLines = 2, fontFamily = GuideFont) } }
 @Composable private fun GuidedNoticeCard(notices: List<String>) { GuidedPanel(border = GuideCyan) { Text("Developer Notice", color = GuideWhite, fontSize = 20.sp, fontWeight = FontWeight.Black); notices.take(3).forEach { Text("• $it", color = GuideMuted, fontSize = 13.sp) } } }

@@ -42,49 +42,17 @@ fun GameDetailScreen(
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
         ) {
-            // ── Hero header ──
+            // ── Hero header (v3.0 halftone monochrome) ──
             Box(
                 Modifier.fillMaxWidth().height(320.dp)
             ) {
-                // Animated gradient background
-                val infiniteTransition = rememberInfiniteTransition(label = "detail_bg")
-                val gradientProgress by infiniteTransition.animateFloat(
-                    initialValue = 0f, targetValue = 1f,
-                    animationSpec = infiniteRepeatable(
-                        tween(4000, easing = FastOutSlowInEasing), RepeatMode.Reverse
-                    ),
-                    label = "gradient"
+                // v3.0: Halftone particle background (replaces gradient)
+                HalftoneBackground(
+                    modifier = Modifier.fillMaxSize(),
+                    dotSize = 2.5f,
+                    spacing = 20f,
+                    baseColor = HalftoneBright
                 )
-
-                Box(
-                    Modifier.fillMaxSize().background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                CandyBlue.copy(0.4f + gradientProgress * 0.2f),
-                                CandyCyan.copy(0.2f),
-                                Carbon
-                            ),
-                            start = Offset(0f, 0f),
-                            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-                        )
-                    )
-                )
-
-                // Mesh overlay
-                Canvas(Modifier.fillMaxSize()) {
-                    val w = size.width
-                    val h = size.height
-                    drawRect(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                Color.White.copy(0.06f),
-                                Color.Transparent
-                            ),
-                            center = Offset(w * 0.3f, h * 0.2f),
-                            radius = w * 0.8f
-                        )
-                    )
-                }
 
                 // Back button (top-left)
                 Box(
@@ -104,16 +72,12 @@ fun GameDetailScreen(
                     Modifier.fillMaxSize().padding(16.dp),
                     verticalArrangement = Arrangement.Bottom
                 ) {
-                    Box(
-                        Modifier.size(88.dp).clip(RoundedCornerShape(22.dp))
-                            .background(
-                                Brush.linearGradient(listOf(CandyCyan, CandyBlue, PremiumViolet))
-                            )
-                            .softGlow(CandyCyan, radius = 20f, alpha = 0.4f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("DL", color = Carbon, fontSize = 36.sp, fontWeight = FontWeight.Black)
-                    }
+                    // v3.0 monochrome DL cover (rounded square, black + white DL + halftone)
+                    DLavieLogoCover(
+                        size = 88.dp,
+                        fontSize = 36.sp,
+                        shape = RoundedCornerShape(22.dp)
+                    )
                     Spacer(Modifier.height(14.dp))
                     Text(
                         "DLavie 26: Football Game",
@@ -192,11 +156,11 @@ fun GameDetailScreen(
                     else -> {
                         Button(
                             onClick = onDownload,
-                            modifier = Modifier.fillMaxWidth().height(52.dp)
-                                .softGlow(CandyCyan, radius = 24f, alpha = 0.4f),
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
                             shape = TTShapes.button,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = CandyCyan,
+                                // v3.0 monochrome — white bg, black text (inverted premium)
+                                containerColor = Color.White,
                                 contentColor = Carbon
                             )
                         ) {

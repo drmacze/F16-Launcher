@@ -21,6 +21,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -34,8 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -47,24 +50,22 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Premium splash screen — Grok-inspired minimal design with **shiny silver text**.
+ * DLavie v3.0 Splash — Monochrome White-on-Black + Halftone Particles.
  *
- * Design philosophy:
- *  - Pure black background (no gradient noise)
- *  - **Animated gradient text** (silver shimmer sweep) — Bug 5 Part B fix.
- *    Uses official Compose `TextStyle(brush = Brush.linearGradient(...))` API,
- *    NOT buggy `BlendMode.SrcAtop`. Works on all devices.
- *  - Minimal motion: smooth fade + subtle scale + 1.2s shimmer sweep
- *  - Cinematic sound (MediaPlayer + raw WAV) plays at the start of sweep phase
- *  - Animated dots loader (3 pulsing dots) at bottom
+ * Design philosophy (match new DLavie logo):
+ *  - Background: HalftoneBackground (near-black + dot grid + corner glows)
+ *  - "DLavie" text: pure white, bold, modern sans-serif
+ *  - Star icon: small white star di kanan text, dengan pulse glow animation
+ *  - Loading dots: pure white (bukan silver)
+ *  - Tagline: subtle, near-invisible (1 line, very small)
  *
  * Flow (~4s total):
  *  1. Fade in "DLavie" text + scale-up (600-800ms, overlapping)
- *  2. Shimmer sweep across text (1.2s) + play cinematic sound at start
- *  3. Fade in tagline (400ms)
- *  4. Fade in dots loader (300ms)
+ *  2. Star glow pulse start (continuous) + play cinematic sound
+ *  3. Fade in tagline (400ms) — very subtle
+ *  4. Fade in dots loader (300ms) — white
  *  5. Hold (500ms)
- *  6. Fade out everything (500ms)
+ *  6. Fade out everything (400-500ms)
  *  7. Navigate to next screen
  */
 class ShinySplashActivity : ComponentActivity() {
@@ -77,7 +78,7 @@ class ShinySplashActivity : ComponentActivity() {
                 onBackground = Color.White, onSurface = Color.White
             )) {
                 Surface(Modifier.fillMaxSize(), color = Color.Black) {
-                    GrokStyleSplash(
+                    DLavieHalftoneSplash(
                         onFinished = {
                             // Decide next destination based on auth state
                             val prefs = getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
@@ -115,83 +116,148 @@ class ShinySplashActivity : ComponentActivity() {
 }
 
 @Composable
-private fun GrokStyleSplash(onFinished: () -> Unit) {
+private fun DLavieHalftoneSplash(onFinished: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // Animation states
     val textAlpha = remember { Animatable(0f) }
     val textScale = remember { Animatable(0.92f) }
+    val starAlpha = remember { Animatable(0f) }
     val taglineAlpha = remember { Animatable(0f) }
     val dotsAlpha = remember { Animatable(0f) }
-    val sweepProgress = remember { Animatable(0f) }  // shimmer sweep 0→1
+
+    // Continuous star glow pulse (independent dari phase machine)
+    val infiniteTransition = rememberInfiniteTransition(label = "star_glow")
+    val starGlow by infiniteTransition.animateFloat(
+        initialValue = 0.3f, targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(
+            tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse
+        ),
+        label = "star_glow_val"
+    )
+    val starScale by infiniteTransition.animateFloat(
+        initialValue = 0.9f, targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse
+        ),
+        label = "star_scale"
+    )
 
     // Phase machine
     LaunchedEffect(Unit) {
-        // Phase 1: Fade in "DLavie" with slight scale-up (600ms text alpha, 800ms scale, overlapping)
+        // Phase 1: Fade in "DLavie" text + scale-up (600-800ms, overlapping)
         kotlinx.coroutines.coroutineScope {
             launch { textAlpha.animateTo(1f, tween(600, easing = FastOutSlowInEasing)) }
             launch { textScale.animateTo(1f, tween(800, easing = FastOutSlowInEasing)) }
         }
 
-        // Phase 2: Shimmer sweep across text (1.2s) + play cinematic sound at start.
-        // Sound: MediaPlayer + raw WAV (Bug 5 Part A fix) — reliable di semua device.
+        // Phase 2: Fade in star icon (300ms) + play cinematic sound at start.
         scope.launch { SoundEffectHelper.playShinyChime(context) }
-        sweepProgress.animateTo(1f, tween(1200, easing = LinearEasing))
+        kotlinx.coroutines.coroutineScope {
+            launch { starAlpha.animateTo(1f, tween(300, easing = FastOutSlowInEasing)) }
+        }
 
-        // Phase 3: Fade in tagline (400ms)
-        taglineAlpha.animateTo(0.6f, tween(400, easing = FastOutSlowInEasing))
+        // Phase 3: Fade in tagline (400ms) — very subtle
+        taglineAlpha.animateTo(0.5f, tween(400, easing = FastOutSlowInEasing))
 
         // Phase 4: Fade in dots loader (300ms)
         dotsAlpha.animateTo(1f, tween(300))
 
-        // Phase 5: Hold (500ms) — biarkan user menikmati shimmer + sound
+        // Phase 5: Hold (500ms) — biarkan user menikmati star glow + sound
         delay(500)
 
         // Phase 6: Fade out everything (400-500ms)
         kotlinx.coroutines.coroutineScope {
             launch { textAlpha.animateTo(0f, tween(400, easing = FastOutSlowInEasing)) }
+            launch { starAlpha.animateTo(0f, tween(300)) }
             launch { taglineAlpha.animateTo(0f, tween(300)) }
             launch { dotsAlpha.animateTo(0f, tween(300)) }
-            launch { sweepProgress.animateTo(0f, tween(200)) }
         }
 
         onFinished()
     }
 
     Box(
-        Modifier.fillMaxSize().background(Color.Black),
+        Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
+        // ── Halftone particle background (match DLavie logo) ──
+        HalftoneBackground(
+            modifier = Modifier.fillMaxSize(),
+            dotSize = 3f,
+            spacing = 26f,
+            baseColor = HalftoneBright,
+            alpha = 1f
+        )
+
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxSize()
         ) {
-            // ── Main "DLavie" text — animated silver shimmer gradient ──
-            // Bug 5 Part B: pakai TextStyle(brush = animatedGradient) untuk shiny effect.
-            // Ini official Compose API yang WORKS di semua device (unlike BlendMode.SrcAtop).
-            ShinySilverText(
-                text = "DLavie",
-                alpha = textAlpha.value,
-                scale = textScale.value,
-                sweepProgress = sweepProgress.value
-            )
+            // ── "DLavie" text + star icon (match logo layout) ──
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .alpha(textAlpha.value)
+                    .scale(textScale.value)
+            ) {
+                Text(
+                    text = "DLavie",
+                    color = Color.White,   // pure white (match logo)
+                    fontSize = 52.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = (-1).sp,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.width(6.dp))
+                // Star icon dengan pulse glow (alpha animated by starGlow)
+                Box(
+                    modifier = Modifier
+                        .alpha(starAlpha.value)
+                        .size(28.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Glow layer (soft white circle behind star)
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .alpha(starGlow * 0.4f)
+                            .background(
+                                androidx.compose.ui.graphics.Brush.radialGradient(
+                                    listOf(Color.White, Color.Transparent)
+                                ),
+                                CircleShape
+                            )
+                    )
+                    Icon(
+                        Icons.Rounded.Star,
+                        contentDescription = null,
+                        tint = StarWhite.copy(alpha = starGlow),
+                        modifier = Modifier
+                            .size(24.dp)
+                            .scale(starScale)
+                    )
+                }
+            }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
 
-            // ── Tagline — subtle gray, small ──
+            // ── Tagline — very subtle, near-invisible ──
             Text(
                 text = "FIFA 16 Mobile · Mod Launcher",
-                color = Color(0xFF6B7280),  // subtle gray (Grok-style)
-                fontSize = 11.sp,
+                color = Color(0xFF555555),   // very subtle dark gray
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Medium,
-                letterSpacing = 3.sp,  // wide tracking for elegance
+                letterSpacing = 3.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.alpha(taglineAlpha.value)
             )
 
             Spacer(Modifier.height(60.dp))
 
-            // ── Loading dots (3 dots pulsing in sequence) ──
+            // ── Loading dots (3 dots pulsing — pure white) ──
             LoadingDots(
                 modifier = Modifier
                     .alpha(dotsAlpha.value)
@@ -202,82 +268,30 @@ private fun GrokStyleSplash(onFinished: () -> Unit) {
 }
 
 /**
- * Animated silver shimmer text — Bug 5 Part B fix.
- *
- * Pakai `TextStyle(brush = Brush.linearGradient(...))` (official Compose API)
- * dengan gradient yang animated offset-nya untuk efek "shiny sweep".
- *
- * Color stops: dark silver → bright white → light silver → mid silver → bright white → dark silver.
- * Sweep offset bergerak dari -300 ke +900 px (relative to text bounding box)
- * sesuai `sweepProgress` (0 → 1), menghasilkan highlight yang melintasi text.
- *
- * Catatan: `Brush.linearGradient` dengan `start`/`end` Offset adalah official API
- * yang support di Compose 1.5+ (compileSdk 35, Compose BOM 2024.10.00).
- * Tidak seperti BlendMode.SrcAtop yang buggy di beberapa device.
- */
-@Composable
-private fun ShinySilverText(
-    text: String,
-    alpha: Float,
-    scale: Float,
-    sweepProgress: Float
-) {
-    // Animated shimmer gradient — sweep dari kiri ke kanan.
-    // sweepProgress 0 → 1 menggerakkan gradient offset dari -300 ke +900.
-    val sweepX = -300f + sweepProgress * 1200f
-    val shimmerBrush = Brush.linearGradient(
-        colors = listOf(
-            Color(0xFF6B7280),     // dark silver
-            Color(0xFFF9FAFB),     // bright white
-            Color(0xFFE5E7EB),     // light silver
-            Color(0xFF9CA3AF),     // mid silver
-            Color(0xFFF9FAFB),     // bright white
-            Color(0xFF6B7280),     // dark silver
-        ),
-        start = Offset(x = sweepX, y = 0f),
-        end = Offset(x = sweepX + 300f, y = 80f)
-    )
-
-    Text(
-        text = text,
-        style = TextStyle(
-            brush = shimmerBrush,
-            fontSize = 52.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = (-1).sp,  // tight tracking for premium feel
-        ),
-        textAlign = TextAlign.Center,
-        modifier = Modifier
-            .alpha(alpha)
-            .scale(scale)
-    )
-}
-
-/**
- * Three pulsing dots — clean loading indicator.
+ * Three pulsing dots — pure white (v3.0 monochrome).
  * Each dot fades in/out with 200ms stagger.
  */
 @Composable
 private fun LoadingDots(modifier: Modifier = Modifier) {
-    val infiniteTransition = rememberInfiniteTransition(label = "dots")
-    val dot1 by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 1f,
+    val dotsTransition = rememberInfiniteTransition(label = "dots")
+    val dot1 by dotsTransition.animateFloat(
+        initialValue = 0.2f, targetValue = 1f,
         animationSpec = infiniteRepeatable(
             tween(600, delayMillis = 0, easing = LinearEasing),
             RepeatMode.Reverse
         ),
         label = "dot1"
     )
-    val dot2 by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 1f,
+    val dot2 by dotsTransition.animateFloat(
+        initialValue = 0.2f, targetValue = 1f,
         animationSpec = infiniteRepeatable(
             tween(600, delayMillis = 200, easing = LinearEasing),
             RepeatMode.Reverse
         ),
         label = "dot2"
     )
-    val dot3 by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 1f,
+    val dot3 by dotsTransition.animateFloat(
+        initialValue = 0.2f, targetValue = 1f,
         animationSpec = infiniteRepeatable(
             tween(600, delayMillis = 400, easing = LinearEasing),
             RepeatMode.Reverse
@@ -301,6 +315,6 @@ private fun Dot(alpha: Float) {
     Box(
         Modifier
             .size(6.dp)
-            .background(Color(0xFF9CA3AF).copy(alpha = alpha), androidx.compose.foundation.shape.CircleShape)
+            .background(Color.White.copy(alpha = alpha), CircleShape)   // pure white
     )
 }

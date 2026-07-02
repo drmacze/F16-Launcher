@@ -7,40 +7,60 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // ════════════════════════════════════════════════════════════════════════════
-// TAPTAP-LEVEL CUSTOM DESIGN SYSTEM
-// Dark gaming theme — pekat, premium, dengan accent vibrant
+// DLAVIE DESIGN SYSTEM v3.0 — Monochrome White-on-Black + Halftone Particles
+//
+// Inspired by: DLavie logo (deep near-black bg, white text, halftone dots,
+// small white star accent).
+//
+// Design philosophy:
+//  - Monochrome white-on-black (pekat, premium, futuristic)
+//  - Halftone dot pattern sebagai signature texture
+//  - Vibrant accents DIHAPUS — ganti dengan monochrome gray-white
+//  - Status colors (NeonGreen/DangerRed/AmberWarn) TETAP dipertahankan untuk
+//    functional indicators (download/success, error, rating) — minimal use.
 //
 // SINGLE SOURCE OF TRUTH untuk design tokens:
-//   - Colors  (Carbon, GlassBase, Surface2, Surface3, accents)
+//   - Colors  (Carbon, GlassBase, Surface2, Surface3, accents, halftone)
 //   - Typography (TTTypography)
 //   - Spacing  (TTSpacing)
 //   - Shapes   (TTShapes)
 //   - Elevation(TTElevation)
 //
 // Premium* palette tetap di ModernUI.kt (PremiumBg, PremiumSurface, PremiumGold,
-// PremiumViolet) sebagai extend — tidak duplicate.
+// PremiumViolet) sebagai extend — sekarang juga monochrome (gray).
 // ════════════════════════════════════════════════════════════════════════════
 
-// ─── Colors ───────────────────────────────────────────────────────────────────
-// Base backgrounds (sangat pekat, near-black dengan tint biru sangat subtil)
-val Carbon      = Color(0xFF0A0A0F)   // base — near black with slight blue tint
-val GlassBase   = Color(0xFF121218)   // card background
-val Surface2    = Color(0xFF1A1A24)   // elevated surface
-val Surface3    = Color(0xFF22222E)   // highest surface
+// ─── Base Backgrounds (near-black, pekat — match logo bg) ─────────────────────
+val Carbon      = Color(0xFF0A0A0A)   // base — near pure black (match logo bg)
+val GlassBase   = Color(0xFF111111)   // card background — slightly lighter
+val Surface2    = Color(0xFF1A1A1A)   // elevated surface
+val Surface3    = Color(0xFF222222)   // highest surface
 
-// Accents (vibrant, gaming-style)
-val CandyCyan   = Color(0xFF00E5FF)   // electric cyan — primary accent
-val CandyBlue   = Color(0xFF7C4DFF)   // deep violet — secondary
-val NeonGreen   = Color(0xFF00E676)   // emerald — success/download
-val SoftText    = Color(0xFFB0B0C0)   // body text
-val SubText     = Color(0xFF606070)   // muted
-val GlassStroke = Color(0x30FFFFFF)   // subtle white border
+// ─── Text (white-on-black, monochrome) ────────────────────────────────────────
+val SoftText    = Color(0xFFCCCCCC)   // body text — light gray-white
+val SubText     = Color(0xFF666666)   // muted — medium gray
+val GlassStroke = Color(0x30FFFFFF)   // subtle white border (halftone-like)
+
+// ─── Accents (monochrome — ganti vibrant cyan/violet) ─────────────────────────
+// CandyCyan/CandyBlue sebelumnya vibrant — sekarang light gray-white & gray,
+// supaya komponen lama yang reference nama ini otomatis jadi monochrome.
+val CandyCyan   = Color(0xFFE0E0E0)   // monochrome accent — light gray-white
+val CandyBlue   = Color(0xFFAAAAAA)   // monochrome secondary — gray
+
+// Status colors (TETAP vibrant — hanya untuk functional indicators, minimal use)
+val NeonGreen   = Color(0xFF00E676)   // emerald — success/download status
 val DangerRed   = Color(0xFFFF1744)   // error
-val AmberWarn   = Color(0xFFFFAB00)   // warning/rating
+val AmberWarn   = Color(0xFFFFAB00)   // warning/rating stars
 
-// TapTap-style accent
+// TapTap-style accent (tetap untuk ratings/buttons, tetap vibrant)
 val TapTapGreen = Color(0xFF00C853)   // TapTap green untuk ratings/buttons
-val TapTapGold  = Color(0xFFFFD700)   // gold untuk premium/verified
+val TapTapGold  = Color(0xFFFFD700)   // gold untuk premium/verified badge only
+
+// ─── NEW: Halftone particle colors (signature DLavie texture) ─────────────────
+val HalftoneBright = Color(0xFFFFFFFF)  // bright dots
+val HalftoneMid    = Color(0xFF888888)  // mid dots
+val HalftoneDim    = Color(0xFF333333)  // dim dots
+val StarWhite      = Color(0xFFFFFFF0)  // star glow (slightly warm white)
 
 // ─── Typography ───────────────────────────────────────────────────────────────
 // Custom font scale — gaming apps biasanya pakai tight tracking, bold weights

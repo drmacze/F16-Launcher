@@ -1,14 +1,20 @@
 package com.drmacze.f16launcher
 
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,11 +58,18 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.airbnb.lottie.compose.LottieAnimation
+import com.airbnb.lottie.compose.LottieCompositionSpec
+import com.airbnb.lottie.compose.LottieConstants
+import com.airbnb.lottie.compose.animateLottieCompositionAsState
+import com.airbnb.lottie.compose.rememberLottieComposition
 import com.valentinilk.shimmer.ShimmerBounds
 import com.valentinilk.shimmer.rememberShimmer
 import com.valentinilk.shimmer.shimmer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 // ════════════════════════════════════════════════════════════════════════════
 // TAPTAP-LEVEL CUSTOM COMPONENTS
@@ -361,5 +374,165 @@ fun TTVerifiedBadge(text: String = "OFFICIAL") {
             Icon(Icons.Rounded.Verified, null, tint = NeonGreen, modifier = Modifier.size(11.dp))
             Text(text, color = NeonGreen, fontSize = 9.sp, fontWeight = FontWeight.Black)
         }
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DLAVIE v3.0 — Halftone Particle Background + Lottie Loading
+// Signature visual elements inspired by DLavie logo (halftone dots, white star).
+// ════════════════════════════════════════════════════════════════════════════
+
+// ─── Halftone particle background — inspired by DLavie logo ───────────────────
+// Grid of dots dengan varying opacity (radial gradient: brighter at corners,
+// dimmer at center) + subtle animated wave. Pure black base. Optional alpha
+// overlay untuk subtle usage (e.g. behind content di Beranda).
+@Composable
+fun HalftoneBackground(
+    modifier: Modifier = Modifier,
+    dotSize: Float = 3f,
+    spacing: Float = 24f,
+    baseColor: Color = HalftoneBright,
+    alpha: Float = 1f
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "halftone")
+    val waveProgress by infiniteTransition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            tween(6000, easing = LinearEasing), RepeatMode.Reverse
+        ),
+        label = "wave"
+    )
+
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+
+        // Base: pure near-black (match logo bg)
+        drawRect(Color(0xFF0A0A0A).copy(alpha = alpha))
+
+        // Halftone dots grid — brighter di pinggir, dimmer di tengah (seperti logo)
+        val maxDist = sqrt(w * w + h * h) / 2f
+        var y = 0f
+        while (y < h) {
+            var x = 0f
+            while (x < w) {
+                // Distance from center for radial gradient effect
+                val dx = x - w / 2f
+                val dy = y - h / 2f
+                val dist = sqrt(dx * dx + dy * dy)
+                val normalizedDist = (dist / maxDist).coerceIn(0f, 1f)
+
+                // Brighter di pinggir (normalizedDist tinggi), dimmer di tengah
+                val baseAlpha = 0.10f + normalizedDist * 0.25f
+
+                // Wave animation (subtle moving highlight)
+                val waveOffset = sin((x + y) * 0.01f + waveProgress * 6f) * 0.08f
+                val dotAlpha = (baseAlpha + waveOffset).coerceIn(0.04f, 0.40f) * alpha
+
+                drawCircle(
+                    color = baseColor.copy(alpha = dotAlpha),
+                    radius = dotSize,
+                    center = Offset(x, y)
+                )
+                x += spacing
+            }
+            y += spacing
+        }
+
+        // Subtle radial glow di pojok (seperti logo — brighter di corners)
+        drawRect(
+            Brush.radialGradient(
+                colors = listOf(
+                    Color.White.copy(0.04f * alpha),
+                    Color.Transparent
+                ),
+                center = Offset(0f, 0f),  // top-left corner
+                radius = w * 0.6f
+            )
+        )
+        drawRect(
+            Brush.radialGradient(
+                colors = listOf(
+                    Color.White.copy(0.04f * alpha),
+                    Color.Transparent
+                ),
+                center = Offset(w, h),  // bottom-right corner
+                radius = w * 0.6f
+            )
+        )
+    }
+}
+
+// ─── Lottie Loading (Phase 3) ─────────────────────────────────────────────────
+// Rotating white circle outline — minimal, monochrome, matches DLavie theme.
+// Pakai lottie-compose (already in dependencies). Falls back gracefully kalau
+// composition belum ready (empty canvas).
+@Composable
+fun LottieLoading(
+    modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 48.dp
+) {
+    val composition by rememberLottieComposition(
+        LottieCompositionSpec.RawRes(R.raw.loading_animation)
+    )
+    val progress by animateLottieCompositionAsState(
+        composition,
+        iterations = LottieConstants.IterateForever
+    )
+    LottieAnimation(
+        composition = composition,
+        progress = { progress },
+        modifier = modifier.size(size)
+    )
+}
+
+// ─── DLavie Logo Cover (v3.0 monochrome — match logo) ─────────────────────────
+// Black bg + white "DL" text + subtle halftone dots + white border.
+// Replaces the old gradient-based DL cover (cyan/violet) di semua screens.
+// Shape configurable (default CircleShape untuk avatar-style).
+@Composable
+fun DLavieLogoCover(
+    modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 56.dp,
+    text: String = "DL",
+    fontSize: androidx.compose.ui.unit.TextUnit = 20.sp,
+    shape: androidx.compose.ui.graphics.Shape = CircleShape,
+    borderWidth: androidx.compose.ui.unit.Dp = 1.dp
+) {
+    val sizeDp = size   // alias supaya tidak shadow DrawScope.size di Canvas
+    Box(
+        modifier = modifier
+            .size(sizeDp)
+            .clip(shape)
+            .background(Color(0xFF0A0A0A))   // near-black (match logo bg)
+            .border(BorderStroke(borderWidth, Color.White.copy(0.25f)), shape),
+        contentAlignment = Alignment.Center
+    ) {
+        // Subtle halftone dots overlay (very faint)
+        Canvas(Modifier.matchParentSize()) {
+            val w = this.size.width    // DrawScope size (pixels)
+            val h = this.size.height
+            val spacing = 8f
+            var y = spacing / 2f
+            while (y < h) {
+                var x = spacing / 2f
+                while (x < w) {
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.06f),
+                        radius = 1f,
+                        center = Offset(x, y)
+                    )
+                    x += spacing
+                }
+                y += spacing
+            }
+        }
+        // White "DL" text (inverted from old black-on-gradient)
+        Text(
+            text = text,
+            color = Color.White,
+            fontSize = fontSize,
+            fontWeight = FontWeight.Black
+        )
     }
 }

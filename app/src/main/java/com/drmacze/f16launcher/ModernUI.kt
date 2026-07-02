@@ -73,16 +73,17 @@ import androidx.compose.ui.unit.sp
 // single source of truth. File ini hanya simpan extend "Premium*" palette
 // (untuk backward compat dengan komponen lama yang pakai premium tint).
 
-// ─── Premium Palette ───────────────────────────────────────────────────────────
-// Deep navy-black base with cool gradient overlays — dipakai untuk skeleton
-// shimmer background dan gradient border hero cards.
-val PremiumBg         = Color(0xFF050811)   // deepest base
-val PremiumSurface    = Color(0xFF0B1320)   // elevated surface
-val PremiumSurfaceHi  = Color(0xFF111B2E)   // highest surface
+// ─── Premium Palette (v3.0 — monochrome, match DLavie logo) ───────────────────
+// Deep near-black base (match logo bg) — dipakai untuk skeleton shimmer
+// background dan gradient border hero cards. Sebelumnya navy-blue, sekarang
+// pure monochrome dark gray.
+val PremiumBg         = Color(0xFF050505)   // deepest base — near pure black
+val PremiumSurface    = Color(0xFF0B0B0B)   // elevated surface — dark gray
+val PremiumSurfaceHi  = Color(0xFF111111)   // highest surface
 
-// Premium gold accent (for hero elements only)
-val PremiumGold = Color(0xFFFCD34D)
-val PremiumViolet = Color(0xFFA78BFA)
+// Premium accents (v3.0 monochrome — ganti violet ke gray, keep gold for verified only)
+val PremiumGold = Color(0xFFFFD700)   // tetap gold — verified badge only
+val PremiumViolet = Color(0xFF9E9E9E) // monochrome gray — ganti violet (logo has no violet)
 
 // ─── Typography Scale ──────────────────────────────────────────────────────────
 // System font with proper weight hierarchy
@@ -126,7 +127,7 @@ fun PremiumGlassCard(
         modifier = baseModifier,
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xCC0B1320)
+            containerColor = Color(0xCC0B0B0B)   // v3.0 monochrome — near-black glass
         ),
         border = if (gradientBorder) null else BorderStroke(1.dp, borderColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -300,7 +301,7 @@ fun SkeletonBox(
                 Brush.linearGradient(
                     colors = listOf(
                         PremiumSurfaceHi.copy(0.6f),
-                        Color(0xFF1A2942).copy(0.9f),
+                        Color(0xFF1A1A1A).copy(0.9f),   // v3.0 monochrome shimmer highlight
                         PremiumSurfaceHi.copy(0.6f)
                     ),
                     start = Offset(shimmer * 200f, 0f),
@@ -502,7 +503,7 @@ fun ModernStatusChip(
                 .clip(TTShapes.card)
                 .clickable(interactionSource = interactionSource, indication = null) { onClick() },
             shape = TTShapes.card,
-            color = Color(0xCC0B1320),
+            color = Color(0xCC0B0B0B),   // v3.0 monochrome glass
             border = BorderStroke(1.dp, borderColor)
         ) {
             Column(

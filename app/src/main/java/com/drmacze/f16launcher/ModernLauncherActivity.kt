@@ -797,16 +797,16 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
     )
 
     Box(modifier = modifier.widthIn(max = 600.dp).padding(horizontal = 16.dp)) {
-        // Multi-layer glow backdrop (cyan + violet) — soft halo di belakang pill
+        // Multi-layer glow backdrop — soft white halo di belakang pill (v3.0 monochrome)
         Box(
             Modifier.matchParentSize()
                 .clip(RoundedCornerShape(999.dp))
                 .background(
                     Brush.horizontalGradient(
                         listOf(
-                            CandyCyan.copy(alpha = glowAlpha * 0.10f),
-                            CandyBlue.copy(alpha = glowAlpha * 0.18f),
-                            PremiumViolet.copy(alpha = glowAlpha * 0.10f)
+                            Color.White.copy(alpha = glowAlpha * 0.06f),
+                            Color.White.copy(alpha = glowAlpha * 0.10f),
+                            Color.White.copy(alpha = glowAlpha * 0.06f)
                         )
                     )
                 )
@@ -814,9 +814,9 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
         )
         Surface(
             shape           = RoundedCornerShape(999.dp),  // true pill
-            color           = Color(0xF00B1320),
+            color           = Color(0xF00A0A0A),   // v3.0 monochrome near-black glass
             border          = BorderStroke(1.dp, Brush.horizontalGradient(
-                listOf(GlassStroke, CandyCyan.copy(0.25f), GlassStroke)
+                listOf(GlassStroke, Color.White.copy(0.20f), GlassStroke)
             )),
             shadowElevation = 16.dp,   // slightly flatter, lebih modern
             tonalElevation  = 0.dp
@@ -853,8 +853,9 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
                             .scale(scaleAnim)
                             .clip(RoundedCornerShape(999.dp))  // true pill
                             .background(
+                                // v3.0 monochrome — active tab solid white (inverted premium)
                                 if (selected) Brush.horizontalGradient(
-                                    listOf(CandyCyan, CandyBlue.copy(0.85f))
+                                    listOf(Color.White, Color.White.copy(0.92f))
                                 )
                                 else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
                             )
@@ -1113,16 +1114,8 @@ fun HomeScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(32.dp)
-                        .background(
-                            Brush.linearGradient(listOf(CandyCyan, CandyBlue, PremiumViolet)),
-                            CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("DL", color = Carbon, fontSize = 13.sp, fontWeight = FontWeight.Black)
-                }
+                // v3.0 monochrome DL logo cover (black bg + white DL + halftone)
+                DLavieLogoCover(size = 32.dp, fontSize = 13.sp, shape = CircleShape)
                 Spacer(Modifier.width(10.dp))
                 Text("DLavie 26", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
             }
@@ -1178,14 +1171,20 @@ fun HomeScreen(
             }
         }
 
-        // ── Hero Banner (FIFA 16 Mobile — TapTap-style) ────────────────────────
-        // Pure black background + animated mesh gradient grey wave + shiny title
+        // ── Hero Banner (FIFA 16 Mobile — v3.0 halftone monochrome) ────────────
+        // Halftone particle background (match DLavie logo) + shiny title
         // + typewriter subtitle + rating badge + DL logo cover.
         Box(
             Modifier.fillMaxWidth().height(200.dp)
                 .clip(RoundedCornerShape(24.dp))
         ) {
-            MeshGradientBackground(Modifier.fillMaxSize())
+            // v3.0: Halftone particle background (replaces MeshGradientBackground)
+            HalftoneBackground(
+                modifier = Modifier.fillMaxSize(),
+                dotSize = 2.5f,
+                spacing = 18f,
+                baseColor = HalftoneBright
+            )
 
             Column(
                 Modifier.fillMaxSize().padding(20.dp),
@@ -1222,17 +1221,12 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        Modifier.size(60.dp)
-                            .background(
-                                Brush.linearGradient(listOf(CandyCyan, CandyBlue, PremiumViolet)),
-                                CircleShape
-                            )
-                            .softGlow(CandyCyan, radius = 22f, alpha = 0.4f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("DL", color = Carbon, fontSize = 22.sp, fontWeight = FontWeight.Black)
-                    }
+                    // v3.0 monochrome DL logo cover (black bg + white DL + halftone)
+                    DLavieLogoCover(
+                        size = 60.dp,
+                        fontSize = 22.sp,
+                        shape = CircleShape
+                    )
                     Surface(
                         color = NeonGreen.copy(0.16f),
                         border = BorderStroke(1.dp, NeonGreen.copy(0.45f)),
@@ -1312,7 +1306,8 @@ fun HomeScreen(
         // Inline download progress + error ditampilkan di bawah card (TTGameCard
         // tidak punya slot untuk itu, jadi kita wrap dalam Column).
         val rating10 = String.format("%.1f", avgRating * 2.0)
-        val coverGradient = listOf(CandyCyan, CandyBlue, PremiumViolet)
+        // v3.0 monochrome cover gradient (dark → matches DLavie logo cover)
+        val coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222), Color(0xFF1A1A1A))
         val ttButtonLabel: String = when {
             maintenanceBlocked -> "Diblokir"
             gameInstalled      -> "Mainkan"
@@ -1396,8 +1391,13 @@ fun HomeScreen(
         ) { state ->
             when (state) {
 
-                // Loading — TapTap-style shimmer skeletons (bukan spinner)
-                SetupState.LOADING -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Loading — TapTap-style shimmer skeletons + Lottie loading (Phase 3)
+                SetupState.LOADING -> Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // v3.0 Phase 3: Lottie loading animation (monochrome white ring)
+                    LottieLoading(size = 56.dp)
                     TTGameCardSkeleton()
                     TTGameCardSkeleton()
                     TTGameCardSkeleton()
@@ -1436,15 +1436,16 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         shape    = RoundedCornerShape(18.dp),
                         colors   = ButtonDefaults.buttonColors(
+                            // v3.0 monochrome — default: white bg + black text (inverted premium)
                             containerColor = when {
                                 maintenanceBlocked -> Surface2
                                 dlProgress >= 2f -> NeonGreen
-                                dlProgress >= 0f -> CandyBlue.copy(0.6f)
-                                else             -> CandyBlue
+                                dlProgress >= 0f -> Color.White.copy(0.5f)   // dimmed while downloading
+                                else             -> Color.White              // premium inverted
                             },
-                            contentColor   = if (maintenanceBlocked) SoftText else if (dlProgress >= 2f) Color(0xFF00150B) else Color.White,
-                            disabledContainerColor = if (maintenanceBlocked) Surface2 else CandyBlue.copy(0.4f),
-                            disabledContentColor   = if (maintenanceBlocked) SoftText else Color.White.copy(0.7f)
+                            contentColor   = if (maintenanceBlocked) SoftText else if (dlProgress >= 2f) Color(0xFF00150B) else Carbon,
+                            disabledContainerColor = if (maintenanceBlocked) Surface2 else Color.White.copy(0.3f),
+                            disabledContentColor   = if (maintenanceBlocked) SoftText else Carbon.copy(0.6f)
                         )
                     ) {
                         when {
@@ -3316,21 +3317,13 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
                             style = Stroke(width = stroke)
                         )
                     }
-                    // Inner avatar
-                    Box(
-                        Modifier
-                            .size(60.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.linearGradient(listOf(CandyCyan, CandyBlue, PremiumViolet))
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            initial, fontSize = 24.sp, fontWeight = FontWeight.Black,
-                            color = Carbon
-                        )
-                    }
+                    // Inner avatar — v3.0 monochrome (black bg + white initial + halftone)
+                    DLavieLogoCover(
+                        size = 60.dp,
+                        text = initial,
+                        fontSize = 24.sp,
+                        shape = CircleShape
+                    )
                 }
                 Column(Modifier.weight(1f)) {
                     Text(
