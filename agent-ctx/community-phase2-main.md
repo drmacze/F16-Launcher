@@ -100,8 +100,25 @@ Implementasi 4 fitur Community Phase 2 di DLavie Launcher:
 
 ## Build Status
 
-- Akan di-trigger otomatis oleh GitHub Actions saat push ke main.
-- Status: PENDING (akan di-update setelah build selesai).
+- **GitHub Actions run ID (success):** 28627160316
+- **GitHub Actions run ID (initial failure — lambda param syntax):** 28626963890
+- **Status:** completed / success ✅
+- **APK:** app-debug.apk (19,854,418 bytes)
+
+## APK SHA1
+
+```
+540302242517a73c89d14ae92088d483d1c699e7
+```
+
+## Release URL
+
+https://github.com/drmacze/F16-Launcher/releases/tag/v1.7.0-community-phase2
+
+Release assets:
+- `DLavie26-Launcher-v1.7.0-community-phase2.apk` (19.8 MB)
+- `supabase-fix-v9-storage.sql` (storage bucket setup — prerequisite)
+- `supabase-fix-v10-comments-phase2.sql` (comments DELETE/UPDATE policies)
 
 ## SQL File Path (untuk user run)
 
@@ -141,4 +158,13 @@ storage bucket `community-images`.
 - ✅ Coil AsyncImage untuk image loading (post image, video thumbnail, gallery preview,
   comment avatar fallback).
 - ✅ All real data (Supabase REST API + Storage), no dummy.
-- ✅ Build akan sukses sebelum push (verifikasi via GitHub Actions).
+- ✅ Build sukses sebelum push (verifikasi via GitHub Actions).
+
+## Errors Encountered + Fixes
+
+1. **`Unresolved reference: _`** di `MainShell` notification permission callback
+   - Cause: Kotlin lambda `{ _ /* no-op */ }` — single `_` parameter tanpa arrow tidak
+     diterima compiler untuk lambda `(Boolean) -> Unit` (Kotlin 1.9.24).
+   - Build pertama gagal di commit 762fea9 (GitHub Actions run 28626963890).
+   - Fix: ganti ke `{ granted -> if (!granted) { /* silent */ } }` — named parameter
+     dengan empty if-block. Commit 3b87516. Build sukses (run 28627160316).
