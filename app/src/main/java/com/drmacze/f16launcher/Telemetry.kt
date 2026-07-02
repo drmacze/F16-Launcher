@@ -1,13 +1,14 @@
 package com.drmacze.f16launcher
 
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
  * Telemetry — fire-and-forget event tracking via Supabase `app_events` table.
@@ -15,16 +16,22 @@ import org.json.JSONObject
  * Contract (per project spec):
  *  - Never blocks UI; runs on Dispatchers.IO inside a SupervisorJob.
  *  - Silent failure: any error is swallowed.
- *  - Only logs when the user is logged in (CommunityApi.loggedIn()).
- *  - Captures user_id (server-side default), event_type, event_data jsonb,
- *    app_version, country, and a minimal device_info payload.
+ *  - Tracks events even when user is NOT logged in (user_id = null) — per RLS policy
+ *    `auth.uid() = user_id OR user_id IS NULL`.
+ *  - Sends directly to Supabase REST `/rest/v1/app_events` with the correct schema:
+ *      user_id     uuid nullable  (FK to profiles.id, set only when logged in)
+ *      event_type  text  not null
+ *      app_version text  nullable
+ *      country     text  nullable
+ *      device_info jsonb nullable
+ *      metadata    jsonb not null default '{}'
  *
  * Events fired across the launcher:
  *  - app_open         (MainShell)
  *  - login            (DLavieGuidedActivity)
  *  - register         (DLavieGuidedActivity)
- *  - patch_apply      (DevPatchEngine / UpdateScreen)
- *  - patch_rollback   (UpdateScreen rollback action)
+ *  - patch_apply      (DevPatchEngine — richer status metadata)
+ *  - patch_rollback   (DevPatchEngine rollback action)
  *  - game_launch      (launchGame in ModernLauncherActivity)
  *  - download_apk     (HomeScreen startDownload)
  *  - logout           (MainShell onLogout)
@@ -43,54 +50,91 @@ object Telemetry {
     const val EVT_DOWNLOAD_APK    = "download_apk"
     const val EVT_LOGOUT          = "logout"
 
+    // Supabase REST endpoint + anon key (sourced from CommunityApi to stay DRY).
+    private val SUPABASE_URL = CommunityApi.SUPABASE_URL
+    private val SUPABASE_KEY = CommunityApi.SUPABASE_KEY
+    private const val APP_EVENTS_PATH = "/rest/v1/app_events"
+
     /**
      * Track an event. Fire-and-forget.
      * Safe to call from the main thread — it dispatches to Dispatchers.IO.
+     *
+     * RLS: user can INSERT their own row (auth.uid() = user_id) OR with user_id = null.
+     * Non-staff users cannot SELECT (only INSERT).
      */
-    fun track(context: Context, eventType: String, eventData: Map<String, Any?> = emptyMap()) {
-        scope.launch {
-            runCatching {
-                val api = CommunityApi(context.applicationContext)
-                if (!api.loggedIn()) return@runCatching
-                api.logEvent(
-                    eventType,
-                    toJsonObject(eventData),
-                    appVersion(context),
-                    api.country(),
-                    deviceInfo()
-                )
-            }
-        }
+    fun track(context: Context, eventType: String, metadata: Map<String, Any?> = emptyMap()) {
+        val api = CommunityApi(context.applicationContext)
+        trackInternal(api, eventType, metadata)
     }
 
     /**
      * Convenience variant for callers that already hold a CommunityApi instance
      * (avoids re-instantiating SharedPreferences).
      */
-    fun track(api: CommunityApi, context: Context, eventType: String, eventData: Map<String, Any?> = emptyMap()) {
+    fun track(api: CommunityApi, context: Context, eventType: String, metadata: Map<String, Any?> = emptyMap()) {
+        trackInternal(api, eventType, metadata)
+    }
+
+    // ─── Core dispatch ─────────────────────────────────────────────────────────
+
+    private fun trackInternal(api: CommunityApi, eventType: String, metadata: Map<String, Any?>) {
         scope.launch {
             runCatching {
-                if (!api.loggedIn()) return@runCatching
-                api.logEvent(
-                    eventType,
-                    toJsonObject(eventData),
-                    appVersion(context),
-                    api.country(),
-                    deviceInfo()
-                )
+                pushToSupabase(api, eventType, metadata)
             }
+        }
+    }
+
+    /**
+     * POST a single row to `app_events` table via Supabase REST.
+     * Uses user's access token if logged in (so RLS `auth.uid() = user_id` matches);
+     * otherwise falls back to anon key (user_id column is omitted → null).
+     *
+     * `Prefer: return=minimal` skips the response body — we don't need it.
+     */
+    private fun pushToSupabase(api: CommunityApi, eventType: String, metadata: Map<String, Any?>) {
+        val loggedIn = api.loggedIn()
+        val userId   = if (loggedIn) api.userId() else null
+        val country  = if (loggedIn) api.country() else null
+
+        val body = JSONObject().apply {
+            if (!userId.isNullOrEmpty()) put("user_id", userId)
+            put("event_type", eventType)
+            put("app_version", appVersion())
+            if (!country.isNullOrEmpty()) put("country", country)
+            put("device_info", deviceInfo())
+            put("metadata", toJsonObject(metadata))
+        }
+
+        val conn = (URL(SUPABASE_URL + APP_EVENTS_PATH).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 10_000
+            readTimeout    = 15_000
+            setRequestProperty("apikey", SUPABASE_KEY)
+            setRequestProperty("Authorization", "Bearer ${if (loggedIn && api.token().isNotEmpty()) api.token() else SUPABASE_KEY}")
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Prefer", "return=minimal")
+            doOutput = true
+        }
+        try {
+            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            conn.responseCode  // trigger request — response code is intentionally ignored
+        } finally {
+            conn.disconnect()
         }
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────────
 
-    private fun appVersion(context: Context): String {
+    /**
+     * App version label (e.g. "1.1.3-telemetry").
+     * Uses BuildConfig.VERSION_NAME generated by Gradle — falls back to "unknown"
+     * if the field isn't resolvable at compile time.
+     */
+    private fun appVersion(): String {
         return try {
-            val pkg = context.packageManager.getPackageInfo(context.packageName, 0)
-            val code = if (Build.VERSION.SDK_INT >= 28) pkg.longVersionCode else pkg.versionCode.toLong()
-            "${pkg.versionName} ($code)"
-        } catch (_: PackageManager.NameNotFoundException) {
-            "unknown"
+            @Suppress("DEPRECATION")
+            BuildConfig.VERSION_NAME ?: "unknown"
         } catch (_: Throwable) {
             "unknown"
         }
@@ -101,12 +145,16 @@ object Telemetry {
             put("manufacturer", Build.MANUFACTURER ?: "")
             put("model", Build.MODEL ?: "")
             put("brand", Build.BRAND ?: "")
+            put("android_version", Build.VERSION.RELEASE ?: "")
             put("sdk_int", Build.VERSION.SDK_INT)
-            put("os_release", Build.VERSION.RELEASE ?: "")
             put("abi", (Build.SUPPORTED_ABIS.firstOrNull() ?: ""))
         }
     }
 
+    /**
+     * Recursively convert a Map into a JSONObject.
+     * Handles nested Maps and skips null values to keep JSON clean.
+     */
     private fun toJsonObject(map: Map<String, Any?>): JSONObject {
         val obj = JSONObject()
         if (map.isEmpty()) return obj
