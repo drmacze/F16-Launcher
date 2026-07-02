@@ -1,63 +1,29 @@
 package com.drmacze.f16launcher
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.*
+import androidx.compose.ui.draw.*
+import androidx.compose.ui.graphics.*
+import androidx.compose.ui.text.font.*
+import androidx.compose.ui.unit.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.SportsSoccer
-import androidx.compose.material.icons.rounded.Star
-import androidx.compose.material.icons.rounded.Storage
-import androidx.compose.material.icons.rounded.Update
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.rounded.*
 
-// ════════════════════════════════════════════════════════════════════════════
-// GAME DETAIL SCREEN (Phase 2 — TapTap-style detail page)
-//
-// Diakses dari Beranda saat user tap TTGameCard. Menampilkan hero header
-// dengan gradient, rating, action button (Mainkan/Dapatkan/Diblokir),
-// about section, dan info cards (Kategori, Versi, Ukuran).
-//
-// Pakai TapTapDesignSystem tokens (TTSpacing, TTShapes, colors).
-// ════════════════════════════════════════════════════════════════════════════
-
+/**
+ * Game Detail Screen — TapTap-style game detail page.
+ *
+ * Features:
+ *  - Hero header dengan gradient + game cover
+ *  - Rating display (real dari Supabase game_ratings)
+ *  - Action button (Mainkan / Dapatkan / Diblokir Maintenance)
+ *  - About section
+ *  - Info cards (Kategori, Versi, Ukuran)
+ *  - Smooth scroll
+ */
 @Composable
 fun GameDetailScreen(
     onBack: () -> Unit,
@@ -66,127 +32,193 @@ fun GameDetailScreen(
     gameInstalled: Boolean,
     avgRating: Double,
     ratingCount: Int,
-    maintenanceBlocked: Boolean = false
+    maintenanceBlocked: Boolean = false,
+    onRate: () -> Unit = {}
 ) {
     Box(Modifier.fillMaxSize().background(Carbon)) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
         ) {
-            // ── Hero header with gradient ──
+            // ── Hero header ──
             Box(
-                Modifier.fillMaxWidth().height(280.dp)
+                Modifier.fillMaxWidth().height(320.dp)
             ) {
-                // Gradient background (top: blue tint → bottom: Carbon blend)
+                // Animated gradient background
+                val infiniteTransition = rememberInfiniteTransition(label = "detail_bg")
+                val gradientProgress by infiniteTransition.animateFloat(
+                    initialValue = 0f, targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        tween(4000, easing = FastOutSlowInEasing), RepeatMode.Reverse
+                    ),
+                    label = "gradient"
+                )
+
                 Box(
                     Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(
-                            listOf(CandyBlue.copy(0.3f), Carbon)
+                        Brush.linearGradient(
+                            colors = listOf(
+                                CandyBlue.copy(0.4f + gradientProgress * 0.2f),
+                                CandyCyan.copy(0.2f),
+                                Carbon
+                            ),
+                            start = Offset(0f, 0f),
+                            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                         )
                     )
                 )
 
-                // Back button (top-left, floating circle)
+                // Mesh overlay
+                Canvas(Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    drawRect(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(w * 0.3f, h * 0.2f),
+                            radius = w * 0.8f
+                        )
+                    )
+                }
+
+                // Back button (top-left)
                 Box(
-                    Modifier.padding(TTSpacing.lg).size(40.dp)
-                        .clip(CircleShape).background(Color.Black.copy(0.5f))
+                    Modifier
+                        .padding(top = 48.dp, start = 16.dp)
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(0.6f))
                         .clickable { onBack() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Rounded.ArrowBack, null,
-                        tint = Color.White, modifier = Modifier.size(24.dp)
-                    )
+                    Icon(Icons.Rounded.ArrowBack, null, tint = Color.White, modifier = Modifier.size(22.dp))
                 }
 
-                // Bottom-anchored content: cover + title + subtitle
+                // Game cover + title (bottom)
                 Column(
-                    Modifier.fillMaxSize().padding(TTSpacing.lg),
+                    Modifier.fillMaxSize().padding(16.dp),
                     verticalArrangement = Arrangement.Bottom
                 ) {
                     Box(
-                        Modifier.size(80.dp).clip(RoundedCornerShape(20.dp))
+                        Modifier.size(88.dp).clip(RoundedCornerShape(22.dp))
                             .background(
                                 Brush.linearGradient(listOf(CandyCyan, CandyBlue, PremiumViolet))
-                            ),
+                            )
+                            .softGlow(CandyCyan, radius = 20f, alpha = 0.4f),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("DL", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black)
+                        Text("DL", color = Carbon, fontSize = 36.sp, fontWeight = FontWeight.Black)
                     }
-                    Spacer(Modifier.height(TTSpacing.md))
+                    Spacer(Modifier.height(14.dp))
                     Text(
                         "DLavie 26: Football Game",
-                        color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black
+                        color = Color.White,
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Black
                     )
-                    Text(
-                        "FIFA 16 Mobile · Mod",
-                        color = SoftText, fontSize = 13.sp
-                    )
+                    Text("FIFA 16 Mobile · Mod", color = SoftText, fontSize = 13.sp)
                 }
             }
 
-            // ── Rating + Action button row ──
+            // ── Rating + Action ──
             Row(
-                Modifier.fillMaxWidth().padding(TTSpacing.lg),
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
                     val rating10 = String.format("%.1f", avgRating * 2)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Star, null, tint = AmberWarn, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(TTSpacing.xs))
-                        Text(rating10, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        Icon(Icons.Rounded.Star, null, tint = AmberWarn, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(rating10, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
                         Text("/10", color = SoftText, fontSize = 14.sp)
                     }
                     Text("$ratingCount ratings", color = SoftText, fontSize = 11.sp)
                 }
 
-                // Action button — state-aware (maintenanceBlocked > gameInstalled > download)
+                // Rate button
+                OutlinedButton(
+                    onClick = onRate,
+                    shape = TTShapes.chip,
+                    border = BorderStroke(1.dp, AmberWarn.copy(0.5f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AmberWarn)
+                ) {
+                    Icon(Icons.Rounded.StarBorder, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Rate", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // ── Action button (Mainkan/Dapatkan) ──
+            Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 when {
                     maintenanceBlocked -> {
                         OutlinedButton(
                             onClick = {},
                             enabled = false,
-                            shape = TTShapes.chip
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            shape = TTShapes.button,
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                disabledContainerColor = Surface2,
+                                disabledContentColor = SubText
+                            )
                         ) {
-                            Text("Diblokir Maintenance", fontSize = 12.sp)
+                            Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Diblokir Maintenance", fontWeight = FontWeight.Bold)
                         }
                     }
                     gameInstalled -> {
                         Button(
                             onClick = onPlay,
-                            shape = TTShapes.chip,
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            shape = TTShapes.button,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = NeonGreen,
                                 contentColor = Carbon
                             )
                         ) {
-                            Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(TTSpacing.xs))
-                            Text("Mainkan", fontWeight = FontWeight.Bold)
+                            Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(22.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Mainkan Sekarang", fontSize = 16.sp, fontWeight = FontWeight.Black)
                         }
                     }
                     else -> {
                         Button(
                             onClick = onDownload,
-                            shape = TTShapes.chip,
+                            modifier = Modifier.fillMaxWidth().height(52.dp)
+                                .softGlow(CandyCyan, radius = 24f, alpha = 0.4f),
+                            shape = TTShapes.button,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = CandyCyan,
                                 contentColor = Carbon
                             )
                         ) {
-                            Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(TTSpacing.xs))
-                            Text("Dapatkan", fontWeight = FontWeight.Bold)
+                            Icon(Icons.Rounded.Download, null, modifier = Modifier.size(22.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Dapatkan", fontSize = 16.sp, fontWeight = FontWeight.Black)
                         }
                     }
                 }
             }
 
+            // ── Info cards row ──
+            Row(
+                Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                InfoCard("Kategori", "Olahraga", Icons.Rounded.SportsSoccer, Modifier.weight(1f))
+                InfoCard("Versi", "1.2.0", Icons.Rounded.Update, Modifier.weight(1f))
+                InfoCard("Ukuran", "33 MB", Icons.Rounded.Storage, Modifier.weight(1f))
+            }
+
             // ── About section ──
-            Column(Modifier.padding(TTSpacing.lg)) {
+            Column(Modifier.padding(16.dp)) {
                 TTSectionHeader(title = "Tentang Game", icon = Icons.Rounded.Info)
-                Spacer(Modifier.height(TTSpacing.sm))
+                Spacer(Modifier.height(10.dp))
                 Text(
                     "DLavie 26: Football Game adalah mod FIFA 16 Mobile dengan gameplay yang ditingkatkan, " +
                     "roster update, dan fitur tambahan. Mainkan mode career, ultimate team, dan online match " +
@@ -195,45 +227,34 @@ fun GameDetailScreen(
                 )
             }
 
-            // ── Info cards row (Kategori, Versi, Ukuran) ──
+            // ── Features section ──
+            Column(Modifier.padding(16.dp)) {
+                TTSectionHeader(title = "Fitur Unggulan", icon = Icons.Rounded.Star)
+                Spacer(Modifier.height(10.dp))
+                FeatureItem(Icons.Rounded.SportsSoccer, "Gameplay Realistis", "Mod gameplay yang ditingkatkan untuk pengalaman lebih realistis")
+                FeatureItem(Icons.Rounded.Group, "Komunitas Aktif", "Bergabung dengan ribuan pemain di komunitas DLavie")
+                FeatureItem(Icons.Rounded.Update, "Update Rutin", "Patch mod baru secara berkala via launcher")
+                FeatureItem(Icons.Rounded.Security, "Aman & Terverifikasi", "Trusted by DLavie — game resmi yang diverifikasi")
+            }
+
+            // ── Trusted badge ──
             Row(
-                Modifier.fillMaxWidth().padding(TTSpacing.lg),
-                horizontalArrangement = Arrangement.spacedBy(TTSpacing.md)
+                Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                InfoCard("Kategori", "Olahraga", Icons.Rounded.SportsSoccer, Modifier.weight(1f))
-                InfoCard("Versi", "1.2.0", Icons.Rounded.Update, Modifier.weight(1f))
-                InfoCard("Ukuran", "33 MB", Icons.Rounded.Storage, Modifier.weight(1f))
+                Icon(Icons.Rounded.Verified, null, tint = NeonGreen, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Trusted by DLavie", color = NeonGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
 
-            // ── Inline maintenance note (kalau blocked) ──
-            AnimatedVisibility(
-                visible = maintenanceBlocked,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                Box(Modifier.padding(horizontal = TTSpacing.lg)) {
-                    GlassInfoBox(
-                        icon = Icons.Rounded.Info,
-                        color = AmberWarn,
-                        text = "Game tidak bisa dimainkan saat maintenance mode aktif (scope: partial). " +
-                               "Coba lagi nanti setelah maintenance selesai."
-                    )
-                }
-            }
-
-            // Bottom padding (so content tidak ketutup FloatingNav)
-            Spacer(Modifier.height(120.dp))
+            Spacer(Modifier.height(100.dp))
         }
     }
 }
 
 @Composable
-private fun InfoCard(
-    label: String,
-    value: String,
-    icon: ImageVector,
-    modifier: Modifier = Modifier
-) {
+private fun InfoCard(label: String, value: String, icon: ImageVector, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier,
         shape = TTShapes.card,
@@ -241,13 +262,34 @@ private fun InfoCard(
         border = BorderStroke(1.dp, GlassStroke)
     ) {
         Column(
-            Modifier.padding(TTSpacing.md),
+            Modifier.padding(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(icon, null, tint = CandyCyan, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.height(TTSpacing.xs))
-            Text(label, color = SubText, fontSize = 10.sp)
+            Icon(icon, null, tint = CandyCyan, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.height(6.dp))
+            Text(label, color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium)
             Text(value, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun FeatureItem(icon: ImageVector, title: String, description: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
+                .background(CandyCyan.copy(0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(description, color = SoftText, fontSize = 12.sp, lineHeight = 16.sp)
         }
     }
 }
