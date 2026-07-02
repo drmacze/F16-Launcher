@@ -8,6 +8,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -60,6 +62,7 @@ import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Close
@@ -80,6 +83,7 @@ import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.SportsSoccer
 import androidx.compose.material.icons.rounded.Star
@@ -118,6 +122,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -140,6 +145,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -510,6 +517,7 @@ fun FullScreenMaintenance(
 }
 
 // ─── Main shell ───────────────────────────────────────────────────────────────
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLogout: () -> Unit) {
     val context = LocalContext.current
@@ -523,10 +531,17 @@ fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLog
     // Saat user tap TTGameCard di Beranda, set showGameDetail=true + capture state.
     // GameDetailScreen rendered sebagai overlay (menggantikan AnimatedContent).
     var showGameDetail by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     var detailGameInstalled     by remember { mutableStateOf(false) }
     var detailAvgRating         by remember { mutableStateOf(0.0) }
     var detailRatingCount       by remember { mutableStateOf(0) }
     var detailMaintenanceBlocked by remember { mutableStateOf(false) }
+
+    // ── Phase 4: Settings overlay state + lifted Profile expand state ──
+    // profileExpandedSection di-lift ke MainShell supaya SettingsScreen bisa
+    // membuka Profile dengan section tertentu (password/email/profile) ter-expand.
+    var showSettings           by remember { mutableStateOf(false) }
+    var profileExpandedSection by remember { mutableStateOf<String?>(null) }
 
     // ── Phase 2: Lifted download state (shared antara HomeScreen & GameDetailScreen) ──
     // dlProgress: -1f = idle, 0f..0.99f = downloading, 2f = done (waiting install)
@@ -604,91 +619,155 @@ fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLog
     }
 
     Box(Modifier.fillMaxSize()) {
-        // ── Phase 2: GameDetailScreen overlay (replaces page content saat aktif) ──
-        if (showGameDetail) {
-            GameDetailScreen(
-                onBack = { showGameDetail = false },
-                onPlay = {
-                    launchGame(context)
-                    showGameDetail = false
-                },
-                onDownload = {
-                    showGameDetail = false
-                    // Trigger download via lifted state (dlProgress/dlError/startDownload)
-                    // — user kembali ke Beranda dan download otomatis dimulai.
-                    startDownload()
-                },
-                gameInstalled      = detailGameInstalled,
-                avgRating          = detailAvgRating,
-                ratingCount        = detailRatingCount,
-                maintenanceBlocked = detailMaintenanceBlocked
+        // ── Phase 4: Settings overlay ──
+        AnimatedVisibility(
+            visible = showSettings,
+            enter = fadeIn(tween(300)) + androidx.compose.animation.slideInHorizontally(
+                initialOffsetX = { it },
+                animationSpec = tween(300, easing = FastOutSlowInEasing)
+            ),
+            exit = fadeOut(tween(200)) + androidx.compose.animation.slideOutHorizontally(
+                targetOffsetX = { it },
+                animationSpec = tween(250, easing = FastOutSlowInEasing)
             )
-        } else {
-        AnimatedContent(
-            targetState    = page,
-            label          = "page_anim",
-            transitionSpec = {
-                (fadeIn(tween(380, easing = FastOutSlowInEasing)) +
-                 androidx.compose.animation.slideInHorizontally(
-                     initialOffsetX = { it / 12 },
-                     animationSpec = tween(380, easing = FastOutSlowInEasing)
-                 )) togetherWith
-                (fadeOut(tween(220)) +
-                 androidx.compose.animation.slideOutHorizontally(
-                     targetOffsetX = { -it / 24 },
-                     animationSpec = tween(280, easing = FastOutSlowInEasing)
-                 ))
-            },
-            modifier       = Modifier.fillMaxSize().padding(bottom = 100.dp)
-        ) { target ->
-            // ── Bug 2: Partial maintenance → Beranda & Update blur total ──
-            val isPartialMaintenance = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"
+        ) {
+            SettingsScreen(
+                api = api,
+                onBack = { showSettings = false },
+                onLogout = {
+                    showSettings = false
+                    onLogout()
+                }
+            )
+        }
 
-            when (target) {
-                Page.Home   -> Box {
-                    HomeScreen(
-                        api             = api,
-                        maintenanceInfo = maintenanceInfo,
-                        onNav           = { page = it },
-                        dlProgress      = dlProgress,
-                        dlError         = dlError,
-                        startDownload   = { startDownload() },
-                        onGameCardClick = { inst, avg, count, blocked ->
-                            detailGameInstalled      = inst
-                            detailAvgRating          = avg
-                            detailRatingCount        = count
-                            detailMaintenanceBlocked = blocked
-                            showGameDetail           = true
+        // ── Phase 4: SharedTransitionLayout wraps the Beranda ↔ GameDetail nav ──
+        // The SharedTransitionScope is exposed via LocalSharedTransitionScope so
+        // deep composables (TTGameCard cover, GameDetailScreen cover) can attach
+        // sharedElement modifiers without threading scopes through every signature.
+        SharedTransitionLayout {
+            CompositionLocalProvider(LocalSharedTransitionScope provides this) {
+                // ── Outer AnimatedContent: page list ↔ GameDetailScreen ──
+                // Its AnimatedVisibilityScope (exposed via LocalNavAnimatedVisibilityScope)
+                // is the scope the shared element morphs within.
+                AnimatedContent(
+                    targetState    = showGameDetail,
+                    label          = "detail_anim",
+                    transitionSpec = {
+                        fadeIn(tween(380, easing = FastOutSlowInEasing)) togetherWith
+                        fadeOut(tween(280, easing = FastOutSlowInEasing))
+                    }
+                ) { showDetail ->
+                    CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
+                        if (showDetail) {
+                            // ── Phase 2: GameDetailScreen overlay (replaces page content) ──
+                            GameDetailScreen(
+                                onBack = { showGameDetail = false },
+                                onPlay = {
+                                    launchGame(context)
+                                    showGameDetail = false
+                                },
+                                onDownload = {
+                                    showGameDetail = false
+                                    // Trigger download via lifted state (dlProgress/dlError/startDownload)
+                                    // — user kembali ke Beranda dan download otomatis dimulai.
+                                    startDownload()
+                                },
+                                gameInstalled      = detailGameInstalled,
+                                avgRating          = detailAvgRating,
+                                ratingCount        = detailRatingCount,
+                                maintenanceBlocked = detailMaintenanceBlocked
+                            )
+                        } else {
+                            AnimatedContent(
+                                targetState    = page,
+                                label          = "page_anim",
+                                transitionSpec = {
+                                    (fadeIn(tween(380, easing = FastOutSlowInEasing)) +
+                                     androidx.compose.animation.slideInHorizontally(
+                                         initialOffsetX = { it / 12 },
+                                         animationSpec = tween(380, easing = FastOutSlowInEasing)
+                                     )) togetherWith
+                                    (fadeOut(tween(220)) +
+                                     androidx.compose.animation.slideOutHorizontally(
+                                         targetOffsetX = { -it / 24 },
+                                         animationSpec = tween(280, easing = FastOutSlowInEasing)
+                                     ))
+                                },
+                                modifier       = Modifier.fillMaxSize().padding(bottom = 100.dp)
+                            ) { target ->
+                                // ── Bug 2: Partial maintenance → Beranda & Update blur total ──
+                                val isPartialMaintenance = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"
+
+                                when (target) {
+                                    Page.Home   -> Box {
+                                        HomeScreen(
+                                            api             = api,
+                                            maintenanceInfo = maintenanceInfo,
+                                            onNav           = { page = it },
+                                            dlProgress      = dlProgress,
+                                            dlError         = dlError,
+                                            startDownload   = { startDownload() },
+                                            onGameCardClick = { inst, avg, count, blocked ->
+                                                detailGameInstalled      = inst
+                                                detailAvgRating          = avg
+                                                detailRatingCount        = count
+                                                detailMaintenanceBlocked = blocked
+                                                showGameDetail           = true
+                                            }
+                                        )
+                                        if (isPartialMaintenance) {
+                                            PartialMaintenanceOverlay(
+                                                title   = "Beranda Diblokir",
+                                                message = "Maintenance mode aktif. Hanya Komunitas & Profil yang tersedia.",
+                                                onNavChat = { page = Page.Chat },
+                                                onNavMe   = { page = Page.Me }
+                                            )
+                                        }
+                                    }
+                                    Page.Update -> Box {
+                                        UpdateScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
+                                        if (isPartialMaintenance) {
+                                            PartialMaintenanceOverlay(
+                                                title   = "Update Diblokir",
+                                                message = "Maintenance mode aktif.",
+                                                onNavChat = { page = Page.Chat },
+                                                onNavMe   = { page = Page.Me }
+                                            )
+                                        }
+                                    }
+                                    Page.Chat   -> CommunityScreen(api)   // normal, no blur
+                                    Page.Me     -> ProfileScreen(
+                                        api                     = api,
+                                        onLogout                = onLogout,
+                                        onOpenSettings          = { showSettings = true },
+                                        expandedSection         = profileExpandedSection,
+                                        onExpandedSectionChange = { profileExpandedSection = it }
+                                    )   // normal, no blur
+                                }
+                            }
                         }
-                    )
-                    if (isPartialMaintenance) {
-                        PartialMaintenanceOverlay(
-                            title   = "Beranda Diblokir",
-                            message = "Maintenance mode aktif. Hanya Komunitas & Profil yang tersedia.",
-                            onNavChat = { page = Page.Chat },
-                            onNavMe   = { page = Page.Me }
-                        )
                     }
                 }
-                Page.Update -> Box {
-                    UpdateScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
-                    if (isPartialMaintenance) {
-                        PartialMaintenanceOverlay(
-                            title   = "Update Diblokir",
-                            message = "Maintenance mode aktif.",
-                            onNavChat = { page = Page.Chat },
-                            onNavMe   = { page = Page.Me }
-                        )
-                    }
-                }
-                Page.Chat   -> CommunityScreen(api)   // normal, no blur
-                Page.Me     -> ProfileScreen(api, onLogout)   // normal, no blur
             }
         }
-        } // end if (showGameDetail) else { ... }
 
-        // ── FloatingNav tetap accessible dari Home (tidak tampil saat GameDetail aktif) ──
-        if (!showGameDetail) {
+        // ── Phase 4: Settings overlay (full-screen, on top of everything) ──
+        if (showSettings) {
+            SettingsScreen(
+                api           = api,
+                onBack        = { showSettings = false },
+                onLogout      = onLogout,
+                onEditAccount = { section ->
+                    profileExpandedSection = section
+                    page = Page.Me
+                    showSettings = false
+                }
+            )
+        }
+
+        // ── FloatingNav tetap accessible dari Home (tidak tampil saat GameDetail/Settings aktif) ──
+        if (!showGameDetail && !showSettings) {
             FloatingNav(
                 page     = page,
                 onPage   = { page = it },
@@ -699,26 +778,29 @@ fun MainShell(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onLog
         }
 
         // ── Notification banner overlay (slides down from the top) ──
-        activeBanner?.let { banner ->
-            Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
-                NotificationBanner(
-                    title      = banner.title,
-                    body       = banner.body,
-                    action     = banner.actionType,
-                    actionUrl  = banner.actionUrl,
-                    onDismiss  = { activeBanner = null },
-                    onAction   = {
-                        if (banner.actionType == "open_url" && !banner.actionUrl.isNullOrBlank()) {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(banner.actionUrl))
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                )
+        // Sembunyikan saat GameDetail / Settings aktif supaya tidak menumpuk header.
+        if (!showGameDetail && !showSettings) {
+            activeBanner?.let { banner ->
+                Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
+                    NotificationBanner(
+                        title      = banner.title,
+                        body       = banner.body,
+                        action     = banner.actionType,
+                        actionUrl  = banner.actionUrl,
+                        onDismiss  = { activeBanner = null },
+                        onAction   = {
+                            if (banner.actionType == "open_url" && !banner.actionUrl.isNullOrBlank()) {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(banner.actionUrl))
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
                             }
+                            activeBanner = null
                         }
-                        activeBanner = null
-                    }
-                )
+                    )
+                }
             }
         }
     }
@@ -789,6 +871,7 @@ private fun PartialMaintenanceOverlay(
 // animateColorAsState + animateFloatAsState + AnimatedVisibility label.
 @Composable
 fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifier) {
+    val haptic = LocalHapticFeedback.current
     val infiniteTransition = rememberInfiniteTransition(label = "nav_glow")
     val glowAlpha by infiniteTransition.animateFloat(
         initialValue = 0.4f, targetValue = 0.75f,
@@ -859,7 +942,11 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
                                 )
                                 else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
                             )
-                            .clickable { onPage(item) },
+                            .clickable {
+                                // Phase 4: light haptic on tab switch.
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onPage(item)
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Row(
@@ -912,6 +999,7 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
 
     // ── Setup state detection ──
     var setupState   by remember { mutableStateOf(SetupState.LOADING) }
@@ -955,7 +1043,11 @@ fun HomeScreen(
         withContext(Dispatchers.IO) {
             gameInstalled = isGameInstalled(context)
             dataReady     = readMarker().startsWith("v26", ignoreCase = true)
-            runCatching { updateInfo = fetchUpdateInfo(api) }
+            // Phase 4: honor "Cek Update Otomatis" setting (SettingsPrefs).
+            // When disabled, skip the update fetch — updateInfo stays as-is.
+            if (SettingsPrefs.autoCheckUpdates(context)) {
+                runCatching { updateInfo = fetchUpdateInfo(api) }
+            }
             runCatching { feed       = parseFeed(api.feedPosts()) }
             // Banner data — fail-open, tidak pernah crash launcher.
             runCatching { maintenanceState = fetchMaintenanceInfo(api) }
@@ -1001,6 +1093,8 @@ fun HomeScreen(
         isRefreshing = isRefreshing,
         onRefresh = {
             if (!isRefreshing) {
+                // Phase 4: medium haptic when pull-to-refresh triggers.
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 isRefreshing = true
                 scope.launch {
                     runCatching { loadAllData() }
@@ -1285,7 +1379,11 @@ fun HomeScreen(
             exit = fadeOut(tween(200)) + shrinkVertically()
         ) {
             OutlinedButton(
-                onClick = { ratingSubmitError = ""; showRatingPopup = true },
+                onClick = {
+                    // Phase 4: medium haptic when opening the rating popup.
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    ratingSubmitError = ""; showRatingPopup = true
+                },
                 modifier = Modifier.fillMaxWidth().height(46.dp),
                 shape = RoundedCornerShape(14.dp),
                 border = BorderStroke(1.dp, AmberWarn.copy(0.55f)),
@@ -1338,7 +1436,10 @@ fun HomeScreen(
                 buttonLabel    = ttButtonLabel,
                 buttonEnabled  = ttButtonEnabled,
                 onButtonClick  = ttButtonClick,
-                onClick        = ttCardClick
+                onClick        = ttCardClick,
+                // Phase 4: long-press haptic + shared element key (morphs to detail cover).
+                onLongClick    = { /* haptic-only acknowledgment */ },
+                sharedContentKey = "game-cover"
             )
             // Inline download progress (kalau sedang unduh dari tombol "Dapatkan")
             AnimatedVisibility(
@@ -1431,7 +1532,13 @@ fun HomeScreen(
 
                     // Download button with inline progress
                     Button(
-                        onClick  = { if (dlProgress < 0f || dlProgress >= 2f) startDownload() },
+                        onClick  = {
+                            if (dlProgress < 0f || dlProgress >= 2f) {
+                                // Phase 4: light haptic on download trigger.
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                startDownload()
+                            }
+                        },
                         enabled  = !maintenanceBlocked && (dlProgress < 0f || dlProgress >= 2f),
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         shape    = RoundedCornerShape(18.dp),
@@ -1890,6 +1997,7 @@ fun RatingPopup(
     var selectedRating by remember { mutableStateOf(currentRating) }
     var review by remember { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
 
     // Reset submitting state if user dismisses/reopens or on submit error.
     LaunchedEffect(Unit) { submitting = false }
@@ -1927,6 +2035,8 @@ fun RatingPopup(
                                 .size(40.dp)
                                 .scale(scale)
                                 .clickable {
+                                    // Phase 4: medium haptic on star selection.
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     selectedRating = i
                                 }
                         )
@@ -3233,16 +3343,21 @@ private fun SupportTab(api: CommunityApi) {
 
 // ─── Profile / Me screen (Phase 2: TapTap-style polish) ──────────────────────
 @Composable
-fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
+fun ProfileScreen(
+    api: CommunityApi,
+    onLogout: () -> Unit,
+    onOpenSettings: () -> Unit = {},
+    expandedSection: String? = null,
+    onExpandedSectionChange: (String?) -> Unit = {}
+) {
     val context       = LocalContext.current
     // Load gameInstalled async to avoid blocking main thread
     var gameInstalled by remember { mutableStateOf(false) }
     // profileLoading: true saat initial load, false setelah gameInstalled ter-resolve.
     // Dipakai untuk render TTGameCardSkeleton (TapTap-style) sebagai placeholder.
     var profileLoading by remember { mutableStateOf(true) }
-    // Lifted state: expandedSection dipakai bersama oleh avatar card (tap-to-edit)
-    // dan AccountSettingsCard di bawah. Avatar tap → expand "profile" section.
-    var expandedSection by remember { mutableStateOf<String?>(null) }
+    // Phase 4: expandedSection di-lift ke MainShell supaya SettingsScreen bisa
+    // membuka Profile dengan section tertentu (password/email/profile) ter-expand.
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { runCatching { gameInstalled = isGameInstalled(context) } }
         profileLoading = false
@@ -3279,7 +3394,7 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
                 Box(
                     Modifier
                         .size(72.dp)
-                        .clickable { expandedSection = "profile" },
+                        .clickable { onExpandedSectionChange("profile") },
                     contentAlignment = Alignment.Center
                 ) {
                     // Outer glow
@@ -3404,6 +3519,30 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
             }
         }
 
+        // ── Phase 4: Pengaturan entry (opens SettingsScreen overlay) ──
+        if (!profileLoading) {
+            TTTappableCard(
+                onClick = { onOpenSettings() },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
+                            .background(Color.White.copy(0.05f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Settings, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text("Pengaturan", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Icon(Icons.Rounded.ChevronRight, null, tint = SubText, modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+
         // ── Info akun ──
         GlassCard {
             TTSectionHeader(title = "Detail Akun", icon = Icons.Rounded.AccountCircle)
@@ -3419,7 +3558,7 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
             api = api,
             context = context,
             expandedSection = expandedSection,
-            onExpandedSectionChange = { expandedSection = it }
+            onExpandedSectionChange = onExpandedSectionChange
         )
 
         // ── Keamanan ──

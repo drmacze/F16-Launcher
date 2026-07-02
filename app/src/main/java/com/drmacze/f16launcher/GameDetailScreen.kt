@@ -1,5 +1,6 @@
 package com.drmacze.f16launcher
 
+import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -11,6 +12,8 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.*
 import androidx.compose.ui.unit.*
 import androidx.compose.material.icons.Icons
@@ -26,7 +29,13 @@ import androidx.compose.material.icons.rounded.*
  *  - About section
  *  - Info cards (Kategori, Versi, Ukuran)
  *  - Smooth scroll
+ *
+ * Phase 4:
+ *  - Cover shares element with TTGameCard cover (key "game-cover") via
+ *    SharedTransitionLayout in MainShell → smooth morph Beranda → Detail.
+ *  - Haptic feedback on back / rate / play / download buttons.
  */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun GameDetailScreen(
     onBack: () -> Unit,
@@ -38,6 +47,7 @@ fun GameDetailScreen(
     maintenanceBlocked: Boolean = false,
     onRate: () -> Unit = {}
 ) {
+    val haptic = LocalHapticFeedback.current
     Box(Modifier.fillMaxSize().background(Carbon)) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
@@ -61,7 +71,10 @@ fun GameDetailScreen(
                         .size(40.dp)
                         .clip(CircleShape)
                         .background(Color.Black.copy(0.6f))
-                        .clickable { onBack() },
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onBack()
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(Icons.Rounded.ArrowBack, null, tint = Color.White, modifier = Modifier.size(22.dp))
@@ -73,7 +86,9 @@ fun GameDetailScreen(
                     verticalArrangement = Arrangement.Bottom
                 ) {
                     // v3.0 monochrome DL cover (rounded square, black + white DL + halftone)
+                    // Phase 4: shared element key matches TTGameCard cover for morph transition.
                     DLavieLogoCover(
+                        modifier = Modifier.then(sharedGameCoverModifier("game-cover")),
                         size = 88.dp,
                         fontSize = 36.sp,
                         shape = RoundedCornerShape(22.dp)
@@ -108,7 +123,10 @@ fun GameDetailScreen(
 
                 // Rate button
                 OutlinedButton(
-                    onClick = onRate,
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onRate()
+                    },
                     shape = TTShapes.chip,
                     border = BorderStroke(1.dp, AmberWarn.copy(0.5f)),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = AmberWarn)
@@ -140,7 +158,10 @@ fun GameDetailScreen(
                     }
                     gameInstalled -> {
                         Button(
-                            onClick = onPlay,
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onPlay()
+                            },
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                             shape = TTShapes.button,
                             colors = ButtonDefaults.buttonColors(
@@ -155,7 +176,10 @@ fun GameDetailScreen(
                     }
                     else -> {
                         Button(
-                            onClick = onDownload,
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onDownload()
+                            },
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                             shape = TTShapes.button,
                             colors = ButtonDefaults.buttonColors(

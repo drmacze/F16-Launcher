@@ -1,5 +1,8 @@
 package com.drmacze.f16launcher
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -13,8 +16,11 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +35,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -44,6 +51,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,6 +63,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,6 +80,45 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.sin
 import kotlin.math.sqrt
+
+// ════════════════════════════════════════════════════════════════════════════
+// PHASE 4 — Shared Element Transition locals + helper
+//
+// SharedTransitionLayout (Compose 1.7+, stable in BOM 2024.12.01) provides a
+// SharedTransitionScope. The active AnimatedContent provides an
+// AnimatedVisibilityScope. Both are exposed via CompositionLocals so deep
+// composables (TTGameCard cover, GameDetailScreen cover) can opt-in to a
+// shared element transition WITHOUT threading scopes through every signature.
+//
+// If either local is null (e.g. composable rendered outside the shared shell),
+// the helper degrades gracefully to a no-op Modifier — zero behavior change.
+// ════════════════════════════════════════════════════════════════════════════
+val LocalSharedTransitionScope =
+    compositionLocalOf<SharedTransitionScope?> { null }
+
+val LocalNavAnimatedVisibilityScope =
+    compositionLocalOf<AnimatedVisibilityScope?> { null }
+
+/**
+ * Returns a Modifier that attaches a shared element with the given [key] when
+ * both the SharedTransitionScope and the active AnimatedVisibilityScope are
+ * present in the composition. Returns an empty Modifier otherwise.
+ *
+ * Used by TTGameCard cover (source) and GameDetailScreen cover (target) so the
+ * small cover morphs into the large cover during the Beranda → Detail transition.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+fun sharedGameCoverModifier(key: String): Modifier {
+    val sharedScope = LocalSharedTransitionScope.current ?: return Modifier
+    val animatedScope = LocalNavAnimatedVisibilityScope.current ?: return Modifier
+    return with(sharedScope) {
+        Modifier.sharedElement(
+            rememberSharedContentState(key = key),
+            animatedVisibilityScope = animatedScope
+        )
+    }
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // TAPTAP-LEVEL CUSTOM COMPONENTS
@@ -120,17 +169,23 @@ fun TTGameCardSkeleton() {
     }
 }
 
-// ─── Tappable Card dengan press animation ─────────────────────────────────────
+// ─── Tappable Card dengan press animation + haptic feedback ───────────────────
+// Phase 4: adds light haptic on click and (optional) long-press haptic via
+// combinedClickable. When onLongClick is non-null, long-press fires a
+// HapticFeedbackType.LongPress tick then the callback. The press-scale spring
+// + ripple are preserved via the shared interactionSource + LocalIndication.
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TTTappableCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    val haptic = LocalHapticFeedback.current
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.97f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
@@ -138,12 +193,23 @@ fun TTTappableCard(
     )
 
     Card(
-        onClick = onClick,
-        modifier = modifier.scale(scale),
+        modifier = modifier
+            .scale(scale)
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
+                },
+                onLongClick = if (onLongClick != null) ({
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                }) else null
+            ),
         shape = TTShapes.card,
         colors = CardDefaults.cardColors(containerColor = GlassBase),
-        border = BorderStroke(1.dp, GlassStroke),
-        interactionSource = interactionSource
+        border = BorderStroke(1.dp, GlassStroke)
     ) {
         Column(content = content)
     }
@@ -279,7 +345,11 @@ private fun TTBannerItem(
 }
 
 // ─── Game Card (TapTap style) ─────────────────────────────────────────────────
+// Phase 4: optional sharedContentKey attaches a shared element to the cover so
+// it morphs into GameDetailScreen's cover during the Beranda → Detail transition.
+// onLongClick enables long-press haptic feedback (e.g. context preview later).
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun TTGameCard(
     title: String,
@@ -290,17 +360,28 @@ fun TTGameCard(
     buttonLabel: String,
     buttonEnabled: Boolean = true,
     onButtonClick: () -> Unit,
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
+    onLongClick: (() -> Unit)? = null,
+    sharedContentKey: String? = null
 ) {
-    TTTappableCard(onClick = onClick) {
+    val haptic = LocalHapticFeedback.current
+    TTTappableCard(onClick = onClick, onLongClick = onLongClick) {
         Row(
             Modifier.padding(TTSpacing.lg),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Cover image (rounded square gradient dengan text)
-            Box(
+            // Cover image (rounded square gradient dengan text) — shared element
+            // target when sharedContentKey is set & the shell provides scopes.
+            val coverModifier = if (sharedContentKey != null) {
                 Modifier.size(56.dp).clip(RoundedCornerShape(14.dp))
-                    .background(Brush.linearGradient(coverGradient)),
+                    .background(Brush.linearGradient(coverGradient))
+                    .then(sharedGameCoverModifier(sharedContentKey))
+            } else {
+                Modifier.size(56.dp).clip(RoundedCornerShape(14.dp))
+                    .background(Brush.linearGradient(coverGradient))
+            }
+            Box(
+                coverModifier,
                 contentAlignment = Alignment.Center
             ) {
                 Text(coverText, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
@@ -314,7 +395,10 @@ fun TTGameCard(
             }
             // Button
             FilledTonalButton(
-                onClick = onButtonClick,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onButtonClick()
+                },
                 enabled = buttonEnabled,
                 shape = TTShapes.chip,
                 colors = ButtonDefaults.filledTonalButtonColors(
