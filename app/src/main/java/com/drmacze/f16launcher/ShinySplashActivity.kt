@@ -359,10 +359,6 @@ private fun ShinySilverText(
             fontWeight = FontWeight.Black,
             letterSpacing = 2.sp,
             textAlign = TextAlign.Center,
-            shadow = Shadow(
-                color = Color(0xFFE5E7EB).copy(alpha = 0.5f * alpha),
-                blurRadius = 12f
-            ),
             modifier = Modifier
                 .drawWithContent {
                     // Draw the text first (with white color)
