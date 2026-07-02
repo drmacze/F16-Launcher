@@ -477,7 +477,73 @@ fun ExpandableSection(
     }
 }
 
-// ─── Pill / Badge ──────────────────────────────────────────────────────────────
+// ─── Modern Status Chip (used in Home screen status bar) ──────────────────────
+
+@Composable
+fun ModernStatusChip(
+    label: String,
+    value: String,
+    ok: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit = {}
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        if (isPressed) 0.95f else 1f, tween(120), label = "chip_press"
+    )
+
+    val borderColor by animateColorAsState(
+        if (ok) NeonGreen.copy(0.45f) else DangerRed.copy(0.40f),
+        tween(500, easing = FastOutSlowInEasing), label = "chip_border"
+    )
+    val glowColor = if (ok) NeonGreen else DangerRed
+    val iconTint by animateColorAsState(
+        if (ok) NeonGreen else DangerRed,
+        tween(500), label = "chip_icon"
+    )
+
+    Box(modifier = modifier.scale(scale)) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(76.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .clickable(interactionSource = interactionSource, indication = null) { onClick() },
+            shape = RoundedCornerShape(20.dp),
+            color = Color(0xCC0B1320),
+            border = BorderStroke(1.dp, borderColor)
+        ) {
+            Column(
+                Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.Start
+            ) {
+                Box(
+                    Modifier.size(20.dp).clip(CircleShape)
+                        .background(glowColor.copy(0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (ok) Icons.Rounded.CheckCircle else Icons.Rounded.Cancel,
+                        null, tint = iconTint, modifier = Modifier.size(14.dp)
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    label, color = SubText, fontSize = 9.sp,
+                    fontWeight = FontWeight.Black, maxLines = 1,
+                    letterSpacing = 0.5.sp
+                )
+                Text(
+                    value, color = iconTint, fontSize = 12.sp,
+                    fontWeight = FontWeight.Black, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
 
 @Composable
 fun ModernPill(

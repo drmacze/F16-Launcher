@@ -24,6 +24,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -104,8 +105,11 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -788,22 +792,22 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
 
         // ── Status bar (3 chips) ───────────────────────────────────────────────
         AnimatedVisibility(visible = setupState != SetupState.LOADING) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatusChip(
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ModernStatusChip(
                     label  = "Game",
                     value  = if (gameInstalled) "Terinstall" else "Belum ada",
                     ok     = gameInstalled,
                     modifier = Modifier.weight(1f)
                 ) { if (!gameInstalled) if (dlProgress < 0f) startDownload() }
 
-                StatusChip(
+                ModernStatusChip(
                     label  = "Data",
                     value  = if (dataReady) "Siap" else "Belum siap",
                     ok     = dataReady,
                     modifier = Modifier.weight(1f)
                 ) { onNav(Page.Update) }
 
-                StatusChip(
+                ModernStatusChip(
                     label  = "Update",
                     value  = when {
                         updateInfo == null        -> "Memeriksa"
@@ -1605,27 +1609,91 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
 
-        // ── Avatar + identity ──
-        GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        // ── Hero Avatar Card (premium gradient ring + glow) ──
+        PremiumGlassCard(gradientBorder = true) {
+            val infiniteTransition = rememberInfiniteTransition(label = "profile_glow")
+            val avatarGlow by infiniteTransition.animateFloat(
+                initialValue = 0.25f, targetValue = 0.55f,
+                animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                label = "avatar_glow_val"
+            )
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Avatar with gradient ring + glow
                 Box(
-                    Modifier.size(68.dp)
-                        .background(Brush.linearGradient(listOf(CandyCyan, CandyBlue)), CircleShape),
+                    Modifier.size(72.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(initial, fontSize = 26.sp, fontWeight = FontWeight.Black, color = Color.White)
+                    // Outer glow
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(CandyCyan.copy(avatarGlow * 0.6f), Color.Transparent),
+                                    radius = 80f
+                                )
+                            )
+                            .blur(12.dp)
+                    )
+                    // Rotating gradient ring
+                    val ringRotation by infiniteTransition.animateFloat(
+                        initialValue = 0f, targetValue = 360f,
+                        animationSpec = infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Restart),
+                        label = "ring_rotation"
+                    )
+                    Canvas(
+                        Modifier
+                            .size(72.dp)
+                            .graphicsLayer { rotationZ = ringRotation }
+                    ) {
+                        val stroke = 3.dp.toPx()
+                        drawCircle(
+                            brush = Brush.sweepGradient(
+                                listOf(
+                                    CandyCyan, PremiumViolet, CandyCyan.copy(0.3f), CandyCyan
+                                )
+                            ),
+                            radius = (size.minDimension / 2f) - (stroke / 2f),
+                            style = Stroke(width = stroke)
+                        )
+                    }
+                    // Inner avatar
+                    Box(
+                        Modifier
+                            .size(60.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(listOf(CandyCyan, CandyBlue, PremiumViolet))
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            initial, fontSize = 24.sp, fontWeight = FontWeight.Black,
+                            color = Carbon
+                        )
+                    }
                 }
-                Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(api.displayName().ifEmpty { "DLavie Player" }, fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color.White)
-                    Text("@${api.username().ifEmpty { "unknown" }}", color = SoftText, fontSize = 13.sp)
+                    Text(
+                        api.displayName().ifEmpty { "DLavie Player" },
+                        fontSize = 19.sp, fontWeight = FontWeight.Black, color = Color.White
+                    )
+                    Text(
+                        "@${api.username().ifEmpty { "unknown" }}",
+                        color = SoftText, fontSize = 12.sp
+                    )
                     Spacer(Modifier.height(6.dp))
-                    DLBadge(role.uppercase(), roleBadgeColor(role))
+                    ModernPill(role.uppercase(), roleBadgeColor(role))
                 }
             }
-            Spacer(Modifier.height(10.dp))
-            // Account details
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(Modifier.height(14.dp))
+            // Account details tiles
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MiniStatusTile("Game", if (gameInstalled) "Terinstall" else "Belum ada", gameInstalled, Modifier.weight(1f))
                 MiniStatusTile("Sesi", "Aktif", true, Modifier.weight(1f))
                 MiniStatusTile("Server", "Online", true, Modifier.weight(1f))

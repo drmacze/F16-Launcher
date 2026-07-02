@@ -62,17 +62,25 @@
             android:label="DLavie 26"
             android:theme="@style/AppTheme.Splash" />
 
+        <!-- Shiny splash screen — true launcher entry point -->
         <activity
-            android:name=".DLavieGuidedActivity"
+            android:name=".ShinySplashActivity"
             android:exported="true"
             android:icon="@drawable/dlavie_launcher_icon"
             android:label="DLavie 26"
-            android:theme="@style/AppTheme.Splash">
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".DLavieGuidedActivity"
+            android:exported="false"
+            android:icon="@drawable/dlavie_launcher_icon"
+            android:label="DLavie 26"
+            android:theme="@style/AppTheme.Splash" />
 
         <!-- Internal recovery shell only. Do not expose this as the public launcher entry. -->
         <activity
