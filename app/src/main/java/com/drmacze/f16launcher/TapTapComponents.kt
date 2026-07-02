@@ -52,7 +52,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.valentinilk.shimmer.defaultShimmerTheme
 import com.valentinilk.shimmer.rememberShimmer
 import com.valentinilk.shimmer.shimmer
 import kotlinx.coroutines.delay
@@ -74,8 +73,8 @@ fun TTShimmerBox(
     modifier: Modifier = Modifier,
     shape: RoundedCornerShape = TTShapes.small
 ) {
-    // defaultShimmerTheme dipakai langsung sebagai theme parameter
-    val shimmerInstance = rememberShimmer(shimmerTheme = defaultShimmerTheme)
+    // compose-shimmer 1.2.0 API: rememberShimmer() tanpa parameter
+    val shimmerInstance = rememberShimmer()
     Box(
         modifier
             .clip(shape)
