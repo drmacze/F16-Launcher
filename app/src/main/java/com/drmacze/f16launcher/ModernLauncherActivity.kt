@@ -715,9 +715,16 @@ fun MainShell(
     // ── Phase 2 Community: request POST_NOTIFICATIONS permission (Android 13+) ──
     // Diperlukan supaya NotificationHelper.showNotification() bisa menampilkan notif.
     // Pada Android < 13, permission otomatis granted saat install.
+    // Callback result diabaikan: polling tetap jalan walau permission denied (notif
+    // silent fail di NotificationHelper.showNotification). User bisa enable later via
+    // system settings.
     val notificationPermission = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
-    ) { _ /* granted -> no-op; user bisa enable later via system settings */ }
+    ) { granted ->
+        if (!granted) {
+            // User denied — silent. Notifikasi tidak akan tampil, tapi polling tetap jalan.
+        }
+    }
 
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
