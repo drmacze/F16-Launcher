@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Full-screen PIN lock activity.
@@ -149,6 +150,7 @@ private fun PinLockScreen(
     onCancel: () -> Unit
 ) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     var pin by remember { mutableStateOf("") }
     var stage by remember {
         mutableStateOf(when (mode) {
@@ -230,7 +232,7 @@ private fun PinLockScreen(
         }
         // Reset shake animation
         if (shake) {
-            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+            coroutineScope.launch {
                 kotlinx.coroutines.delay(300)
                 shake = false
             }
