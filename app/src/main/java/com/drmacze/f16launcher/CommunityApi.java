@@ -32,6 +32,11 @@ public class CommunityApi {
     public String token() { return prefs.getString("access_token", ""); }
     public String username() { return prefs.getString("username", ""); }
     public String displayName() { return prefs.getString("display_name", ""); }
+    public String country() { return prefs.getString("country", "Indonesia"); }
+    public void setCountry(String country) {
+        if (country == null || country.trim().isEmpty()) return;
+        prefs.edit().putString("country", country.trim()).apply();
+    }
     public void logout() { prefs.edit().clear().apply(); }
 
     public JSONObject register(String email, String password, String username, String displayName, String avatarUrl) throws Exception {
@@ -120,14 +125,108 @@ public class CommunityApi {
     }
 
     private void saveProfile(JSONObject p) {
-        prefs.edit().putString("username", p.optString("username", "")).putString("display_name", p.optString("display_name", "")).putString("avatar_url", p.optString("avatar_url", "")).putString("role", p.optString("role", "member")).apply();
+        String country = p.optString("country", "");
+        SharedPreferences.Editor e = prefs.edit()
+            .putString("username", p.optString("username", ""))
+            .putString("display_name", p.optString("display_name", ""))
+            .putString("avatar_url", p.optString("avatar_url", ""))
+            .putString("role", p.optString("role", "member"));
+        if (!country.isEmpty()) e.putString("country", country);
+        e.apply();
     }
 
     public String role() { return prefs.getString("role", "member"); }
     public String avatarUrl() { return prefs.getString("avatar_url", ""); }
 
     public JSONArray feedPosts() throws Exception {
-        return new JSONArray(request("GET", "/rest/v1/feed_posts?select=id,title,body,type,pinned,official,created_at&order=pinned.desc,created_at.desc&limit=8", null, false, (String) null));
+        // Authenticated request — uses user's access token so RLS policies can resolve author + visibility.
+        return new JSONArray(request("GET", "/rest/v1/feed_posts?select=id,author_id,title,body,image_url,type,visibility,pinned,official,created_at&order=pinned.desc,created_at.desc&limit=10", null, true, (String) null));
+    }
+
+    /**
+     * PATCH country column on the logged-in user's profile row.
+     * Called after successful registration.
+     */
+    public JSONObject updateCountry(String country) throws Exception {
+        if (userId().isEmpty()) throw new IllegalStateException("Belum login.");
+        if (country == null || country.trim().isEmpty()) throw new IllegalStateException("Country kosong.");
+        JSONObject body = new JSONObject();
+        body.put("country", country.trim());
+        JSONArray arr = new JSONArray(request("PATCH", "/rest/v1/profiles?id=eq." + enc(userId()) + "&select=id,country", body, true, "return=representation"));
+        setCountry(country);
+        if (arr.length() > 0) return arr.getJSONObject(0);
+        return new JSONObject();
+    }
+
+    /**
+     * Fetch a single key from app_config (e.g. "maintenance").
+     * Returns the parsed JSON object inside value column (jsonb), or empty object on failure.
+     */
+    public JSONObject getAppConfig(String key) throws Exception {
+        JSONArray arr = new JSONArray(request("GET", "/rest/v1/app_config?key=eq." + enc(key) + "&select=key,value", null, false, (String) null));
+        if (arr.length() == 0) return new JSONObject();
+        JSONObject row = arr.getJSONObject(0);
+        Object value = row.opt("value");
+        if (value instanceof JSONObject) return (JSONObject) value;
+        if (value != null) return new JSONObject().put("raw", value.toString());
+        return new JSONObject();
+    }
+
+    /**
+     * Insert a telemetry event into app_events table.
+     * Fire-and-forget — caller wraps in try/catch + Dispatchers.IO.
+     */
+    public void logEvent(String eventType, JSONObject eventData, String appVersion, String country, JSONObject deviceInfo) throws Exception {
+        if (!loggedIn()) return;
+        JSONObject body = new JSONObject();
+        body.put("user_id", userId());
+        body.put("event_type", eventType);
+        if (eventData != null) body.put("event_data", eventData); else body.put("event_data", new JSONObject());
+        if (appVersion != null && !appVersion.isEmpty()) body.put("app_version", appVersion);
+        if (country != null && !country.isEmpty()) body.put("country", country);
+        if (deviceInfo != null) body.put("device_info", deviceInfo);
+        request("POST", "/rest/v1/app_events", body, true, "return=minimal");
+    }
+
+    /**
+     * Fetch recent sent notification campaigns ordered by created_at desc.
+     */
+    public JSONArray getNotifications(int limit) throws Exception {
+        int safe = Math.max(1, Math.min(limit, 50));
+        return new JSONArray(request("GET", "/rest/v1/notification_campaigns?sent_at=not.null&order=created_at.desc&limit=" + safe + "&select=id,created_by,title,body,target,action,sent_at,created_at", null, true, (String) null));
+    }
+
+    /**
+     * Fetch published update_posts dari Supabase.
+     * Update posts dibuat oleh developer via Dev Dashboard dan mewakili
+     * patch announcements yang sudah published (published=true), diurutkan
+     * by version_code desc (terbaru di index 0).
+     *
+     * Schema update_posts (Supabase):
+     *   id, author_id, version_code, version_name, channel, title, body,
+     *   release_notes (text[]), known_issues (text[]), patch_url, patch_sha256,
+     *   patch_size_bytes, critical, restart_game_required, risk_level, published,
+     *   created_at, updated_at
+     *
+     * @return JSONArray of published update posts (max 10).
+     */
+    public JSONArray fetchUpdatePosts() throws Exception {
+        return new JSONArray(request("GET",
+            "/rest/v1/update_posts?published=eq.true&order=version_code.desc&limit=10"
+                + "&select=id,version_code,version_name,channel,title,body,release_notes,"
+                + "known_issues,patch_url,patch_sha256,patch_size_bytes,critical,"
+                + "restart_game_required,risk_level,created_at",
+            null, false, false));
+    }
+
+    /**
+     * Fetch latest published update_post (highest version_code).
+     *
+     * @return the newest published update post, or null kalau tidak ada satu pun.
+     */
+    public JSONObject fetchLatestUpdatePost() throws Exception {
+        JSONArray arr = fetchUpdatePosts();
+        return arr.length() > 0 ? arr.getJSONObject(0) : null;
     }
 
     public JSONObject refreshToken() throws Exception {

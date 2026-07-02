@@ -47,13 +47,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Article
+import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -63,6 +67,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
@@ -70,6 +75,7 @@ import androidx.compose.material.icons.rounded.SportsSoccer
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -147,8 +153,64 @@ private const val LOCAL_VER_NAME   = "v1"
 data class CategoryItem(val id: String, val name: String, val description: String)
 data class TopicItem(val id: String, val title: String, val body: String, val replyCount: Int, val createdAt: String)
 data class PostItem(val id: String, val authorId: String, val body: String, val createdAt: String)
-data class FeedItem(val id: String, val title: String, val body: String, val type: String, val pinned: Boolean, val official: Boolean)
-data class UpdateInfo(val latestCode: Int, val latestName: String, val upToDate: Boolean, val releaseNotes: List<String>)
+data class FeedItem(val id: String, val title: String, val body: String, val type: String, val pinned: Boolean, val official: Boolean, val imageUrl: String = "", val createdAt: String = "")
+
+/**
+ * Update info — sekarang mendukung dua sumber:
+ *   - "supabase": dari Dev Dashboard update_posts (prioritas jika user login & ada data)
+ *   - "manifest" : fallback ke GitHub manifest.json (DEFAULT_MANIFEST)
+ *
+ * Field patchUrl/sha256/size/critical/restartRequired hanya terisi kalau
+ * source == "supabase" (manifest legacy tidak punya info ini).
+ */
+data class UpdateInfo(
+    val latestCode: Int,
+    val latestName: String,
+    val upToDate: Boolean,
+    val releaseNotes: List<String>,
+    val patchUrl: String = "",
+    val patchSha256: String = "",
+    val patchSize: Long = 0L,
+    val critical: Boolean = false,
+    val restartRequired: Boolean = false,
+    val source: String = "manifest"
+)
+
+/**
+ * Maintenance mode info — dibaca dari Supabase app_config key="maintenance".
+ * value jsonb shape: { enabled, title, message, allow_offline_play }
+ */
+data class MaintenanceInfo(
+    val enabled: Boolean,
+    val title: String,
+    val message: String,
+    val allowOfflinePlay: Boolean
+)
+
+/**
+ * Latest notification campaign — untuk inline banner di HomeScreen.
+ * Berbeda dari NotificationItem (yang untuk slide-down overlay transient),
+ * NotifCampaign ini persisten sampai user dismiss.
+ */
+data class NotifCampaign(
+    val id: String,
+    val title: String,
+    val body: String,
+    val sentAt: String
+)
+
+/**
+ * Push notification campaign item — used by the polling receiver in MainShell.
+ */
+data class NotificationItem(
+    val id: String,
+    val title: String,
+    val body: String,
+    val actionType: String,
+    val actionUrl: String?,
+    val targetType: String,
+    val targetRole: String?
+)
 
 // ─── App setup state ──────────────────────────────────────────────────────────
 enum class SetupState { LOADING, NEED_GAME, NEED_DATA, READY }
@@ -240,6 +302,8 @@ fun DLavieModernApp() {
                     }
                 } else {
                     MainShell(api) {
+                        // Fire logout telemetry BEFORE clearing session so user_id is still known.
+                        Telemetry.track(api, context, Telemetry.EVT_LOGOUT)
                         api.logout()
                         context.getSharedPreferences("dlavie_auth_session", Context.MODE_PRIVATE).edit().clear().apply()
                         // Also clear PIN on logout for security
@@ -258,13 +322,43 @@ fun DLavieModernApp() {
 // ─── Main shell ───────────────────────────────────────────────────────────────
 @Composable
 fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
+    val context = LocalContext.current
     var page by remember { mutableStateOf(Page.Home) }
 
+    // ── Active notification banner state (Module 3: Push Notification Receiver) ──
+    var activeBanner by remember { mutableStateOf<NotificationItem?>(null) }
+
     LaunchedEffect(Unit) {
+        // Fire app_open telemetry as soon as the shell mounts.
+        Telemetry.track(api, context, Telemetry.EVT_APP_OPEN)
+        // Initial token refresh loop (existing behavior).
         while (true) {
             delay(50L * 60_000)
             withContext(Dispatchers.IO) { runCatching { api.refreshToken() } }
         }
+    }
+
+    // ── Poll notification_campaigns every 60s for new sent campaigns ──
+    LaunchedEffect(Unit) {
+        // Run once immediately on mount.
+        runCatching {
+            val fresh = withContext(Dispatchers.IO) { fetchUnseenNotifications(context, api) }
+            if (fresh != null) activeBanner = fresh
+        }
+        while (true) {
+            delay(60L * 1000L)
+            runCatching {
+                val fresh = withContext(Dispatchers.IO) { fetchUnseenNotifications(context, api) }
+                if (fresh != null) activeBanner = fresh
+            }
+        }
+    }
+
+    // ── Auto-dismiss the banner after 5 seconds ──
+    LaunchedEffect(activeBanner?.id) {
+        val banner = activeBanner ?: return@LaunchedEffect
+        delay(5_000L)
+        if (activeBanner?.id == banner.id) activeBanner = null
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -287,7 +381,7 @@ fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
         ) { target ->
             when (target) {
                 Page.Home   -> HomeScreen(api, onNav = { page = it })
-                Page.Update -> UpdateScreen(onNav  = { page = it })
+                Page.Update -> UpdateScreen(api, onNav  = { page = it })
                 Page.Chat   -> CommunityScreen(api)
                 Page.Me     -> ProfileScreen(api, onLogout)
             }
@@ -299,6 +393,30 @@ fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
                                .navigationBarsPadding()
                                .padding(bottom = 12.dp)
         )
+
+        // ── Notification banner overlay (slides down from the top) ──
+        activeBanner?.let { banner ->
+            Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
+                NotificationBanner(
+                    title      = banner.title,
+                    body       = banner.body,
+                    action     = banner.actionType,
+                    actionUrl  = banner.actionUrl,
+                    onDismiss  = { activeBanner = null },
+                    onAction   = {
+                        if (banner.actionType == "open_url" && !banner.actionUrl.isNullOrBlank()) {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(banner.actionUrl))
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                        }
+                        activeBanner = null
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -426,6 +544,10 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
     var updateInfo    by remember { mutableStateOf<UpdateInfo?>(null) }
     var feed          by remember { mutableStateOf<List<FeedItem>>(emptyList()) }
 
+    // ── Maintenance & notification banner state (Dev Dashboard integration) ──
+    var maintenanceState by remember { mutableStateOf<MaintenanceInfo?>(null) }
+    var latestNotif      by remember { mutableStateOf<NotifCampaign?>(null) }
+
     // ── Pull-to-refresh state ──
     val pullState    = rememberPullToRefreshState()
     var isRefreshing by remember { mutableStateOf(false) }
@@ -435,8 +557,15 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
         withContext(Dispatchers.IO) {
             gameInstalled = isGameInstalled(context)
             dataReady     = readMarker().startsWith("v26", ignoreCase = true)
-            runCatching { updateInfo = fetchUpdateInfo() }
+            runCatching { updateInfo = fetchUpdateInfo(api) }
             runCatching { feed       = parseFeed(api.feedPosts()) }
+            // Banner data — fail-open, tidak pernah crash launcher.
+            runCatching { maintenanceState = fetchMaintenanceInfo(api) }
+            // Hanya fetch notif campaign kalau banner sebelumnya sudah di-dismiss
+            // (latestNotif == null) supaya tidak menimpa dismiss user saat refresh.
+            if (latestNotif == null) {
+                runCatching { latestNotif = fetchLatestNotifCampaign(api) }
+            }
         }
         setupState = when {
             !gameInstalled -> SetupState.NEED_GAME
@@ -453,6 +582,8 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
 
     fun startDownload() {
         dlProgress = 0f; dlError = ""
+        // Telemetry: download_apk event — fire-and-forget.
+        Telemetry.track(api, context, Telemetry.EVT_DOWNLOAD_APK, mapOf("source" to "github_releases", "url" to FIFA_APK_URL))
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -526,6 +657,80 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                 .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+
+        // ── Maintenance banner (cek app_config.maintenance via Supabase) ──
+        // Hanya tampil kalau Dev Dashboard mengaktifkan maintenance mode.
+        maintenanceState?.let { m ->
+            if (m.enabled) {
+                GlassCard(borderColor = AmberWarn.copy(alpha = 0.6f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.Warning, null,
+                            tint = AmberWarn, modifier = Modifier.size(22.dp)
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                m.title.ifEmpty { "Maintenance Mode" },
+                                color = AmberWarn, fontSize = 14.sp, fontWeight = FontWeight.Black
+                            )
+                            if (m.message.isNotEmpty()) {
+                                Text(
+                                    m.message,
+                                    color = SoftText, fontSize = 11.sp, lineHeight = 14.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Notification banner (dari notification_campaigns, latest sent) ──
+        // Inline persisten — berbeda dari slide-down overlay di MainShell yang
+        // auto-dismiss 5 detik. Banner ini tetap tampil sampai user tutup.
+        latestNotif?.let { notif ->
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn(tween(300)) + expandVertically()
+            ) {
+                GlassCard(borderColor = CandyCyan.copy(alpha = 0.5f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.Notifications, null,
+                            tint = CandyCyan, modifier = Modifier.size(20.dp)
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                notif.title.ifEmpty { "Notifikasi DLavie" },
+                                color = Color.White, fontSize = 13.sp,
+                                fontWeight = FontWeight.Black, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (notif.body.isNotEmpty()) {
+                                Text(
+                                    notif.body,
+                                    color = SoftText, fontSize = 11.sp, maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Icon(
+                            Icons.Rounded.Close, "Tutup notifikasi",
+                            tint = SubText,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clickable { latestNotif = null }
+                        )
+                    }
+                }
+            }
+        }
 
         // ── Hero Header (premium gradient + glow) ──────────────────────────────
         PremiumGlassCard(gradientBorder = true) {
@@ -820,7 +1025,7 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
             }
         }
 
-        // ── Berita / Feed ─────────────────────────────────────────────────────
+        // ── Berita / Feed (Module 5: improved with type icons + pinned/official badges) ───
         AnimatedVisibility(visible = feed.isNotEmpty(), enter = fadeIn(tween(400)), exit = fadeOut()) {
             GlassCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -829,24 +1034,8 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                     Text("Berita Terbaru", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
                 }
                 Spacer(Modifier.height(10.dp))
-                feed.take(3).forEach { item ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.Top,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            Modifier.size(8.dp).padding(top = 5.dp)
-                                .background(
-                                    if (item.pinned) AmberWarn else CandyCyan,
-                                    CircleShape
-                                )
-                        )
-                        Column {
-                            Text(item.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(item.body, color = SoftText, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 15.sp)
-                        }
-                    }
+                feed.take(4).forEach { item ->
+                    FeedRow(item)
                 }
             }
         }
@@ -855,6 +1044,105 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
         Spacer(Modifier.height(8.dp))
     }
     } // end PullToRefreshBox
+}
+
+// ─── Feed row (Module 5 — icon per type, pinned indicator, official badge) ────
+@Composable
+fun FeedRow(item: FeedItem) {
+    val icon     = feedIcon(item.type)
+    val iconTint = feedColor(item.type)
+    Row(
+        Modifier.fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Per-type icon (announcement / event / patch / update / info / default)
+        Box(
+            Modifier.size(28.dp)
+                .background(iconTint.copy(alpha = 0.15f), RoundedCornerShape(9.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = item.type, tint = iconTint, modifier = Modifier.size(16.dp))
+        }
+
+        Column(Modifier.weight(1f)) {
+            // Title row with badges
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (item.pinned) {
+                    Surface(
+                        color = AmberWarn.copy(alpha = 0.18f),
+                        border = BorderStroke(1.dp, AmberWarn.copy(alpha = 0.55f)),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Icon(Icons.Rounded.PushPin, null, tint = AmberWarn, modifier = Modifier.size(9.dp))
+                            Text("PIN", color = AmberWarn, fontSize = 8.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+                if (item.official) {
+                    Surface(
+                        color = NeonGreen.copy(alpha = 0.18f),
+                        border = BorderStroke(1.dp, NeonGreen.copy(alpha = 0.55f)),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Icon(Icons.Rounded.Verified, null, tint = NeonGreen, modifier = Modifier.size(9.dp))
+                            Text("OFFICIAL", color = NeonGreen, fontSize = 8.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+                Text(
+                    item.title.ifBlank { "(Tanpa judul)" },
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = if (item.pinned || item.official) FontWeight.Black else FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+            }
+            // Body
+            Text(
+                item.body,
+                color = SoftText,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 15.sp
+            )
+        }
+    }
+}
+
+/** Resolve icon per feed type. Defaults to an Article icon. */
+private fun feedIcon(type: String): androidx.compose.ui.graphics.vector.ImageVector = when (type.lowercase().trim()) {
+    "announcement", "notice"     -> Icons.Rounded.Campaign
+    "event"                       -> Icons.Rounded.Event
+    "patch", "update_post"        -> Icons.Rounded.SystemUpdate
+    "update"                      -> Icons.Rounded.CloudSync
+    "warning", "alert"            -> Icons.Rounded.Warning
+    "info"                        -> Icons.Rounded.Info
+    else                          -> Icons.Rounded.Article
+}
+
+private fun feedColor(type: String): Color = when (type.lowercase().trim()) {
+    "announcement", "notice"     -> CandyCyan
+    "event"                       -> PremiumViolet
+    "patch", "update_post"        -> NeonGreen
+    "update"                      -> CandyBlue
+    "warning", "alert"            -> DangerRed
+    "info"                        -> CandyCyan
+    else                          -> SoftText
 }
 
 // ─── Step progress indicator ──────────────────────────────────────────────────
@@ -910,7 +1198,7 @@ fun GlassInfoBox(icon: ImageVector, color: Color, text: String) {
 // ─── Update & Data screen ─────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UpdateScreen(onNav: (Page) -> Unit) {
+fun UpdateScreen(api: CommunityApi, onNav: (Page) -> Unit) {
     val context       = LocalContext.current
     // NOTE: All I/O moved to LaunchedEffect below — don't block main thread during composition.
     // Initialize with safe defaults; real values populate from background.
@@ -985,7 +1273,7 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
     fun checkUpdate() {
         loading = true; updateError = ""
         scope.launch {
-            withContext(Dispatchers.IO) { runCatching { fetchUpdateInfo() } }
+            withContext(Dispatchers.IO) { runCatching { fetchUpdateInfo(api) } }
                 .fold(onSuccess = { updateInfo = it }, onFailure = { updateError = it.message ?: "Gagal terhubung" })
             loading = false
         }
@@ -994,6 +1282,8 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
     fun applyPatch() {
         patchLogs.clear(); patchError = ""; patchDone = false; patching = true
         scope.launch {
+            // Telemetry for patch_apply (status ok/failed/noop/blocked) is fired inside
+            // DevPatchEngine.applyAvailableUpdates() itself — see DevPatchEngine.kt.
             val result = withContext(Dispatchers.IO) { runCatching { engine.applyAvailableUpdates() } }
             result.onFailure { patchError = it.message ?: "Pembaruan gagal diterapkan" }
             result.onSuccess { patchDone = true }
@@ -1454,6 +1744,8 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
                     showRollback = false
                     rollbackBusy = true; rollbackMsg = ""
                     scope.launch {
+                        // Telemetry for patch_rollback (status ok/failed) is fired inside
+                        // DevPatchEngine.restoreLastBackup() itself — see DevPatchEngine.kt.
                         val result = withContext(Dispatchers.IO) {
                             runCatching { engine.restoreLastBackup() }
                         }
@@ -2283,20 +2575,105 @@ fun isGameInstalled(context: android.content.Context): Boolean =
 fun readMarker(): String =
     try { File(MARKER_PATH).readText().trim() } catch (_: Exception) { "" }
 
-fun fetchUpdateInfo(): UpdateInfo {
-    val json       = fetchJson(DEFAULT_MANIFEST)
+/**
+ * Fetch update info — prioritas Supabase update_posts (Dev Dashboard),
+ * fallback ke GitHub manifest (DEFAULT_MANIFEST) jika Supabase error / kosong /
+ * user belum login.
+ *
+ * @param api CommunityApi instance; kalau null atau belum login, langsung fallback
+ *            ke manifest. Boleh null agar caller lama tetap jalan.
+ */
+fun fetchUpdateInfo(api: CommunityApi? = null): UpdateInfo {
+    // ── 1. Coba Supabase update_posts dulu (kalau user login & ada data) ──
+    if (api != null) {
+        try {
+            if (api.loggedIn()) {
+                val latest = api.fetchLatestUpdatePost()
+                if (latest != null) {
+                    val code = latest.optInt("version_code", LOCAL_VER)
+                    val name = latest.optString("version_name", "").ifBlank { "v$code" }
+                    val notesArr = latest.optJSONArray("release_notes")
+                    val notes = if (notesArr != null) List(notesArr.length()) { i -> notesArr.optString(i) } else emptyList()
+                    return UpdateInfo(
+                        latestCode      = code,
+                        latestName      = name,
+                        upToDate        = code <= LOCAL_VER,
+                        releaseNotes    = notes,
+                        patchUrl        = latest.optString("patch_url", ""),
+                        patchSha256     = latest.optString("patch_sha256", ""),
+                        patchSize       = latest.optLong("patch_size_bytes", 0L),
+                        critical        = latest.optBoolean("critical", false),
+                        restartRequired = latest.optBoolean("restart_game_required", false),
+                        source          = "supabase"
+                    )
+                }
+            }
+        } catch (_: Throwable) {
+            // Supabase error / RLS / network — fall through ke manifest.
+        }
+    }
+
+    // ── 2. Fallback ke GitHub manifest ──
+    val json = fetchJson(DEFAULT_MANIFEST)
     // Support both DLavie-Launcher-Data format {version:26} and legacy {latestVersionCode:N}
     val latestCode = json.optInt("version", json.optInt("latestVersionCode", LOCAL_VER))
     val latestName = json.optString("latestVersionName", "v$latestCode")
     val notesArr   = json.optJSONArray("releaseNotes")
     val notes      = if (notesArr != null) List(notesArr.length()) { i -> notesArr.optString(i) } else emptyList()
-    return UpdateInfo(latestCode, latestName, latestCode <= LOCAL_VER, notes)
+    return UpdateInfo(latestCode, latestName, latestCode <= LOCAL_VER, notes, source = "manifest")
+}
+
+/**
+ * Fetch maintenance info dari Supabase app_config (key="maintenance").
+ * Mengembalikan MaintenanceInfo(enabled=false) kalau gagal / belum ada row,
+ * supaya launcher tetap jalan (fail-open).
+ */
+fun fetchMaintenanceInfo(api: CommunityApi): MaintenanceInfo {
+    return try {
+        val obj = api.getAppConfig("maintenance")
+        MaintenanceInfo(
+            enabled         = obj.optBoolean("enabled", false),
+            title           = obj.optString("title", ""),
+            message         = obj.optString("message", ""),
+            allowOfflinePlay = obj.optBoolean("allow_offline_play", true)
+        )
+    } catch (_: Throwable) {
+        MaintenanceInfo(enabled = false, title = "", message = "", allowOfflinePlay = true)
+    }
+}
+
+/**
+ * Fetch latest sent notification campaign (untuk inline banner di HomeScreen).
+ * Mengembalikan null kalau user belum login, belum ada campaign, atau error.
+ */
+fun fetchLatestNotifCampaign(api: CommunityApi): NotifCampaign? {
+    return try {
+        if (!api.loggedIn()) return null
+        val arr = api.getNotifications(1)
+        if (arr.length() == 0) return null
+        val n = arr.getJSONObject(0)
+        NotifCampaign(
+            id     = n.optString("id", ""),
+            title  = n.optString("title", ""),
+            body   = n.optString("body", ""),
+            sentAt = n.optString("sent_at", n.optString("created_at", ""))
+        )
+    } catch (_: Throwable) { null }
 }
 
 fun parseFeed(arr: JSONArray): List<FeedItem> = try {
     List(arr.length()) { i ->
         val o = arr.getJSONObject(i)
-        FeedItem(o.optString("id"), o.optString("title"), o.optString("body"), o.optString("type","info"), o.optBoolean("pinned"), o.optBoolean("official"))
+        FeedItem(
+            id        = o.optString("id"),
+            title     = o.optString("title"),
+            body      = o.optString("body"),
+            type      = o.optString("type", "info"),
+            pinned    = o.optBoolean("pinned"),
+            official  = o.optBoolean("official"),
+            imageUrl  = o.optString("image_url", ""),
+            createdAt = o.optString("created_at", "")
+        )
     }
 } catch (_: Exception) { emptyList() }
 
@@ -2308,9 +2685,108 @@ fun roleBadgeColor(role: String): Color = when (role.lowercase()) {
 }
 
 fun launchGame(context: android.content.Context) {
+    // Fire-and-forget telemetry — game_launch event.
+    Telemetry.track(context, Telemetry.EVT_GAME_LAUNCH, mapOf("game_package" to GAME_PKG))
     val intent = context.packageManager.getLaunchIntentForPackage(GAME_PKG)
     if (intent != null) context.startActivity(intent)
     else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(FIFA_APK_URL)))
+}
+
+// ─── Push Notification polling helpers (Module 3) ────────────────────────────────
+private const val SEEN_NOTIFS_PREFS = "dlavie_seen_notifs"
+
+private fun loadSeenNotifs(context: android.content.Context): MutableSet<String> {
+    return context.getSharedPreferences(SEEN_NOTIFS_PREFS, android.content.Context.MODE_PRIVATE)
+        .getStringSet("seen_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+}
+
+private fun saveSeenNotifs(context: android.content.Context, ids: Set<String>) {
+    context.getSharedPreferences(SEEN_NOTIFS_PREFS, android.content.Context.MODE_PRIVATE)
+        .edit().putStringSet("seen_ids", ids).apply()
+}
+
+/**
+ * Polls the most recent sent notification_campaigns and returns the first unseen
+ * (per SharedPreferences) one that targets the current user.
+ *
+ * Target resolution:
+ *   - {type: "all"}           → always show
+ *   - {type: "role", role: X} → show only if api.role() == X
+ *
+ * Side effects:
+ *   - Marks fetched campaign IDs as seen (so subsequent polls don't re-show them).
+ *
+ * @return the newest unseen NotificationItem matching the target, or null if none.
+ */
+fun fetchUnseenNotifications(context: android.content.Context, api: CommunityApi): NotificationItem? {
+    return try {
+        val arr = api.getNotifications(5)
+        if (arr.length() == 0) return null
+        val seen = loadSeenNotifs(context)
+        val myRole = api.role().lowercase()
+
+        // Iterate from newest to oldest; first unseen match wins.
+        for (i in 0 until arr.length()) {
+            val row = arr.getJSONObject(i)
+            val id = row.optString("id", "")
+            if (id.isBlank() || seen.contains(id)) continue
+
+            // Mark as seen immediately so we never re-show it.
+            seen.add(id)
+
+            // Resolve target spec — should be a jsonb object {type:"all"|"role", role?}.
+            val targetObj = row.opt("target")
+            val targetType: String
+            val targetRole: String?
+            when (targetObj) {
+                is JSONObject -> {
+                    targetType = targetObj.optString("type", "all")
+                    targetRole = targetObj.optString("role", "").ifBlank { null }
+                }
+                else -> { targetType = "all"; targetRole = null }
+            }
+
+            // Target filter
+            val matches = when (targetType.lowercase()) {
+                "all"  -> true
+                "role" -> targetRole != null && myRole == targetRole.lowercase()
+                else   -> true // unknown target type — show anyway
+            }
+
+            if (!matches) continue
+
+            // Persist seen set before returning so we don't re-poll the same id.
+            saveSeenNotifs(context, seen)
+
+            // Resolve action spec — {type:"open_app"|"open_url", url?}.
+            val actionObj = row.opt("action")
+            val actionType: String
+            val actionUrl: String?
+            when (actionObj) {
+                is JSONObject -> {
+                    actionType = actionObj.optString("type", "open_app")
+                    actionUrl  = actionObj.optString("url", "").ifBlank { null }
+                }
+                else -> { actionType = "open_app"; actionUrl = null }
+            }
+
+            return NotificationItem(
+                id         = id,
+                title      = row.optString("title", "Notifikasi DLavie"),
+                body       = row.optString("body", ""),
+                actionType = actionType,
+                actionUrl  = actionUrl,
+                targetType = targetType,
+                targetRole = targetRole
+            )
+        }
+        // No matching unseen notification — persist seen set anyway.
+        saveSeenNotifs(context, seen)
+        null
+    } catch (_: Exception) {
+        // Network/parse error — silent failure, don't crash the UI.
+        null
+    }
 }
 
 fun fetchJson(url: String): JSONObject {

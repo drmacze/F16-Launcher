@@ -82,12 +82,15 @@ class DevPatchEngine(
      *  4. Writes marker file to MARKER_PATH
      *  5. Cleans up temp work directory
      *
+     * Telemetry: fires `patch_apply` event with status ok/failed at the end.
+     *
      * @throws IllegalStateException if the game is currently running —
      *         applying a patch to a live game process can corrupt files.
      */
     fun applyAvailableUpdates() {
         // Safety: refuse to patch if game is running
         if (GameUtils.isGameRunning(context)) {
+            Telemetry.track(context, Telemetry.EVT_PATCH_APPLY, mapOf("status" to "blocked", "reason" to "game_running"))
             throw IllegalStateException(
                 "FIFA 16 sedang berjalan. Tutup game terlebih dahulu sebelum apply patch " +
                 "agar file tidak rusak (corrupt). Buka Recent Apps, swipe FIFA 16 ke atas/samping, lalu coba lagi."
@@ -100,6 +103,7 @@ class DevPatchEngine(
 
         if (local >= latest) {
             log("Sudah versi terbaru: v$local")
+            Telemetry.track(context, Telemetry.EVT_PATCH_APPLY, mapOf("status" to "noop", "local_version" to local, "latest_version" to latest))
             return
         }
 
@@ -108,32 +112,50 @@ class DevPatchEngine(
         var step = 0
         val total = countPatchSteps(patches, local, latest)
 
-        while (local < latest) {
-            val patch = findPatch(patches, local)
-                ?: throw IllegalStateException("Patch dari v$local tidak ditemukan dalam manifest.")
-            val to = patch.getInt("to")
-            val name = patch.optString("name", "v$to")
-            step++
-            log("[$step/$total] Apply patch: $name")
-            onProgress?.invoke(step, total, "Apply patch $name...")
-            applyPatch(patch)
-            local = to
-            prefs.edit().putInt("local_version_code", local).apply()
-            log("Patch selesai. Local version: v$local")
-        }
+        try {
+            while (local < latest) {
+                val patch = findPatch(patches, local)
+                    ?: throw IllegalStateException("Patch dari v$local tidak ditemukan dalam manifest.")
+                val to = patch.getInt("to")
+                val name = patch.optString("name", "v$to")
+                step++
+                log("[$step/$total] Apply patch: $name")
+                onProgress?.invoke(step, total, "Apply patch $name...")
+                applyPatch(patch)
+                local = to
+                prefs.edit().putInt("local_version_code", local).apply()
+                log("Patch selesai. Local version: v$local")
+            }
 
-        onProgress?.invoke(total, total, "Selesai")
-        log("Semua update berhasil diapply.")
+            onProgress?.invoke(total, total, "Selesai")
+            log("Semua update berhasil diapply.")
+            Telemetry.track(context, Telemetry.EVT_PATCH_APPLY, mapOf("status" to "ok", "from_version" to localVersion(), "to_version" to latest, "steps" to total))
+        } catch (t: Throwable) {
+            Telemetry.track(context, Telemetry.EVT_PATCH_APPLY, mapOf("status" to "failed", "error" to (t.message ?: "unknown"), "step" to step, "total_steps" to total))
+            throw t
+        }
     }
 
     fun restoreLastBackup() {
         val backup = latestBackupRoot()
         val target = latestBackupTarget()
-        if (backup.isBlank()) throw IllegalStateException("Belum ada backup yang tersimpan.")
+        if (backup.isBlank()) {
+            Telemetry.track(context, Telemetry.EVT_PATCH_ROLLBACK, mapOf("status" to "failed", "reason" to "no_backup"))
+            throw IllegalStateException("Belum ada backup yang tersimpan.")
+        }
         log("Restore backup: $backup → $target")
-        val result = privileged("set -e; mkdir -p ${q(target)}; cp -af ${q("$backup/.")} ${q(target)}; echo 'Restore selesai'")
-        log(result.out.trim().ifEmpty { "Restore command selesai." })
-        if (result.code != 0) throw IllegalStateException("Restore gagal (exit ${result.code}). Output:\n${result.out.take(400)}")
+        try {
+            val result = privileged("set -e; mkdir -p ${q(target)}; cp -af ${q("$backup/.")} ${q(target)}; echo 'Restore selesai'")
+            log(result.out.trim().ifEmpty { "Restore command selesai." })
+            if (result.code != 0) {
+                Telemetry.track(context, Telemetry.EVT_PATCH_ROLLBACK, mapOf("status" to "failed", "exit_code" to result.code, "error" to result.out.take(200)))
+                throw IllegalStateException("Restore gagal (exit ${result.code}). Output:\n${result.out.take(400)}")
+            }
+            Telemetry.track(context, Telemetry.EVT_PATCH_ROLLBACK, mapOf("status" to "ok", "backup" to backup))
+        } catch (t: Throwable) {
+            Telemetry.track(context, Telemetry.EVT_PATCH_ROLLBACK, mapOf("status" to "failed", "error" to (t.message ?: "unknown")))
+            throw t
+        }
     }
 
     fun resetLocalVersion(version: Int = 1) {
