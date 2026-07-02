@@ -67,34 +67,23 @@ import androidx.compose.ui.unit.sp
 // MODERN DESIGN SYSTEM v2.0
 // Premium, aesthetic, clean — with depth, motion, and attention to detail
 // ═══════════════════════════════════════════════════════════════════════════════
+// NOTE: Base color tokens (Carbon, GlassBase, Surface2, Surface3, CandyCyan,
+// CandyBlue, NeonGreen, SoftText, SubText, GlassStroke, DangerRed, AmberWarn,
+// TapTapGreen, TapTapGold) sekarang ada di TapTapDesignSystem.kt sebagai
+// single source of truth. File ini hanya simpan extend "Premium*" palette
+// (untuk backward compat dengan komponen lama yang pakai premium tint).
 
-// ─── Premium Palette ───────────────────────────────────────────────────────────
-// Deep navy-black base with cool gradient overlays
-// Accent: electric cyan (primary), violet (secondary), emerald (success)
-// Premium gold accent for highlights & hero elements
+// ─── Premium Palette (v3.0 — monochrome, match DLavie logo) ───────────────────
+// Deep near-black base (match logo bg) — dipakai untuk skeleton shimmer
+// background dan gradient border hero cards. Sebelumnya navy-blue, sekarang
+// pure monochrome dark gray.
+val PremiumBg         = Color(0xFF050505)   // deepest base — near pure black
+val PremiumSurface    = Color(0xFF0B0B0B)   // elevated surface — dark gray
+val PremiumSurfaceHi  = Color(0xFF111111)   // highest surface
 
-val PremiumBg         = Color(0xFF050811)   // deepest base
-val PremiumSurface    = Color(0xFF0B1320)   // elevated surface
-val PremiumSurfaceHi  = Color(0xFF111B2E)   // highest surface
-
-// Replace old tokens with refined versions (kept names for backward compat)
-val Carbon      = Color(0xFF050811)
-val GlassBase   = Color(0xFF0B1320)
-val Surface2    = Color(0xFF111B2E)
-
-// Accent colors — slightly more refined & cohesive
-val CandyCyan   = Color(0xFF22D3EE)   // electric cyan, primary
-val CandyBlue   = Color(0xFF818CF8)   // soft violet, secondary
-val NeonGreen   = Color(0xFF34D399)   // emerald, success
-val SoftText    = Color(0xFFB0BEC5)   // soft body text
-val SubText     = Color(0xFF6B7280)   // muted
-val GlassStroke = Color(0x2A60A5FA)   // subtle blue tint
-val DangerRed   = Color(0xFFF87171)   // soft red
-val AmberWarn   = Color(0xFFFBBF24)   // gold warning
-
-// Premium gold accent (for hero elements only)
-val PremiumGold = Color(0xFFFCD34D)
-val PremiumViolet = Color(0xFFA78BFA)
+// Premium accents (v3.0 monochrome — ganti violet ke gray, keep gold for verified only)
+val PremiumGold = Color(0xFFFFD700)   // tetap gold — verified badge only
+val PremiumViolet = Color(0xFF9E9E9E) // monochrome gray — ganti violet (logo has no violet)
 
 // ─── Typography Scale ──────────────────────────────────────────────────────────
 // System font with proper weight hierarchy
@@ -138,7 +127,7 @@ fun PremiumGlassCard(
         modifier = baseModifier,
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xCC0B1320)
+            containerColor = Color(0xCC0B0B0B)   // v3.0 monochrome — near-black glass
         ),
         border = if (gradientBorder) null else BorderStroke(1.dp, borderColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -312,7 +301,7 @@ fun SkeletonBox(
                 Brush.linearGradient(
                     colors = listOf(
                         PremiumSurfaceHi.copy(0.6f),
-                        Color(0xFF1A2942).copy(0.9f),
+                        Color(0xFF1A1A1A).copy(0.9f),   // v3.0 monochrome shimmer highlight
                         PremiumSurfaceHi.copy(0.6f)
                     ),
                     start = Offset(shimmer * 200f, 0f),
@@ -511,14 +500,14 @@ fun ModernStatusChip(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(76.dp)
-                .clip(RoundedCornerShape(20.dp))
+                .clip(TTShapes.card)
                 .clickable(interactionSource = interactionSource, indication = null) { onClick() },
-            shape = RoundedCornerShape(20.dp),
-            color = Color(0xCC0B1320),
+            shape = TTShapes.card,
+            color = Color(0xCC0B0B0B),   // v3.0 monochrome glass
             border = BorderStroke(1.dp, borderColor)
         ) {
             Column(
-                Modifier.padding(12.dp),
+                Modifier.padding(TTSpacing.md),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.Start
             ) {
@@ -532,7 +521,7 @@ fun ModernStatusChip(
                         null, tint = iconTint, modifier = Modifier.size(14.dp)
                     )
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(TTSpacing.sm))
                 Text(
                     label, color = SubText, fontSize = 9.sp,
                     fontWeight = FontWeight.Black, maxLines = 1,

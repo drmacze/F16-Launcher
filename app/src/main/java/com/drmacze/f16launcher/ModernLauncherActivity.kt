@@ -3,19 +3,27 @@ package com.drmacze.f16launcher
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -27,73 +35,129 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.BookmarkBorder
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Send
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material.icons.rounded.ThumbUpOffAlt
+import androidx.compose.material.icons.rounded.Article
+import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.SportsSoccer
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -110,16 +174,25 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.awaitCancellation
@@ -127,6 +200,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.sin
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -147,8 +221,70 @@ private const val LOCAL_VER_NAME   = "v1"
 data class CategoryItem(val id: String, val name: String, val description: String)
 data class TopicItem(val id: String, val title: String, val body: String, val replyCount: Int, val createdAt: String)
 data class PostItem(val id: String, val authorId: String, val body: String, val createdAt: String)
-data class FeedItem(val id: String, val title: String, val body: String, val type: String, val pinned: Boolean, val official: Boolean)
-data class UpdateInfo(val latestCode: Int, val latestName: String, val upToDate: Boolean, val releaseNotes: List<String>)
+data class FeedItem(val id: String, val title: String, val body: String, val type: String, val pinned: Boolean, val official: Boolean, val imageUrl: String = "", val createdAt: String = "")
+
+/**
+ * Update info — sekarang mendukung dua sumber:
+ *   - "supabase": dari Dev Dashboard update_posts (prioritas jika user login & ada data)
+ *   - "manifest" : fallback ke GitHub manifest.json (DEFAULT_MANIFEST)
+ *
+ * Field patchUrl/sha256/size/critical/restartRequired hanya terisi kalau
+ * source == "supabase" (manifest legacy tidak punya info ini).
+ */
+data class UpdateInfo(
+    val latestCode: Int,
+    val latestName: String,
+    val upToDate: Boolean,
+    val releaseNotes: List<String>,
+    val patchUrl: String = "",
+    val patchSha256: String = "",
+    val patchSize: Long = 0L,
+    val critical: Boolean = false,
+    val restartRequired: Boolean = false,
+    val source: String = "manifest"
+)
+
+/**
+ * Maintenance mode info — dibaca dari Supabase app_config key="maintenance".
+ * value jsonb shape: { enabled, title, message, scope, allow_offline_play }
+ *
+ * scope:
+ *   - "none"    → maintenance disabled (default)
+ *   - "partial" → launcher bisa dibuka, tapi download/apply/launch diblokir
+ *   - "full"    → full-screen maintenance page, user tidak bisa masuk launcher
+ */
+data class MaintenanceInfo(
+    val enabled: Boolean,
+    val title: String,
+    val message: String,
+    val scope: String = "none",
+    val allowOfflinePlay: Boolean = true
+)
+
+/**
+ * Latest notification campaign — untuk inline banner di HomeScreen.
+ * Berbeda dari NotificationItem (yang untuk slide-down overlay transient),
+ * NotifCampaign ini persisten sampai user dismiss.
+ */
+data class NotifCampaign(
+    val id: String,
+    val title: String,
+    val body: String,
+    val sentAt: String
+)
+
+/**
+ * Push notification campaign item — used by the polling receiver in MainShell.
+ */
+data class NotificationItem(
+    val id: String,
+    val title: String,
+    val body: String,
+    val actionType: String,
+    val actionUrl: String?,
+    val targetType: String,
+    val targetRole: String?
+)
 
 // ─── App setup state ──────────────────────────────────────────────────────────
 enum class SetupState { LOADING, NEED_GAME, NEED_DATA, READY }
@@ -165,21 +301,73 @@ enum class Page(val label: String, val navIcon: ImageVector) {
 class ModernLauncherActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { DLavieModernApp() }
+        // Pre-create notification channel (idempotent) so the channel is ready
+        // before any local notification fires (Android O+).
+        NotificationHelper.createChannel(this)
+        setContent { DLavieModernApp(initialPostId = intent?.getStringExtra("post_id")) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Update intent so subsequent DLavieModernApp reads pick up the new post_id.
+        setIntent(intent)
     }
 }
 
 // ─── Root composable ──────────────────────────────────────────────────────────
 @Composable
-fun DLavieModernApp() {
+fun DLavieModernApp(initialPostId: String? = null) {
     val context = LocalContext.current
     val api     = remember { CommunityApi(context) }
     var pinVerified by remember { mutableStateOf(!PinManager.hasPin(context)) }
+
+    // ── Maintenance state (Bug 1-3: full/partial scope + staff bypass) ──
+    var maintenanceState by remember { mutableStateOf<MaintenanceInfo?>(null) }
+    var maintenanceChecked by remember { mutableStateOf(false) }
+    var partialBypassed by remember { mutableStateOf(false) } // user tekan "Masuk Launcher" saat scope=partial
+
+    // ── App update state ──
+    var updateInfo by remember { mutableStateOf<AppUpdateChecker.UpdateInfo?>(null) }
+    var showUpdatePopup by remember { mutableStateOf(false) }
+    var updateDownloading by remember { mutableStateOf(false) }
+    var updateDownloadProgress by remember { mutableStateOf(0f) }
+    val updateScope = rememberCoroutineScope()
+
+    // ── Staff bypass (Bug 3): admin/developer/moderator/owner skip maintenance entirely ──
+    val userRole = api.role()
+    val isStaff = userRole.equals("admin", ignoreCase = true)
+               || userRole.equals("developer", ignoreCase = true)
+               || userRole.equals("owner", ignoreCase = true)
+               || userRole.equals("moderator", ignoreCase = true)
 
     // If PIN is enabled and not yet verified, launch the PIN lock screen
     LaunchedEffect(Unit) {
         if (PinManager.hasPin(context) && !pinVerified) {
             PinLockActivity.launch(context, PinLockActivity.MODE_UNLOCK)
+        }
+    }
+
+    // ── Fetch maintenance HANYA untuk non-staff (Bug 3) ──
+    // Staff bypass: tidak perlu fetch app_config.maintenance sama sekali.
+    LaunchedEffect(Unit) {
+        if (!isStaff) {
+            withContext(Dispatchers.IO) {
+                runCatching { maintenanceState = fetchMaintenanceInfo(api) }
+            }
+        }
+        maintenanceChecked = true
+    }
+
+    // ── Cek app update saat app dibuka ──
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val info = AppUpdateChecker.checkForUpdate()
+                if (info != null && info.isUpdateAvailable) {
+                    updateInfo = info
+                    showUpdatePopup = true
+                }
+            }
         }
     }
 
@@ -209,45 +397,100 @@ fun DLavieModernApp() {
                 Modifier.fillMaxSize()
                     .background(Brush.verticalGradient(listOf(Color(0xFF06101E), Carbon, Color(0xFF060D18))))
             ) {
-                if (!api.loggedIn()) {
-                    LaunchedEffect(Unit) {
-                        context.startActivity(
-                            Intent(context, DLavieGuidedActivity::class.java)
-                                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    }
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            CircularProgressIndicator(color = CandyCyan, strokeWidth = 2.5.dp)
-                            Text("Memuat sesi...", color = SoftText, fontSize = 13.sp)
+                // Reusable logout lambda — fires telemetry before clearing session.
+                val logoutAction: () -> Unit = {
+                    Telemetry.track(api, context, Telemetry.EVT_LOGOUT)
+                    api.logout()
+                    context.getSharedPreferences("dlavie_auth_session", Context.MODE_PRIVATE).edit().clear().apply()
+                    // Also clear PIN on logout for security
+                    PinManager.clearPin(context)
+                    context.startActivity(
+                        Intent(context, DLavieGuidedActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+
+                // ── App Update Popup ──
+                if (showUpdatePopup && updateInfo != null) {
+                    AppUpdatePopup(
+                        info = updateInfo!!,
+                        downloading = updateDownloading,
+                        progress = updateDownloadProgress,
+                        onUpdate = {
+                            if (!updateDownloading) {
+                                updateDownloading = true
+                                updateDownloadProgress = 0f
+                                updateScope.launch {
+                                    val apkFile = withContext(Dispatchers.IO) {
+                                        AppUpdateChecker.downloadApk(context, updateInfo!!.apkUrl) { progress ->
+                                            updateDownloadProgress = progress
+                                        }
+                                    }
+                                    updateDownloading = false
+                                    if (apkFile != null && apkFile.exists()) {
+                                        AppUpdateChecker.installApk(context, apkFile)
+                                    }
+                                }
+                            }
+                        },
+                        onLater = { showUpdatePopup = false }
+                    )
+                }
+
+                when {
+                    // ── Belum login → redirect ke guided login ──
+                    !api.loggedIn() -> {
+                        LaunchedEffect(Unit) {
+                            context.startActivity(
+                                Intent(context, DLavieGuidedActivity::class.java)
+                                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                CircularProgressIndicator(color = CandyCyan, strokeWidth = 2.5.dp)
+                                Text("Memuat sesi...", color = SoftText, fontSize = 13.sp)
+                            }
                         }
                     }
-                } else if (!pinVerified && PinManager.hasPin(context)) {
-                    // Wait for PIN verification — show lock screen placeholder
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Icon(Icons.Rounded.Lock, null, tint = CandyCyan, modifier = Modifier.size(48.dp))
-                            Text("Masukkan PIN untuk lanjut", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            Text("Aktivitas PIN lock terbuka di layar lain", color = SoftText, fontSize = 12.sp)
-                            Spacer(Modifier.height(20.dp))
-                            Button(
-                                onClick = { PinLockActivity.launch(context, PinLockActivity.MODE_UNLOCK) },
-                                modifier = Modifier.height(48.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D))
-                            ) { Text("Buka PIN Lock", fontWeight = FontWeight.Black) }
+
+                    // ── Staff bypass: skip maintenance entirely (Bug 3) ──
+                    isStaff -> {
+                        if (!pinVerified && PinManager.hasPin(context)) {
+                            PinLockPlaceholder(context)
+                        } else {
+                            MainShell(api, maintenanceInfo = null, onLogout = logoutAction, initialPostId = initialPostId)
                         }
                     }
-                } else {
-                    MainShell(api) {
-                        api.logout()
-                        context.getSharedPreferences("dlavie_auth_session", Context.MODE_PRIVATE).edit().clear().apply()
-                        // Also clear PIN on logout for security
-                        PinManager.clearPin(context)
-                        context.startActivity(
-                            Intent(context, DLavieGuidedActivity::class.java)
-                                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
+
+                    // ── Non-staff + scope=full → full-screen maintenance, NO enter button (Bug 1) ──
+                    // User TIDAK BISA masuk launcher sampai Dev Dashboard menonaktifkan maintenance.
+                    maintenanceChecked && maintenanceState?.enabled == true
+                            && maintenanceState?.scope == "full" -> {
+                        FullScreenMaintenance(maintenanceState!!) {
+                            // onEnter — tidak pernah dipanggil karena scope=full tidak punya button.
+                            // Tetap disediakan sebagai no-op supaya signature konsisten.
+                        }
+                    }
+
+                    // ── Non-staff + scope=partial → full-screen maintenance WITH "Masuk Launcher" (Bug 1) ──
+                    // Setelah tap, partialBypassed=true → user masuk launcher tapi Beranda & Update blur (Bug 2).
+                    maintenanceChecked && maintenanceState?.enabled == true
+                            && maintenanceState?.scope == "partial"
+                            && !partialBypassed -> {
+                        FullScreenMaintenance(maintenanceState!!) {
+                            partialBypassed = true
+                        }
+                    }
+
+                    // ── PIN lock (non-staff, post-maintenance-check) ──
+                    !pinVerified && PinManager.hasPin(context) -> {
+                        PinLockPlaceholder(context)
+                    }
+
+                    // ── Default: masuk launcher dengan maintenance info (untuk blur overlay Bug 2) ──
+                    else -> {
+                        MainShell(api, maintenanceInfo = maintenanceState, onLogout = logoutAction, initialPostId = initialPostId)
                     }
                 }
             }
@@ -255,56 +498,547 @@ fun DLavieModernApp() {
     }
 }
 
-// ─── Main shell ───────────────────────────────────────────────────────────────
+/**
+ * PIN lock placeholder — shown when user has PIN set but hasn't verified yet.
+ * User taps "Buka PIN Lock" to launch PinLockActivity for verification.
+ */
 @Composable
-fun MainShell(api: CommunityApi, onLogout: () -> Unit) {
-    var page by remember { mutableStateOf(Page.Home) }
+private fun PinLockPlaceholder(context: android.content.Context) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Rounded.Lock, null, tint = CandyCyan, modifier = Modifier.size(48.dp))
+            Text("Masukkan PIN untuk lanjut", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("Aktivitas PIN lock terbuka di layar lain", color = SoftText, fontSize = 12.sp)
+            Spacer(Modifier.height(20.dp))
+            Button(
+                onClick = { PinLockActivity.launch(context, PinLockActivity.MODE_UNLOCK) },
+                modifier = Modifier.height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D))
+            ) { Text("Buka PIN Lock", fontWeight = FontWeight.Black) }
+        }
+    }
+}
+
+// ─── Full-screen maintenance (Bug 1: scope = "full" | "partial") ──────────────
+// scope=full    → TIDAK ADA button "Masuk". User tidak bisa masuk launcher.
+// scope=partial → ADA button "Masuk Launcher" (always enabled). Tap → onEnter → blur Beranda & Update.
+@Composable
+fun FullScreenMaintenance(
+    maintenance: MaintenanceInfo,
+    onEnter: () -> Unit  // dipanggil saat user tap "Masuk Launcher" (hanya untuk scope=partial)
+) {
+    Box(
+        Modifier.fillMaxSize().background(Carbon),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.padding(32.dp)
+        ) {
+            // Big warning icon dengan pulse
+            val infiniteTransition = rememberInfiniteTransition(label = "maint_pulse")
+            val pulseScale by infiniteTransition.animateFloat(
+                initialValue = 1f, targetValue = 1.1f,
+                animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                label = "maint_pulse_scale"
+            )
+            Box(
+                Modifier.size(96.dp).scale(pulseScale)
+                    .background(AmberWarn.copy(0.12f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.Warning, null, tint = AmberWarn, modifier = Modifier.size(48.dp))
+            }
+
+            Text(
+                maintenance.title.ifEmpty { "Sistem Sedang Maintenance" },
+                color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center
+            )
+
+            if (maintenance.message.isNotEmpty()) {
+                Text(
+                    maintenance.message,
+                    color = SoftText, fontSize = 14.sp, lineHeight = 20.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            // ── Bug 1: HANYA tampilkan button jika scope=partial ──
+            // scope=full → TIDAK ADA button "Masuk" sama sekali.
+            if (maintenance.scope == "partial") {
+                Button(
+                    onClick = onEnter,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CandyCyan,
+                        contentColor = Carbon
+                    )
+                ) {
+                    Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Masuk Launcher", fontWeight = FontWeight.Black)
+                }
+                Text(
+                    "Beberapa fitur dibatasi. Komunitas & Profil tetap tersedia.",
+                    color = SubText, fontSize = 11.sp, textAlign = TextAlign.Center
+                )
+            } else {
+                // scope=full — tidak ada button. User tidak bisa masuk launcher.
+                Text(
+                    "Launcher tidak dapat diakses saat maintenance penuh.",
+                    color = SubText, fontSize = 12.sp, textAlign = TextAlign.Center
+                )
+                Text(
+                    "Silakan coba lagi nanti.",
+                    color = SubText, fontSize = 12.sp, textAlign = TextAlign.Center
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "DLavie 26 · ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}",
+                color = SubText, fontSize = 10.sp
+            )
+        }
+    }
+}
+
+// ─── Main shell ───────────────────────────────────────────────────────────────
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+fun MainShell(
+    api: CommunityApi,
+    maintenanceInfo: MaintenanceInfo? = null,
+    onLogout: () -> Unit,
+    initialPostId: String? = null
+) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+    // ── Phase 2 Community: deep-link dari notification tap ──
+    // Jika initialPostId != null, default page = Chat (Komunitas) supaya user
+    // langsung lihat feed. Kita juga tampilkan toast singkat untuk konfirmasi.
+    var page by remember { mutableStateOf(if (initialPostId != null) Page.Chat else Page.Home) }
+    val pendingPostId = remember { mutableStateOf(initialPostId) }
+
+    // ── Active notification banner state (Module 3: Push Notification Receiver) ──
+    var activeBanner by remember { mutableStateOf<NotificationItem?>(null) }
+
+    // ── Phase 2: Game Detail screen state ──
+    // Saat user tap TTGameCard di Beranda, set showGameDetail=true + capture state.
+    // GameDetailScreen rendered sebagai overlay (menggantikan AnimatedContent).
+    var showGameDetail by remember { mutableStateOf(false) }
+    var detailGameInstalled     by remember { mutableStateOf(false) }
+    var detailAvgRating         by remember { mutableStateOf(0.0) }
+    var detailRatingCount       by remember { mutableStateOf(0) }
+    var detailMaintenanceBlocked by remember { mutableStateOf(false) }
+
+    // ── Phase 4: Settings overlay state + lifted Profile expand state ──
+    // profileExpandedSection di-lift ke MainShell supaya SettingsScreen bisa
+    // membuka Profile dengan section tertentu (password/email/profile) ter-expand.
+    var showSettings           by remember { mutableStateOf(false) }
+    var profileExpandedSection by remember { mutableStateOf<String?>(null) }
+
+    // ── Phase 2: Lifted download state (shared antara HomeScreen & GameDetailScreen) ──
+    // dlProgress: -1f = idle, 0f..0.99f = downloading, 2f = done (waiting install)
+    var dlProgress by remember { mutableStateOf(-1f) }
+    var dlError    by remember { mutableStateOf("") }
+
+    fun startDownload() {
+        if (dlProgress >= 0f && dlProgress < 2f) return  // already downloading
+        dlProgress = 0f; dlError = ""
+        // Telemetry: download_apk event — fire-and-forget.
+        Telemetry.track(api, context, Telemetry.EVT_DOWNLOAD_APK, mapOf("source" to "github_releases", "url" to FIFA_APK_URL))
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val outDir  = java.io.File(context.getExternalFilesDir(null), "public-install").also { it.mkdirs() }
+                    val apkFile = java.io.File(outDir, "DLavie26.apk")
+                    val conn    = URL(FIFA_APK_URL).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 30_000; conn.readTimeout = 120_000; conn.connect()
+                    val total   = conn.contentLengthLong.toFloat().coerceAtLeast(1f)
+                    val buf     = ByteArray(16 * 1024)
+                    conn.inputStream.use { inp ->
+                        apkFile.outputStream().use { out ->
+                            var n: Int; var read = 0L
+                            while (inp.read(buf).also { n = it } != -1) {
+                                out.write(buf, 0, n); read += n
+                                dlProgress = (read / total).coerceIn(0f, 0.99f)
+                            }
+                        }
+                    }
+                    apkFile
+                }
+            }.onSuccess { apkFile ->
+                dlProgress = 2f
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context, "${context.packageName}.files", apkFile)
+                context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                })
+            }.onFailure { dlError = it.message ?: "Unduhan gagal. Periksa koneksi internet."; dlProgress = -1f }
+        }
+    }
 
     LaunchedEffect(Unit) {
+        // Fire app_open telemetry as soon as the shell mounts.
+        Telemetry.track(api, context, Telemetry.EVT_APP_OPEN)
+        // Initial token refresh loop (existing behavior).
         while (true) {
             delay(50L * 60_000)
             withContext(Dispatchers.IO) { runCatching { api.refreshToken() } }
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
-        AnimatedContent(
-            targetState    = page,
-            label          = "page_anim",
-            transitionSpec = {
-                (fadeIn(tween(380, easing = FastOutSlowInEasing)) +
-                 androidx.compose.animation.slideInHorizontally(
-                     initialOffsetX = { it / 12 },
-                     animationSpec = tween(380, easing = FastOutSlowInEasing)
-                 )) togetherWith
-                (fadeOut(tween(220)) +
-                 androidx.compose.animation.slideOutHorizontally(
-                     targetOffsetX = { -it / 24 },
-                     animationSpec = tween(280, easing = FastOutSlowInEasing)
-                 ))
-            },
-            modifier       = Modifier.fillMaxSize().padding(bottom = 100.dp)
-        ) { target ->
-            when (target) {
-                Page.Home   -> HomeScreen(api, onNav = { page = it })
-                Page.Update -> UpdateScreen(onNav  = { page = it })
-                Page.Chat   -> CommunityScreen(api)
-                Page.Me     -> ProfileScreen(api, onLogout)
+    // ── Poll notification_campaigns every 60s for new sent campaigns ──
+    LaunchedEffect(Unit) {
+        // Run once immediately on mount.
+        runCatching {
+            val fresh = withContext(Dispatchers.IO) { fetchUnseenNotifications(context, api) }
+            if (fresh != null) activeBanner = fresh
+        }
+        while (true) {
+            delay(60L * 1000L)
+            runCatching {
+                val fresh = withContext(Dispatchers.IO) { fetchUnseenNotifications(context, api) }
+                if (fresh != null) activeBanner = fresh
             }
         }
-        FloatingNav(
-            page     = page,
-            onPage   = { page = it },
-            modifier = Modifier.align(Alignment.BottomCenter)
-                               .navigationBarsPadding()
-                               .padding(bottom = 12.dp)
-        )
+    }
+
+    // ── Phase 2 Community: request POST_NOTIFICATIONS permission (Android 13+) ──
+    // Diperlukan supaya NotificationHelper.showNotification() bisa menampilkan notif.
+    // Pada Android < 13, permission otomatis granted saat install.
+    // Callback result diabaikan: polling tetap jalan walau permission denied (notif
+    // silent fail di NotificationHelper.showNotification). User bisa enable later via
+    // system settings.
+    val notificationPermission = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) {
+            // User denied — silent. Notifikasi tidak akan tampil, tapi polling tetap jalan.
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    // ── Phase 2 Community: poll for new posts from followed users every 60s ──
+    // Setelah dapat post baru → fire local notification via NotificationHelper.
+    // lastCheckTime di-init ke now() agar tidak spam notif untuk post lama saat app baru dibuka.
+    LaunchedEffect(Unit) {
+        var lastCheckTime = System.currentTimeMillis()
+        while (true) {
+            delay(60_000L)  // check every 60s
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    if (api.loggedIn()) {
+                        val followsArr = api.fetchFollowingIds()
+                        if (followsArr.length() > 0) {
+                            val follows = mutableListOf<String>()
+                            for (i in 0 until followsArr.length()) {
+                                follows.add(followsArr.getJSONObject(i).optString("following_id", ""))
+                            }
+                            val newPosts = api.fetchNewPostsFromFollowing(follows, lastCheckTime)
+                            if (newPosts.length() > 0) {
+                                for (i in 0 until newPosts.length()) {
+                                    val post = newPosts.getJSONObject(i)
+                                    val postId = post.optString("id", "")
+                                    val title = post.optString("title", "")
+                                    val authorId = post.optString("author_id", "")
+                                    val author = runCatching { api.getProfileById(authorId) }
+                                        .getOrNull() ?: JSONObject()
+                                    val authorName = author.optString("display_name",
+                                        author.optString("username", "User"))
+                                    NotificationHelper.showNotification(
+                                        context = context,
+                                        title  = "Post baru dari $authorName",
+                                        body   = title.ifBlank { "Cek post terbaru di komunitas." },
+                                        postId = postId
+                                    )
+                                }
+                                // Update lastCheckTime ke now() supaya next poll hanya cari post setelah ini.
+                                lastCheckTime = System.currentTimeMillis()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Auto-dismiss the banner after 5 seconds ──
+    LaunchedEffect(activeBanner?.id) {
+        val banner = activeBanner ?: return@LaunchedEffect
+        delay(5_000L)
+        if (activeBanner?.id == banner.id) activeBanner = null
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        // ── Phase 4: Settings overlay ──
+        AnimatedVisibility(
+            visible = showSettings,
+            enter = fadeIn(tween(300)) + androidx.compose.animation.slideInHorizontally(
+                initialOffsetX = { it },
+                animationSpec = tween(300, easing = FastOutSlowInEasing)
+            ),
+            exit = fadeOut(tween(200)) + androidx.compose.animation.slideOutHorizontally(
+                targetOffsetX = { it },
+                animationSpec = tween(250, easing = FastOutSlowInEasing)
+            )
+        ) {
+            SettingsScreen(
+                api = api,
+                onBack = { showSettings = false },
+                onLogout = {
+                    showSettings = false
+                    onLogout()
+                }
+            )
+        }
+
+        // ── Phase 4: SharedTransitionLayout wraps the Beranda ↔ GameDetail nav ──
+        // The SharedTransitionScope is exposed via LocalSharedTransitionScope so
+        // deep composables (TTGameCard cover, GameDetailScreen cover) can attach
+        // sharedElement modifiers without threading scopes through every signature.
+        SharedTransitionLayout {
+            CompositionLocalProvider(LocalSharedTransitionScope provides this) {
+                // ── Outer AnimatedContent: page list ↔ GameDetailScreen ──
+                // Its AnimatedVisibilityScope (exposed via LocalNavAnimatedVisibilityScope)
+                // is the scope the shared element morphs within.
+                AnimatedContent(
+                    targetState    = showGameDetail,
+                    label          = "detail_anim",
+                    transitionSpec = {
+                        fadeIn(tween(380, easing = FastOutSlowInEasing)) togetherWith
+                        fadeOut(tween(280, easing = FastOutSlowInEasing))
+                    }
+                ) { showDetail ->
+                    CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
+                        if (showDetail) {
+                            // ── Phase 2: GameDetailScreen overlay (replaces page content) ──
+                            GameDetailScreen(
+                                onBack = { showGameDetail = false },
+                                onPlay = {
+                                    launchGame(context)
+                                    showGameDetail = false
+                                },
+                                onDownload = {
+                                    showGameDetail = false
+                                    // Trigger download via lifted state (dlProgress/dlError/startDownload)
+                                    // — user kembali ke Beranda dan download otomatis dimulai.
+                                    startDownload()
+                                },
+                                gameInstalled      = detailGameInstalled,
+                                avgRating          = detailAvgRating,
+                                ratingCount        = detailRatingCount,
+                                maintenanceBlocked = detailMaintenanceBlocked
+                            )
+                        } else {
+                            AnimatedContent(
+                                targetState    = page,
+                                label          = "page_anim",
+                                transitionSpec = {
+                                    (fadeIn(tween(380, easing = FastOutSlowInEasing)) +
+                                     androidx.compose.animation.slideInHorizontally(
+                                         initialOffsetX = { it / 12 },
+                                         animationSpec = tween(380, easing = FastOutSlowInEasing)
+                                     )) togetherWith
+                                    (fadeOut(tween(220)) +
+                                     androidx.compose.animation.slideOutHorizontally(
+                                         targetOffsetX = { -it / 24 },
+                                         animationSpec = tween(280, easing = FastOutSlowInEasing)
+                                     ))
+                                },
+                                modifier       = Modifier.fillMaxSize().padding(bottom = 100.dp)
+                            ) { target ->
+                                // ── Bug 2: Partial maintenance → Beranda & Update blur total ──
+                                val isPartialMaintenance = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"
+
+                                when (target) {
+                                    Page.Home   -> Box {
+                                        HomeScreen(
+                                            api             = api,
+                                            maintenanceInfo = maintenanceInfo,
+                                            onNav           = { page = it },
+                                            dlProgress      = dlProgress,
+                                            dlError         = dlError,
+                                            startDownload   = { startDownload() },
+                                            onGameCardClick = { inst, avg, count, blocked ->
+                                                detailGameInstalled      = inst
+                                                detailAvgRating          = avg
+                                                detailRatingCount        = count
+                                                detailMaintenanceBlocked = blocked
+                                                showGameDetail           = true
+                                            }
+                                        )
+                                        if (isPartialMaintenance) {
+                                            PartialMaintenanceOverlay(
+                                                title   = "Beranda Diblokir",
+                                                message = "Maintenance mode aktif. Hanya Komunitas & Profil yang tersedia.",
+                                                onNavChat = { page = Page.Chat },
+                                                onNavMe   = { page = Page.Me }
+                                            )
+                                        }
+                                    }
+                                    Page.Update -> Box {
+                                        UpdateScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
+                                        if (isPartialMaintenance) {
+                                            PartialMaintenanceOverlay(
+                                                title   = "Update Diblokir",
+                                                message = "Maintenance mode aktif.",
+                                                onNavChat = { page = Page.Chat },
+                                                onNavMe   = { page = Page.Me }
+                                            )
+                                        }
+                                    }
+                                    Page.Chat   -> CommunityScreen(
+                                        api             = api,
+                                        pendingPostId   = pendingPostId.value,
+                                        onConsumePostId = { pendingPostId.value = null }
+                                    )   // normal, no blur
+                                    Page.Me     -> ProfileScreen(
+                                        api                     = api,
+                                        onLogout                = onLogout,
+                                        onOpenSettings          = { showSettings = true },
+                                        expandedSection         = profileExpandedSection,
+                                        onExpandedSectionChange = { profileExpandedSection = it }
+                                    )   // normal, no blur
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Phase 4: Settings overlay (full-screen, on top of everything) ──
+        if (showSettings) {
+            SettingsScreen(
+                api           = api,
+                onBack        = { showSettings = false },
+                onLogout      = {
+                    showSettings = false
+                    onLogout()
+                }
+            )
+        }
+
+        // ── FloatingNav tetap accessible dari Home (tidak tampil saat GameDetail/Settings aktif) ──
+        if (!showGameDetail && !showSettings) {
+            FloatingNav(
+                page     = page,
+                onPage   = { page = it },
+                modifier = Modifier.align(Alignment.BottomCenter)
+                                   .navigationBarsPadding()
+                                   .padding(bottom = 12.dp)
+            )
+        }
+
+        // ── Notification banner overlay (slides down from the top) ──
+        // Sembunyikan saat GameDetail / Settings aktif supaya tidak menumpuk header.
+        if (!showGameDetail && !showSettings) {
+            activeBanner?.let { banner ->
+                Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
+                    NotificationBanner(
+                        title      = banner.title,
+                        body       = banner.body,
+                        action     = banner.actionType,
+                        actionUrl  = banner.actionUrl,
+                        onDismiss  = { activeBanner = null },
+                        onAction   = {
+                            if (banner.actionType == "open_url" && !banner.actionUrl.isNullOrBlank()) {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(banner.actionUrl))
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            }
+                            activeBanner = null
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
-// ─── Floating navigation bar (modern v2) ───────────────────────────────────────
+// ─── Partial maintenance blur overlay (Bug 2) ──────────────────────────────────
+// Saat scope=partial, Beranda & Update ditutup overlay gelap + blur,
+// user TIDAK BISA interact dengan content di belakangnya.
+// Komunitas & Profil tetap normal.
+@Composable
+private fun PartialMaintenanceOverlay(
+    title: String,
+    message: String,
+    onNavChat: () -> Unit,
+    onNavMe: () -> Unit
+) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xCC000000))   // 80% black tint
+            .blur(20.dp),                     // total blur untuk content di belakang
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 24.dp)
+        ) {
+            Icon(Icons.Rounded.Lock, null, tint = AmberWarn, modifier = Modifier.size(48.dp))
+            Spacer(Modifier.height(12.dp))
+            Text(
+                title,
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                message,
+                color = SoftText,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onNavChat,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CandyCyan,
+                        contentColor = Carbon
+                    )
+                ) { Text("Ke Komunitas", fontWeight = FontWeight.Bold) }
+                Button(
+                    onClick = onNavMe,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CandyBlue,
+                        contentColor = Color.White
+                    )
+                ) { Text("Ke Profil", fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+}
+
+// ─── Floating navigation bar (TapTap-style pill v3) ───────────────────────────
+// Cleaner pill shape (rounded 999), active tab filled bg dengan scale animation,
+// inactive hanya icon dengan muted color. Smooth transition antar tabs via
+// animateColorAsState + animateFloatAsState + AnimatedVisibility label.
 @Composable
 fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifier) {
+    val haptic = LocalHapticFeedback.current
     val infiniteTransition = rememberInfiniteTransition(label = "nav_glow")
     val glowAlpha by infiniteTransition.animateFloat(
         initialValue = 0.4f, targetValue = 0.75f,
@@ -313,28 +1047,28 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
     )
 
     Box(modifier = modifier.widthIn(max = 600.dp).padding(horizontal = 16.dp)) {
-        // Multi-layer glow backdrop (cyan + violet)
+        // Multi-layer glow backdrop — soft white halo di belakang pill (v3.0 monochrome)
         Box(
             Modifier.matchParentSize()
-                .clip(RoundedCornerShape(36.dp))
+                .clip(RoundedCornerShape(999.dp))
                 .background(
                     Brush.horizontalGradient(
                         listOf(
-                            CandyCyan.copy(alpha = glowAlpha * 0.10f),
-                            CandyBlue.copy(alpha = glowAlpha * 0.18f),
-                            PremiumViolet.copy(alpha = glowAlpha * 0.10f)
+                            Color.White.copy(alpha = glowAlpha * 0.06f),
+                            Color.White.copy(alpha = glowAlpha * 0.10f),
+                            Color.White.copy(alpha = glowAlpha * 0.06f)
                         )
                     )
                 )
                 .blur(20.dp)
         )
         Surface(
-            shape           = RoundedCornerShape(36.dp),
-            color           = Color(0xF00B1320),
+            shape           = RoundedCornerShape(999.dp),  // true pill
+            color           = Color(0xF00A0A0A),   // v3.0 monochrome near-black glass
             border          = BorderStroke(1.dp, Brush.horizontalGradient(
-                listOf(GlassStroke, CandyCyan.copy(0.25f), GlassStroke)
+                listOf(GlassStroke, Color.White.copy(0.20f), GlassStroke)
             )),
-            shadowElevation = 24.dp,
+            shadowElevation = 16.dp,   // slightly flatter, lebih modern
             tonalElevation  = 0.dp
         ) {
             Row(
@@ -343,43 +1077,47 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
             ) {
                 Page.values().forEach { item ->
                     val selected  = page == item
-                    val bgAnim    by animateColorAsState(
-                        if (selected) CandyCyan else Color.Transparent,
-                        tween(380, easing = FastOutSlowInEasing), label = "nav_bg_${item.label}"
-                    )
                     val iconTint  by animateColorAsState(
                         if (selected) Carbon else SubText,
                         tween(380, easing = FastOutSlowInEasing), label = "nav_tint_${item.label}"
                     )
-                    val labelAlpha by animateFloatAsState(
-                        if (selected) 1f else 0.7f,
-                        tween(280), label = "nav_alpha_${item.label}"
-                    )
                     val scaleAnim by animateFloatAsState(
-                        if (selected) 1f else 0.92f, tween(280, easing = FastOutSlowInEasing),
+                        if (selected) 1f else 0.94f, tween(280, easing = FastOutSlowInEasing),
                         label = "nav_scale_${item.label}"
                     )
                     val iconScale by animateFloatAsState(
                         if (selected) 1.1f else 1f, tween(280, easing = FastOutSlowInEasing),
                         label = "nav_iconscale_${item.label}"
                     )
+                    // animateDpAsState untuk indicator padding (active tab lebih lega)
+                    val horizontalPad by androidx.compose.animation.core.animateDpAsState(
+                        if (selected) 18.dp else 12.dp,
+                        tween(280, easing = FastOutSlowInEasing),
+                        label = "nav_pad_${item.label}"
+                    )
 
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(56.dp)
+                            .height(52.dp)
                             .scale(scaleAnim)
-                            .clip(RoundedCornerShape(28.dp))
+                            .clip(RoundedCornerShape(999.dp))  // true pill
                             .background(
+                                // v3.0 monochrome — active tab solid white (inverted premium)
                                 if (selected) Brush.horizontalGradient(
-                                    listOf(CandyCyan, CandyBlue.copy(0.85f))
+                                    listOf(Color.White, Color.White.copy(0.92f))
                                 )
                                 else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
                             )
-                            .clickable { onPage(item) },
+                            .clickable {
+                                // Phase 4: light haptic on tab switch.
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onPage(item)
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Row(
+                            Modifier.padding(horizontal = horizontalPad),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
@@ -415,9 +1153,20 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
 // ─── Home screen ──────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
+fun HomeScreen(
+    api: CommunityApi,
+    maintenanceInfo: MaintenanceInfo? = null,
+    onNav: (Page) -> Unit,
+    // ── Phase 2: lifted download state (shared dengan MainShell & GameDetailScreen) ──
+    dlProgress: Float = -1f,
+    dlError: String = "",
+    startDownload: () -> Unit = {},
+    // ── Phase 2: tap TTGameCard → navigate ke GameDetailScreen ──
+    onGameCardClick: (gameInstalled: Boolean, avgRating: Double, ratingCount: Int, maintenanceBlocked: Boolean) -> Unit = { _, _, _, _ -> }
+) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
 
     // ── Setup state detection ──
     var setupState   by remember { mutableStateOf(SetupState.LOADING) }
@@ -425,6 +1174,32 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
     var dataReady     by remember { mutableStateOf(false) }
     var updateInfo    by remember { mutableStateOf<UpdateInfo?>(null) }
     var feed          by remember { mutableStateOf<List<FeedItem>>(emptyList()) }
+
+    // ── Maintenance & notification banner state (Dev Dashboard integration) ──
+    // maintenanceInfo (dari MainShell) dipakai untuk blocking logic (Bug 2).
+    // maintenanceState (lokal, di-refresh saat pull-to-refresh) dipakai untuk banner display.
+    var maintenanceState by remember { mutableStateOf(maintenanceInfo) }
+    var latestNotif      by remember { mutableStateOf<NotifCampaign?>(null) }
+
+    // ── NEW: Rating state (game_ratings table, real data from Supabase) ──
+    var avgRating      by remember { mutableStateOf(0.0) }   // 1-5 scale
+    var ratingCount    by remember { mutableStateOf(0) }
+    var myRating       by remember { mutableStateOf(0) }     // 1-5, or 0 if not rated
+    var showRatingPopup by remember { mutableStateOf(false) }
+    var ratingSubmitError by remember { mutableStateOf("") }
+
+    // ── NEW: Notification category popup state ──
+    var showNotifPopup  by remember { mutableStateOf(false) }
+    // notifCategory tracks the user's current filter (default "all"). Tidak dipakai
+    // untuk navigasi ke screen lain — hanya popup filter lokal di Home.
+    var notifCategory   by remember { mutableStateOf("all") }
+    // Filtered notification list (fetched saat kategori dipilih). Bisa kosong.
+    var notifList       by remember { mutableStateOf<List<NotifCampaign>>(emptyList()) }
+    var notifListOpen   by remember { mutableStateOf(false) }
+
+    // ── Bug 2: Partial maintenance blocking ──
+    // Kalau scope=partial, block download/apply/launch tapi allow komunitas & profile.
+    val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"
 
     // ── Pull-to-refresh state ──
     val pullState    = rememberPullToRefreshState()
@@ -435,8 +1210,26 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
         withContext(Dispatchers.IO) {
             gameInstalled = isGameInstalled(context)
             dataReady     = readMarker().startsWith("v26", ignoreCase = true)
-            runCatching { updateInfo = fetchUpdateInfo() }
+            // Phase 4: always check updates (settings toggle can be added later)
+            runCatching { updateInfo = fetchUpdateInfo(api) }
             runCatching { feed       = parseFeed(api.feedPosts()) }
+            // Banner data — fail-open, tidak pernah crash launcher.
+            runCatching { maintenanceState = fetchMaintenanceInfo(api) }
+            // Hanya fetch notif campaign kalau banner sebelumnya sudah di-dismiss
+            // (latestNotif == null) supaya tidak menimpa dismiss user saat refresh.
+            if (latestNotif == null) {
+                runCatching { latestNotif = fetchLatestNotifCampaign(api) }
+            }
+            // ── NEW: rating stats (fail-open — table mungkin belum ada di schema lama) ──
+            runCatching {
+                val stats = api.fetchRatingStats()
+                avgRating   = stats.optDouble("avg", 0.0)
+                ratingCount = stats.optInt("count", 0)
+            }
+            // ── NEW: my rating (hanya kalau login) ──
+            if (api.loggedIn()) {
+                runCatching { myRating = api.getMyRating() }
+            }
         }
         setupState = when {
             !gameInstalled -> SetupState.NEED_GAME
@@ -446,44 +1239,6 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
     }
 
     LaunchedEffect(Unit) { loadAllData() }
-
-    // ── In-app APK download state ──
-    var dlProgress by remember { mutableStateOf(-1f) }
-    var dlError    by remember { mutableStateOf("") }
-
-    fun startDownload() {
-        dlProgress = 0f; dlError = ""
-        scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val outDir  = java.io.File(context.getExternalFilesDir(null), "public-install").also { it.mkdirs() }
-                    val apkFile = java.io.File(outDir, "DLavie26.apk")
-                    val conn    = URL(FIFA_APK_URL).openConnection() as HttpURLConnection
-                    conn.connectTimeout = 30_000; conn.readTimeout = 120_000; conn.connect()
-                    val total   = conn.contentLengthLong.toFloat().coerceAtLeast(1f)
-                    val buf     = ByteArray(16 * 1024)
-                    conn.inputStream.use { inp ->
-                        apkFile.outputStream().use { out ->
-                            var n: Int; var read = 0L
-                            while (inp.read(buf).also { n = it } != -1) {
-                                out.write(buf, 0, n); read += n
-                                dlProgress = (read / total).coerceIn(0f, 0.99f)
-                            }
-                        }
-                    }
-                    apkFile
-                }
-            }.onSuccess { apkFile ->
-                dlProgress = 2f
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    context, "${context.packageName}.files", apkFile)
-                context.startActivity(Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-                })
-            }.onFailure { dlError = it.message ?: "Unduhan gagal. Periksa koneksi internet."; dlProgress = -1f }
-        }
-    }
 
     // ── Pulse animation (for play state) ──
     val infiniteTransition = rememberInfiniteTransition(label = "home_pulse")
@@ -502,6 +1257,8 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
         isRefreshing = isRefreshing,
         onRefresh = {
             if (!isRefreshing) {
+                // Phase 4: medium haptic when pull-to-refresh triggers.
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 isRefreshing = true
                 scope.launch {
                     runCatching { loadAllData() }
@@ -527,59 +1284,369 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
 
-        // ── Hero Header (premium gradient + glow) ──────────────────────────────
-        PremiumGlassCard(gradientBorder = true) {
-            // Subtle animated background glow inside header
-            val infiniteTransition = rememberInfiniteTransition(label = "hero_glow")
-            val heroGlow by infiniteTransition.animateFloat(
-                initialValue = 0.15f, targetValue = 0.35f,
-                animationSpec = infiniteRepeatable(tween(2000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-                label = "hero_glow_val"
-            )
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(60.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(
-                        Brush.linearGradient(
-                            listOf(
-                                CandyCyan.copy(alpha = heroGlow * 0.4f),
-                                CandyBlue.copy(alpha = heroGlow * 0.3f),
-                                PremiumViolet.copy(alpha = heroGlow * 0.2f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-            ) {
-                Row(
-                    Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        Modifier.size(44.dp)
-                            .background(
-                                Brush.linearGradient(listOf(CandyCyan, CandyBlue, PremiumViolet)),
-                                RoundedCornerShape(14.dp)
-                            )
-                            .softGlow(CandyCyan, radius = 18f, alpha = 0.35f),
-                        contentAlignment = Alignment.Center
+        // ── Maintenance banner (cek app_config.maintenance via Supabase) ──
+        // Hanya tampil kalau Dev Dashboard mengaktifkan maintenance mode.
+        maintenanceState?.let { m ->
+            if (m.enabled) {
+                GlassCard(borderColor = AmberWarn.copy(alpha = 0.6f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("DL", color = Carbon, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("DLavie 26", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
-                            ModernPill("PROD", NeonGreen)
+                        Icon(
+                            Icons.Rounded.Warning, null,
+                            tint = AmberWarn, modifier = Modifier.size(22.dp)
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                m.title.ifEmpty { "Maintenance Mode" },
+                                color = AmberWarn, fontSize = 14.sp, fontWeight = FontWeight.Black
+                            )
+                            if (m.message.isNotEmpty()) {
+                                Text(
+                                    m.message,
+                                    color = SoftText, fontSize = 11.sp, lineHeight = 14.sp
+                                )
+                            }
+                            if (m.scope == "partial") {
+                                Text(
+                                    "Mode partial: download/apply/launch diblokir. Komunitas & Profil tetap bisa diakses.",
+                                    color = AmberWarn, fontSize = 10.sp, lineHeight = 13.sp
+                                )
+                            }
                         }
-                        Text("FIFA 16 Mobile · Mod Launcher", color = SoftText, fontSize = 11.sp)
                     }
-                    val name = api.displayName().ifEmpty { "Player" }.take(11)
-                    ModernPill("@$name", CandyCyan)
                 }
             }
         }
+
+        // ── Notification banner (dari notification_campaigns, latest sent) ──
+        // Inline persisten — berbeda dari slide-down overlay di MainShell yang
+        // auto-dismiss 5 detik. Banner ini tetap tampil sampai user tutup.
+        latestNotif?.let { notif ->
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn(tween(300)) + expandVertically()
+            ) {
+                GlassCard(borderColor = CandyCyan.copy(alpha = 0.5f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.Notifications, null,
+                            tint = CandyCyan, modifier = Modifier.size(20.dp)
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                notif.title.ifEmpty { "Notifikasi DLavie" },
+                                color = Color.White, fontSize = 13.sp,
+                                fontWeight = FontWeight.Black, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (notif.body.isNotEmpty()) {
+                                Text(
+                                    notif.body,
+                                    color = SoftText, fontSize = 11.sp, maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Icon(
+                            Icons.Rounded.Close, "Tutup notifikasi",
+                            tint = SubText,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clickable { latestNotif = null }
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Top Bar ─────────────────────────────────────────────────────────────
+        // Kiri: "DLavie 26" text (bold, white). Kanan: notification bell icon.
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // v3.0 monochrome DL logo cover (black bg + white DL + halftone)
+                DLavieLogoCover(size = 32.dp, fontSize = 13.sp, shape = CircleShape)
+                Spacer(Modifier.width(10.dp))
+                Text("DLavie 26", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+            }
+            Box {
+                Icon(
+                    Icons.Rounded.Notifications, "Notifikasi",
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp).clickable { showNotifPopup = true }
+                )
+                // Tiny unread dot indicator (subtle, kalau ada latestNotif belum di-dismiss)
+                if (latestNotif != null) {
+                    Box(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 1.dp, y = (-1).dp)
+                            .size(7.dp)
+                            .background(DangerRed, CircleShape)
+                    )
+                }
+                DropdownMenu(
+                    expanded = showNotifPopup,
+                    onDismissRequest = { showNotifPopup = false },
+                    modifier = Modifier.background(GlassBase)
+                ) {
+                    NotificationCategoryItems(
+                        onCategorySelected = { cat ->
+                            notifCategory = cat
+                            showNotifPopup = false
+                            // Fetch filtered notifications (fail-open).
+                            scope.launch {
+                                val list = withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        val arr = api.getNotificationsByCategory(15, cat)
+                                        (0 until arr.length()).mapNotNull { i ->
+                                            runCatching {
+                                                val o = arr.getJSONObject(i)
+                                                NotifCampaign(
+                                                    id = o.optString("id"),
+                                                    title = o.optString("title"),
+                                                    body = o.optString("body"),
+                                                    sentAt = o.optString("sent_at")
+                                                )
+                                            }.getOrNull()
+                                        }
+                                    }.getOrDefault(emptyList())
+                                }
+                                notifList = list
+                                notifListOpen = true
+                            }
+                        }
+                    )
+                }
+            }
+        }
+
+        // ── Hero Banner (FIFA 16 Mobile — v3.0 halftone monochrome) ────────────
+        // Halftone particle background (match DLavie logo) + shiny title
+        // + typewriter subtitle + rating badge + DL logo cover.
+        Box(
+            Modifier.fillMaxWidth().height(200.dp)
+                .clip(RoundedCornerShape(24.dp))
+        ) {
+            // v3.0: Halftone particle background (replaces MeshGradientBackground)
+            HalftoneBackground(
+                modifier = Modifier.fillMaxSize(),
+                dotSize = 2.5f,
+                spacing = 18f,
+                baseColor = HalftoneBright
+            )
+
+            Column(
+                Modifier.fillMaxSize().padding(20.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Top row: title + rating badge
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        ShinyTitle("FIFA 16 Mobile")
+                        Spacer(Modifier.height(10.dp))
+                        TypewriterText(
+                            texts = listOf(
+                                "Play FIFA 16 Mobile everywhere",
+                                "Play offline, Always update, More improvement."
+                            )
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    // Rating badge — pojok kanan atas banner
+                    Column(horizontalAlignment = Alignment.End) {
+                        val rating10 = String.format("%.1f", avgRating * 2.0)
+                        Text("⭐ $rating10", color = NeonGreen, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                        Text("$ratingCount ratings", color = SoftText, fontSize = 10.sp)
+                    }
+                }
+
+                // Bottom row: DL logo + small "verified" pill
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // v3.0 monochrome DL logo cover (black bg + white DL + halftone)
+                    DLavieLogoCover(
+                        size = 60.dp,
+                        fontSize = 22.sp,
+                        shape = CircleShape
+                    )
+                    Surface(
+                        color = NeonGreen.copy(0.16f),
+                        border = BorderStroke(1.dp, NeonGreen.copy(0.45f)),
+                        shape = RoundedCornerShape(999.dp)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Rounded.Verified, null, tint = NeonGreen, modifier = Modifier.size(11.dp))
+                            Text("OFFICIAL", color = NeonGreen, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Banner Carousel (TapTap-style auto-scroll, 3 banners) ────────────────
+        // HorizontalPager dengan auto-scroll 4 detik + page indicator dots.
+        // Banner 1: FIFA 16 Mobile — gradient cyan-blue
+        // Banner 2: DLavie 26 v1.2.0 — gradient violet-cyan
+        // Banner 3: Komunitas — gradient green-blue
+        val banners = remember {
+            listOf(
+                BannerItem(
+                    title = "FIFA 16 Mobile",
+                    subtitle = "Play everywhere — offline, ter-update, lebih baik.",
+                    gradientColors = listOf(CandyCyan, CandyBlue),
+                    icon = Icons.Rounded.SportsSoccer
+                ),
+                BannerItem(
+                    title = "DLavie 26",
+                    subtitle = "Latest mod v1.2.0 — TapTap-level UI/UX.",
+                    gradientColors = listOf(CandyBlue, CandyCyan),
+                    icon = Icons.Rounded.SystemUpdate
+                ),
+                BannerItem(
+                    title = "Komunitas",
+                    subtitle = "Join discussion — chat dengan sesama player.",
+                    gradientColors = listOf(NeonGreen, CandyBlue),
+                    icon = Icons.Rounded.Forum
+                )
+            )
+        }
+        TTBannerCarousel(
+            banners = banners,
+            modifier = Modifier.fillMaxWidth(),
+            onBannerClick = { /* tap banner — no-op for now (future: deep-link) */ }
+        )
+
+        // ── "Beri Rating DLavie 26" button (conditional: belum rate & login) ────
+        AnimatedVisibility(
+            visible = myRating == 0 && api.loggedIn(),
+            enter = fadeIn(tween(300)) + expandVertically(),
+            exit = fadeOut(tween(200)) + shrinkVertically()
+        ) {
+            OutlinedButton(
+                onClick = {
+                    // Phase 4: medium haptic when opening the rating popup.
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    ratingSubmitError = ""; showRatingPopup = true
+                },
+                modifier = Modifier.fillMaxWidth().height(46.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, AmberWarn.copy(0.55f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AmberWarn)
+            ) {
+                Icon(Icons.Rounded.Star, null, tint = AmberWarn, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Beri Rating DLavie 26", color = AmberWarn, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.width(6.dp))
+                Text("· bantu kami naik ranking", color = SoftText, fontSize = 11.sp, fontWeight = FontWeight.Normal)
+            }
+        }
+
+        // ── Game Card: "DLavie 26: Football Game" (TapTap-style TTGameCard) ──
+        // Phase 2 fix: saat setupState==LOADING, tampilkan TTGameCardSkeleton
+        // (bukan card dengan data kosong) untuk loading state yang konsisten.
+        // Tombol adaptif: Dapatkan / Mainkan / Diblokir Maintenance.
+        // Inline download progress + error ditampilkan di bawah card (TTGameCard
+        // tidak punya slot untuk itu, jadi kita wrap dalam Column).
+        val rating10 = String.format("%.1f", avgRating * 2.0)
+        // v3.0 monochrome cover gradient (dark → matches DLavie logo cover)
+        val coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222), Color(0xFF1A1A1A))
+        val ttButtonLabel: String = when {
+            maintenanceBlocked -> "Diblokir"
+            gameInstalled      -> "Mainkan"
+            else               -> "Dapatkan"
+        }
+        val ttButtonEnabled: Boolean = !maintenanceBlocked
+        val ttButtonClick: () -> Unit = when {
+            maintenanceBlocked -> ({ })
+            gameInstalled      -> ({ launchGame(context) })
+            else               -> ({ if (dlProgress < 0f) startDownload() })
+        }
+        // Phase 2: tap card body → navigate ke GameDetailScreen (pass state ke MainShell)
+        val ttCardClick: () -> Unit = {
+            onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked)
+        }
+
+        if (setupState == SetupState.LOADING) {
+            // Loading state: skeleton (bukan card dengan data kosong)
+            TTGameCardSkeleton()
+        } else {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            TTGameCard(
+                title          = "DLavie 26: Football Game",
+                subtitle       = "⚽ Olahraga · FIFA 16 Mod",
+                rating         = "$rating10 · $ratingCount ratings",
+                coverGradient  = coverGradient,
+                coverText      = "DL",
+                buttonLabel    = ttButtonLabel,
+                buttonEnabled  = ttButtonEnabled,
+                onButtonClick  = ttButtonClick,
+                onClick        = ttCardClick,
+                // Phase 4: long-press haptic + shared element key (morphs to detail cover).
+                onLongClick    = { /* haptic-only acknowledgment */ },
+                sharedContentKey = "game-cover"
+            )
+            // Inline download progress (kalau sedang unduh dari tombol "Dapatkan")
+            AnimatedVisibility(
+                visible = dlProgress >= 0f && dlProgress < 2f,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    LinearProgressIndicator(
+                        progress = { dlProgress },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = NeonGreen,
+                        trackColor = NeonGreen.copy(0.15f)
+                    )
+                    Text(
+                        "Mengunduh APK… ${(dlProgress * 100).toInt()}%",
+                        color = SoftText, fontSize = 10.sp, modifier = Modifier.align(Alignment.End)
+                    )
+                }
+            }
+            AnimatedVisibility(
+                visible = dlError.isNotEmpty(),
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(Icons.Rounded.ErrorOutline, null, tint = DangerRed, modifier = Modifier.size(13.dp))
+                    Text(dlError, color = DangerRed, fontSize = 11.sp)
+                }
+            }
+        }
+        } // end if (setupState == LOADING) else { ... }
+
+        // ── Section "Trusted by DLavie" (TapTap-style header dengan verified icon) ──
+        TTSectionHeader(title = "Trusted by DLavie", icon = Icons.Rounded.Verified)
+        Text(
+            "Game resmi yang diverifikasi oleh DLavie — aman, ter-update, dan didukung komunitas.",
+            color = SoftText, fontSize = 11.sp, lineHeight = 15.sp
+        )
 
         // ── Main action card (state-aware) ────────────────────────────────────
         AnimatedContent(
@@ -589,15 +1656,16 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
         ) { state ->
             when (state) {
 
-                // Loading
-                SetupState.LOADING -> GlassCard {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        CircularProgressIndicator(modifier = Modifier.size(22.dp), color = CandyCyan, strokeWidth = 2.5.dp)
-                        Column {
-                            Text("Memeriksa perangkat...", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                            Text("Mohon tunggu sebentar.", color = SoftText, fontSize = 12.sp)
-                        }
-                    }
+                // Loading — TapTap-style shimmer skeletons + Lottie loading (Phase 3)
+                SetupState.LOADING -> Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // v3.0 Phase 3: Lottie loading animation (monochrome white ring)
+                    LottieLoading(size = 56.dp)
+                    TTGameCardSkeleton()
+                    TTGameCardSkeleton()
+                    TTGameCardSkeleton()
                 }
 
                 // Step 1: Game APK belum terinstall
@@ -628,22 +1696,35 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
 
                     // Download button with inline progress
                     Button(
-                        onClick  = { if (dlProgress < 0f || dlProgress >= 2f) startDownload() },
-                        enabled  = dlProgress < 0f || dlProgress >= 2f,
+                        onClick  = {
+                            if (dlProgress < 0f || dlProgress >= 2f) {
+                                // Phase 4: light haptic on download trigger.
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                startDownload()
+                            }
+                        },
+                        enabled  = !maintenanceBlocked && (dlProgress < 0f || dlProgress >= 2f),
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         shape    = RoundedCornerShape(18.dp),
                         colors   = ButtonDefaults.buttonColors(
+                            // v3.0 monochrome — default: white bg + black text (inverted premium)
                             containerColor = when {
+                                maintenanceBlocked -> Surface2
                                 dlProgress >= 2f -> NeonGreen
-                                dlProgress >= 0f -> CandyBlue.copy(0.6f)
-                                else             -> CandyBlue
+                                dlProgress >= 0f -> Color.White.copy(0.5f)   // dimmed while downloading
+                                else             -> Color.White              // premium inverted
                             },
-                            contentColor   = if (dlProgress >= 2f) Color(0xFF00150B) else Color.White,
-                            disabledContainerColor = CandyBlue.copy(0.4f),
-                            disabledContentColor   = Color.White.copy(0.7f)
+                            contentColor   = if (maintenanceBlocked) SoftText else if (dlProgress >= 2f) Color(0xFF00150B) else Carbon,
+                            disabledContainerColor = if (maintenanceBlocked) Surface2 else Color.White.copy(0.3f),
+                            disabledContentColor   = if (maintenanceBlocked) SoftText else Carbon.copy(0.6f)
                         )
                     ) {
                         when {
+                            maintenanceBlocked -> {
+                                Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(22.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Diblokir Maintenance", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                            }
                             dlProgress >= 2f -> {
                                 Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(22.dp))
                                 Spacer(Modifier.width(8.dp))
@@ -659,6 +1740,20 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                                 Spacer(Modifier.width(8.dp))
                                 Text("Unduh FIFA 16 Sekarang", fontSize = 15.sp, fontWeight = FontWeight.Black)
                             }
+                        }
+                    }
+
+                    AnimatedVisibility(visible = maintenanceBlocked) {
+                        Row(
+                            Modifier.padding(top = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(Icons.Rounded.Warning, null, tint = AmberWarn, modifier = Modifier.size(14.dp))
+                            Text(
+                                "Download APK diblokir saat maintenance mode aktif (scope: partial).",
+                                color = AmberWarn, fontSize = 12.sp
+                            )
                         }
                     }
 
@@ -714,14 +1809,26 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                     )
                     Spacer(Modifier.height(14.dp))
                     Button(
-                        onClick  = { launchGame(context) },
+                        onClick  = { if (!maintenanceBlocked) launchGame(context) },
+                        enabled  = !maintenanceBlocked,
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         shape    = RoundedCornerShape(18.dp),
-                        colors   = ButtonDefaults.buttonColors(containerColor = AmberWarn, contentColor = Color(0xFF1A0F00))
+                        colors   = ButtonDefaults.buttonColors(
+                            containerColor = if (maintenanceBlocked) Surface2 else AmberWarn,
+                            contentColor   = if (maintenanceBlocked) SoftText else Color(0xFF1A0F00),
+                            disabledContainerColor = Surface2,
+                            disabledContentColor   = SoftText
+                        )
                     ) {
-                        Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Buka FIFA 16 & Siapkan Data", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                        if (maintenanceBlocked) {
+                            Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(22.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Diblokir Maintenance", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                        } else {
+                            Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Buka FIFA 16 & Siapkan Data", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                        }
                     }
                 }
 
@@ -737,17 +1844,26 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                                 .background(NeonGreen.copy(alpha = glowAlpha), RoundedCornerShape(24.dp))
                         )
                         Button(
-                            onClick  = { launchGame(context) },
+                            onClick  = { if (!maintenanceBlocked) launchGame(context) },
+                            enabled  = !maintenanceBlocked,
                             modifier = Modifier.fillMaxWidth().height(64.dp),
                             shape    = RoundedCornerShape(24.dp),
                             colors   = ButtonDefaults.buttonColors(
-                                containerColor = NeonGreen,
-                                contentColor   = Color(0xFF00150B)
+                                containerColor = if (maintenanceBlocked) Surface2 else NeonGreen,
+                                contentColor   = if (maintenanceBlocked) SoftText else Color(0xFF00150B),
+                                disabledContainerColor = Surface2,
+                                disabledContentColor   = SoftText
                             )
                         ) {
-                            Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(26.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text("Main FIFA 16", fontSize = 19.sp, fontWeight = FontWeight.Black)
+                            if (maintenanceBlocked) {
+                                Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(26.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Text("Diblokir Maintenance", fontSize = 19.sp, fontWeight = FontWeight.Black)
+                            } else {
+                                Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(26.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Text("Main FIFA 16", fontSize = 19.sp, fontWeight = FontWeight.Black)
+                            }
                         }
                     }
 
@@ -798,7 +1914,7 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                     value  = if (gameInstalled) "Terinstall" else "Belum ada",
                     ok     = gameInstalled,
                     modifier = Modifier.weight(1f)
-                ) { if (!gameInstalled) if (dlProgress < 0f) startDownload() }
+                ) { if (!gameInstalled && !maintenanceBlocked) if (dlProgress < 0f) startDownload() }
 
                 ModernStatusChip(
                     label  = "Data",
@@ -820,32 +1936,17 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
             }
         }
 
-        // ── Berita / Feed ─────────────────────────────────────────────────────
+        // ── Berita / Feed (Phase 2: TapTap-style TTTappableCard dengan press animation) ───
+        // Setiap feed item dibungkus TTTappableCard — press scale spring bounce.
+        // Header pakai TTSectionHeader (TapTap design system) untuk konsistensi.
         AnimatedVisibility(visible = feed.isNotEmpty(), enter = fadeIn(tween(400)), exit = fadeOut()) {
-            GlassCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Notifications, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Berita Terbaru", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                }
-                Spacer(Modifier.height(10.dp))
-                feed.take(3).forEach { item ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.Top,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
+                TTSectionHeader(title = "Berita Terbaru", icon = Icons.Rounded.Notifications)
+                feed.take(4).forEach { item ->
+                    TTTappableCard(
+                        onClick = { /* future: open feed detail in browser/webview */ }
                     ) {
-                        Box(
-                            Modifier.size(8.dp).padding(top = 5.dp)
-                                .background(
-                                    if (item.pinned) AmberWarn else CandyCyan,
-                                    CircleShape
-                                )
-                        )
-                        Column {
-                            Text(item.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(item.body, color = SoftText, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 15.sp)
-                        }
+                        FeedRow(item)
                     }
                 }
             }
@@ -855,6 +1956,485 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
         Spacer(Modifier.height(8.dp))
     }
     } // end PullToRefreshBox
+
+    // ── Rating popup (Play Store style, 5 stars + optional review) ──────────────
+    if (showRatingPopup) {
+        RatingPopup(
+            currentRating = myRating,
+            submitError = ratingSubmitError,
+            onDismiss = { showRatingPopup = false },
+            onSubmit = { rating, review ->
+                scope.launch {
+                    val ok = withContext(Dispatchers.IO) {
+                        runCatching {
+                            api.submitRating(rating, review)
+                            // Refresh stats + my rating after submit
+                            val stats = api.fetchRatingStats()
+                            avgRating   = stats.optDouble("avg", 0.0)
+                            ratingCount = stats.optInt("count", 0)
+                            myRating    = rating
+                            true
+                        }.getOrDefault(false)
+                    }
+                    if (ok) {
+                        ratingSubmitError = ""
+                        showRatingPopup = false
+                    } else {
+                        ratingSubmitError = "Gagal kirim rating. Coba lagi nanti."
+                    }
+                }
+            }
+        )
+    }
+
+    // ── Filtered notification list dialog (muncul setelah pilih kategori) ──────
+    if (notifListOpen) {
+        NotificationListDialog(
+            category = notifCategory,
+            items = notifList,
+            onDismiss = { notifListOpen = false }
+        )
+    }
+}
+
+// ─── Mesh gradient grey wave background (animated, subtle) ──────────────────────
+// Pure black base + 2 radial grey gradients (animated) + faint sine wave lines.
+// Designed for Hero Banner background. Subtle (not too bright).
+@Composable
+fun MeshGradientBackground(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "mesh")
+    val wave1 by infiniteTransition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Reverse),
+        label = "wave1"
+    )
+    val wave2 by infiniteTransition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(12000, easing = LinearEasing), RepeatMode.Reverse),
+        label = "wave2"
+    )
+
+    Canvas(modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+
+        // Base: pure black
+        drawRect(Color.Black)
+
+        // Mesh gradient 1: grey wave (top-left, animated center)
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFF1A1A1A).copy(alpha = 0.6f + wave1 * 0.2f),
+                    Color(0xFF0A0A0A).copy(alpha = 0.3f),
+                    Color.Transparent
+                ),
+                center = Offset(w * (0.2f + wave1 * 0.3f), h * (0.3f + wave1 * 0.2f)),
+                radius = w * 0.8f
+            )
+        )
+
+        // Mesh gradient 2: subtle grey wave (bottom-right, animated center)
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFF222222).copy(alpha = 0.4f + wave2 * 0.2f),
+                    Color(0xFF111111).copy(alpha = 0.2f),
+                    Color.Transparent
+                ),
+                center = Offset(w * (0.8f - wave2 * 0.2f), h * (0.7f - wave2 * 0.1f)),
+                radius = w * 0.7f
+            )
+        )
+
+        // Subtle wave lines (animated sine) — faint grey
+        val wavePath = Path()
+        for (i in 0..5) {
+            val y = h * (0.2f + i * 0.15f)
+            wavePath.reset()
+            wavePath.moveTo(0f, y)
+            var x = 0
+            while (x <= w.toInt()) {
+                val yOffset = sin((x + wave1 * 200 + i * 50) * 0.01f) * 15f
+                wavePath.lineTo(x.toFloat(), y + yOffset)
+                x += 20
+            }
+            drawPath(
+                wavePath,
+                color = Color(0xFF333333).copy(alpha = 0.08f),
+                style = Stroke(width = 1f)
+            )
+        }
+    }
+}
+
+// ─── Shiny title — silver gradient sweep animation (TextStyle brush) ────────────
+// Uses Brush.linearGradient inside TextStyle — NOT BlendMode. Sweep loops 3s.
+@Composable
+fun ShinyTitle(text: String, modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "shiny")
+    val sweepProgress by infiniteTransition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(3000, easing = LinearEasing), RepeatMode.Restart),
+        label = "sweep"
+    )
+    // sweepX travels from -1 to 2 (extends beyond text bounds for full sweep)
+    val sweepX = -1f + sweepProgress * 3f
+
+    Text(
+        text = text,
+        style = TextStyle(
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color(0xFF6B7280),   // dark silver
+                    Color(0xFFF9FAFB),   // bright white
+                    Color(0xFFE5E7EB),   // light silver
+                    Color(0xFF9CA3AF),   // mid silver
+                    Color(0xFFF9FAFB),   // bright white
+                    Color(0xFF6B7280)    // dark silver
+                ),
+                start = Offset(sweepX * 500f, 0f),
+                end = Offset(sweepX * 500f + 300f, 60f)
+            ),
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = (-1).sp
+        ),
+        modifier = modifier
+    )
+}
+
+// ─── Typewriter animation — loop through list of strings ───────────────────────
+// 50ms/char typing, 1.5s hold, 25ms/char deleting, 300ms pause between phrases.
+@Composable
+fun TypewriterText(
+    texts: List<String>,
+    modifier: Modifier = Modifier
+) {
+    var textIndex by remember { mutableStateOf(0) }
+    var displayedText by remember { mutableStateOf("") }
+    var isDeleting by remember { mutableStateOf(false) }
+
+    // Single long-lived coroutine — keys on `texts` identity only.
+    LaunchedEffect(texts) {
+        if (texts.isEmpty()) { displayedText = ""; return@LaunchedEffect }
+        while (true) {
+            val fullText = texts[textIndex]
+            if (!isDeleting) {
+                // Typing
+                for (i in 0..fullText.length) {
+                    displayedText = fullText.substring(0, i)
+                    delay(50)
+                }
+                delay(1500)  // hold
+                isDeleting = true
+            } else {
+                // Deleting (faster)
+                for (i in fullText.length downTo 0) {
+                    displayedText = fullText.substring(0, i)
+                    delay(25)
+                }
+                isDeleting = false
+                textIndex = (textIndex + 1) % texts.size
+                delay(300)
+            }
+        }
+    }
+
+    Text(
+        text = displayedText,
+        color = Color(0xFF9CA3AF),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = modifier
+    )
+}
+
+// ─── Rating popup (Play Store style — 5 stars + optional review) ────────────────
+@Composable
+fun RatingPopup(
+    currentRating: Int = 0,
+    submitError: String = "",
+    onDismiss: () -> Unit,
+    onSubmit: (rating: Int, review: String) -> Unit
+) {
+    var selectedRating by remember { mutableStateOf(currentRating) }
+    var review by remember { mutableStateOf("") }
+    var submitting by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+
+    // Reset submitting state if user dismisses/reopens or on submit error.
+    LaunchedEffect(Unit) { submitting = false }
+    LaunchedEffect(submitError) { if (submitError.isNotEmpty()) submitting = false }
+
+    AlertDialog(
+        onDismissRequest = { if (!submitting) onDismiss() },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Star, null, tint = AmberWarn, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Rate DLavie 26", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+            }
+        },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Bagaimana pengalaman Anda?", color = SoftText, fontSize = 13.sp)
+                Spacer(Modifier.height(16.dp))
+
+                // 5 stars — tap to select (simple, no hover, no glitch)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (i in 1..5) {
+                        val filled = i <= selectedRating
+                        // Bounce animation saat star di-tap
+                        val scale by animateFloatAsState(
+                            targetValue = if (filled) 1.1f else 1f,
+                            animationSpec = tween(200, easing = FastOutSlowInEasing),
+                            label = "star_scale_$i"
+                        )
+                        Icon(
+                            if (filled) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                            contentDescription = "$i star",
+                            tint = if (filled) AmberWarn else Color(0xFF374151),
+                            modifier = Modifier
+                                .size(40.dp)
+                                .scale(scale)
+                                .clickable {
+                                    // Phase 4: medium haptic on star selection.
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    selectedRating = i
+                                }
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Review text field (optional)
+                OutlinedTextField(
+                    value = review,
+                    onValueChange = { review = it },
+                    label = { Text("Ulasan (opsional)", fontSize = 12.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = CandyCyan,
+                        unfocusedBorderColor = GlassStroke,
+                        cursorColor = CandyCyan,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedLabelColor = CandyCyan,
+                        unfocusedLabelColor = SoftText
+                    )
+                )
+
+                if (submitError.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(submitError, color = DangerRed, fontSize = 11.sp)
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                Button(
+                    onClick = {
+                        submitting = true
+                        onSubmit(selectedRating, review)
+                    },
+                    enabled = selectedRating > 0 && !submitting,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Carbon)
+                ) {
+                    if (submitting) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Carbon, strokeWidth = 2.dp)
+                    } else {
+                        Text("Kirim Rating", fontWeight = FontWeight.Black)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = { if (!submitting) onDismiss() }) {
+                Text("Nanti saja", color = SoftText)
+            }
+        },
+        containerColor = GlassBase
+    )
+}
+
+// ─── Notification category items (used inside DropdownMenu) ─────────────────────
+@Composable
+fun ColumnScope.NotificationCategoryItems(
+    onCategorySelected: (String) -> Unit
+) {
+    data class Cat(val id: String, val label: String, val icon: ImageVector)
+    val categories = listOf(
+        Cat("all",           "Semua",        Icons.Rounded.Notifications),
+        Cat("update",        "Pembaruan",    Icons.Rounded.SystemUpdate),
+        Cat("announcement",  "Pengumuman",   Icons.Rounded.Campaign),
+        Cat("maintenance",   "Maintenance",  Icons.Rounded.Build),
+        Cat("community",     "Komunitas",    Icons.Rounded.Forum)
+    )
+    categories.forEach { c ->
+        DropdownMenuItem(
+            text = { Text(c.label, color = Color.White, fontSize = 13.sp) },
+            leadingIcon = { Icon(c.icon, null, tint = CandyCyan, modifier = Modifier.size(18.dp)) },
+            onClick = { onCategorySelected(c.id) },
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        )
+    }
+}
+
+// ─── Notification list dialog (shows filtered notifications) ───────────────────
+@Composable
+fun NotificationListDialog(
+    category: String,
+    items: List<NotifCampaign>,
+    onDismiss: () -> Unit
+) {
+    val title = when (category) {
+        "update"       -> "Notifikasi · Pembaruan"
+        "announcement" -> "Notifikasi · Pengumuman"
+        "maintenance"  -> "Notifikasi · Maintenance"
+        "community"    -> "Notifikasi · Komunitas"
+        else           -> "Semua Notifikasi"
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Notifications, null, tint = CandyCyan, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
+            }
+        },
+        text = {
+            if (items.isEmpty()) {
+                Text("Belum ada notifikasi di kategori ini.", color = SoftText, fontSize = 13.sp)
+            } else {
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items.forEach { n ->
+                        Column(Modifier.fillMaxWidth().background(Surface2.copy(0.5f), RoundedCornerShape(12.dp)).padding(12.dp)) {
+                            Text(n.title.ifEmpty { "Notifikasi DLavie" }, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (n.body.isNotEmpty()) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(n.body, color = SoftText, fontSize = 11.sp, lineHeight = 15.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Tutup", color = CandyCyan, fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = {},
+        containerColor = GlassBase
+    )
+}
+
+// ─── Feed row (Phase 2: TapTap-style, wrapped dalam TTTappableCard) ────────────
+// Padding horizontal disesuaikan supaya nyaman di dalam TTTappableCard (yang
+// tidak punya internal padding sendiri).
+@Composable
+fun FeedRow(item: FeedItem) {
+    val icon     = feedIcon(item.type)
+    val iconTint = feedColor(item.type)
+    Row(
+        Modifier.fillMaxWidth()
+            .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(TTSpacing.md)
+    ) {
+        // Per-type icon (announcement / event / patch / update / info / default)
+        Box(
+            Modifier.size(28.dp)
+                .background(iconTint.copy(alpha = 0.15f), RoundedCornerShape(9.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = item.type, tint = iconTint, modifier = Modifier.size(16.dp))
+        }
+
+        Column(Modifier.weight(1f)) {
+            // Title row with badges
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (item.pinned) {
+                    Surface(
+                        color = AmberWarn.copy(alpha = 0.18f),
+                        border = BorderStroke(1.dp, AmberWarn.copy(alpha = 0.55f)),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Icon(Icons.Rounded.PushPin, null, tint = AmberWarn, modifier = Modifier.size(9.dp))
+                            Text("PIN", color = AmberWarn, fontSize = 8.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+                if (item.official) {
+                    Surface(
+                        color = NeonGreen.copy(alpha = 0.18f),
+                        border = BorderStroke(1.dp, NeonGreen.copy(alpha = 0.55f)),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Icon(Icons.Rounded.Verified, null, tint = NeonGreen, modifier = Modifier.size(9.dp))
+                            Text("OFFICIAL", color = NeonGreen, fontSize = 8.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+                Text(
+                    item.title.ifBlank { "(Tanpa judul)" },
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = if (item.pinned || item.official) FontWeight.Black else FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+            }
+            // Body
+            Text(
+                item.body,
+                color = SoftText,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 15.sp
+            )
+        }
+    }
+}
+
+/** Resolve icon per feed type. Defaults to an Article icon. */
+private fun feedIcon(type: String): androidx.compose.ui.graphics.vector.ImageVector = when (type.lowercase().trim()) {
+    "announcement", "notice"     -> Icons.Rounded.Campaign
+    "event"                       -> Icons.Rounded.Event
+    "patch", "update_post"        -> Icons.Rounded.SystemUpdate
+    "update"                      -> Icons.Rounded.CloudSync
+    "warning", "alert"            -> Icons.Rounded.Warning
+    "info"                        -> Icons.Rounded.Info
+    else                          -> Icons.Rounded.Article
+}
+
+private fun feedColor(type: String): Color = when (type.lowercase().trim()) {
+    "announcement", "notice"     -> CandyCyan
+    "event"                       -> PremiumViolet
+    "patch", "update_post"        -> NeonGreen
+    "update"                      -> CandyBlue
+    "warning", "alert"            -> DangerRed
+    "info"                        -> CandyCyan
+    else                          -> SoftText
 }
 
 // ─── Step progress indicator ──────────────────────────────────────────────────
@@ -910,8 +2490,10 @@ fun GlassInfoBox(icon: ImageVector, color: Color, text: String) {
 // ─── Update & Data screen ─────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UpdateScreen(onNav: (Page) -> Unit) {
+fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNav: (Page) -> Unit) {
     val context       = LocalContext.current
+    // ── Bug 2: Partial maintenance blocking ──
+    val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"
     // NOTE: All I/O moved to LaunchedEffect below — don't block main thread during composition.
     // Initialize with safe defaults; real values populate from background.
     var gameInstalled   by remember { mutableStateOf(false) }
@@ -985,7 +2567,7 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
     fun checkUpdate() {
         loading = true; updateError = ""
         scope.launch {
-            withContext(Dispatchers.IO) { runCatching { fetchUpdateInfo() } }
+            withContext(Dispatchers.IO) { runCatching { fetchUpdateInfo(api) } }
                 .fold(onSuccess = { updateInfo = it }, onFailure = { updateError = it.message ?: "Gagal terhubung" })
             loading = false
         }
@@ -994,6 +2576,8 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
     fun applyPatch() {
         patchLogs.clear(); patchError = ""; patchDone = false; patching = true
         scope.launch {
+            // Telemetry for patch_apply (status ok/failed/noop/blocked) is fired inside
+            // DevPatchEngine.applyAvailableUpdates() itself — see DevPatchEngine.kt.
             val result = withContext(Dispatchers.IO) { runCatching { engine.applyAvailableUpdates() } }
             result.onFailure { patchError = it.message ?: "Pembaruan gagal diterapkan" }
             result.onSuccess { patchDone = true }
@@ -1255,10 +2839,15 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
             }
         }
 
-        // ── Patch / update card ──
+        // ── Patch / update card (atau shimmer skeleton saat loading) ──
         val ui             = updateInfo
         val patchAvailable = ui != null && !ui.upToDate
 
+        if (loading) {
+            // TapTap-style shimmer skeletons saat fetchUpdateInfo sedang berlangsung
+            TTGameCardSkeleton()
+            TTGameCardSkeleton()
+        } else {
         GlassCard(borderColor = when {
             patchDone              -> NeonGreen.copy(0.5f)
             patchError.isNotBlank()-> DangerRed.copy(0.4f)
@@ -1352,17 +2941,21 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
                 }
                 Button(
                     onClick  = { applyPatch() },
-                    enabled  = !patching && !loading && patchAvailable,
+                    enabled  = !maintenanceBlocked && !patching && !loading && patchAvailable,
                     modifier = Modifier.weight(2f).height(50.dp),
                     shape    = RoundedCornerShape(14.dp),
                     colors   = ButtonDefaults.buttonColors(
-                        containerColor         = if (patchAvailable) CandyCyan else NeonGreen,
-                        contentColor           = Color(0xFF00111D),
+                        containerColor         = if (maintenanceBlocked) Surface2 else if (patchAvailable) CandyCyan else NeonGreen,
+                        contentColor           = if (maintenanceBlocked) SoftText else Color(0xFF00111D),
                         disabledContainerColor = Surface2,
                         disabledContentColor   = SoftText
                     )
                 ) {
-                    if (patching) {
+                    if (maintenanceBlocked) {
+                        Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Diblokir Maintenance", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                    } else if (patching) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF00111D), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
                         Text("Memperbarui…", fontWeight = FontWeight.Black, fontSize = 13.sp)
@@ -1409,18 +3002,31 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
                 }
             }
         }
+        } // end if (loading) else { ... }
 
         // ── Play button (jika siap) ──
         AnimatedVisibility(dataReady && gameInstalled, enter = fadeIn(tween(400)), exit = fadeOut()) {
             Button(
-                onClick  = { launchGame(context) },
+                onClick  = { if (!maintenanceBlocked) launchGame(context) },
+                enabled  = !maintenanceBlocked,
                 modifier = Modifier.fillMaxWidth().height(58.dp),
                 shape    = RoundedCornerShape(20.dp),
-                colors   = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B))
+                colors   = ButtonDefaults.buttonColors(
+                    containerColor = if (maintenanceBlocked) Surface2 else NeonGreen,
+                    contentColor   = if (maintenanceBlocked) SoftText else Color(0xFF00150B),
+                    disabledContainerColor = Surface2,
+                    disabledContentColor   = SoftText
+                )
             ) {
-                Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(10.dp))
-                Text("Main FIFA 16 Sekarang", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                if (maintenanceBlocked) {
+                    Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("Diblokir Maintenance", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                } else {
+                    Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("Main FIFA 16 Sekarang", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                }
             }
         }
 
@@ -1454,6 +3060,8 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
                     showRollback = false
                     rollbackBusy = true; rollbackMsg = ""
                     scope.launch {
+                        // Telemetry for patch_rollback (status ok/failed) is fired inside
+                        // DevPatchEngine.restoreLastBackup() itself — see DevPatchEngine.kt.
                         val result = withContext(Dispatchers.IO) {
                             runCatching { engine.restoreLastBackup() }
                         }
@@ -1514,90 +3122,1629 @@ fun UpdateScreen(onNav: (Page) -> Unit) {
     }
 }
 
-// ─── Community / Chat screen ──────────────────────────────────────────────────
+// ─── Community screen — TapTap-style feed (Following / For You) ────────────────
+// Top bar: user role badge + tabs (Following | For You) + filter icon.
+// Feed: post cards with optional image, title, body, author avatar + username,
+//       relative timestamp, like button (animated bounce + haptic), three-dot
+//       menu (Report / Share / Save).
+// FAB: circular white "+" → create post bottom sheet (title + body + image URL + type).
+// Loading: shimmer skeletons. Pull-to-refresh. Empty states per tab.
+//
+// Data sources (Supabase):
+//   - feed_posts          → global + following feed
+//   - community_follows   → "Following" tab author set
+//   - feed_likes          → like count + has-liked
+//   - saved_posts         → bookmark toggle
+//   - reports             → report-a-post
+//   - profiles            → author avatar / username / role
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CommunityScreen(api: CommunityApi) {
-    val scope = rememberCoroutineScope()
-    var categories       by remember { mutableStateOf<List<CategoryItem>>(emptyList()) }
-    var selectedCategory by remember { mutableStateOf<CategoryItem?>(null) }
-    var topics           by remember { mutableStateOf<List<TopicItem>>(emptyList()) }
-    var selectedTopic    by remember { mutableStateOf<TopicItem?>(null) }
-    var posts            by remember { mutableStateOf<List<PostItem>>(emptyList()) }
-    var status           by remember { mutableStateOf("Memuat komunitas…") }
-    var title            by remember { mutableStateOf("") }
-    var body             by remember { mutableStateOf("") }
-    var reply            by remember { mutableStateOf("") }
+fun CommunityScreen(
+    api: CommunityApi,
+    pendingPostId: String? = null,
+    onConsumePostId: () -> Unit = {}
+) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+    val haptic  = LocalHapticFeedback.current
 
-    fun loadPosts(topic: TopicItem) {
-        scope.launch {
-            try { posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) } }
-            catch (t: Throwable) { status = "Gagal memuat percakapan: ${t.message}" }
-        }
-    }
-    fun loadTopics() {
-        scope.launch {
-            try {
-                topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
-                status = if (topics.isEmpty()) "Belum ada topik." else "${topics.size} topik tersedia."
-            } catch (t: Throwable) { status = "Gagal memuat topik: ${t.message}" }
-        }
-    }
-    fun createTopic() {
-        val cat = selectedCategory ?: run { status = "Pilih saluran terlebih dahulu."; return }
-        if (title.trim().length < 4 || body.trim().isEmpty()) { status = "Judul minimal 4 karakter dan isi wajib diisi."; return }
-        scope.launch {
-            try {
-                val newTopic = withContext(Dispatchers.IO) { api.createTopic(cat.id, title, body) }
-                title = ""; body = ""
-                topics = withContext(Dispatchers.IO) { jsonTopics(api.topics(cat.id)) }
-                selectedTopic = topics.firstOrNull { it.id == newTopic.optString("id") }
-                status = "Topik berhasil dibuat."
-            } catch (t: Throwable) { status = "Gagal: ${t.message}" }
-        }
-    }
-    fun sendReply() {
-        val topic = selectedTopic ?: run { status = "Pilih topik terlebih dahulu."; return }
-        if (reply.trim().isEmpty()) return
-        scope.launch {
-            try {
-                withContext(Dispatchers.IO) { api.createPost(topic.id, "", reply) }
-                reply = ""
-                posts = withContext(Dispatchers.IO) { jsonPosts(api.posts(topic.id)) }
-            } catch (t: Throwable) { status = "Gagal mengirim: ${t.message}" }
-        }
+    // 0 = Following, 1 = For You (default to For You so feed is populated for new users)
+    var selectedTab by remember { mutableStateOf(1) }
+
+    // Filter state
+    var sortBy           by remember { mutableStateOf("newest") }        // newest | oldest
+    var roleFilter       by remember { mutableStateOf<String?>(null) }   // admin | developer | user | null
+    var dateFilterMillis by remember { mutableStateOf<Long?>(null) }     // epoch millis (UTC midnight) | null
+    var showFilterMenu   by remember { mutableStateOf(false) }
+    var showDatePicker   by remember { mutableStateOf(false) }
+
+    // Feed state
+    var posts     by remember { mutableStateOf<List<FeedPostData>>(emptyList()) }
+    var loading   by remember { mutableStateOf(true) }
+    var refreshing by remember { mutableStateOf(false) }
+    var errorMsg  by remember { mutableStateOf("") }
+
+    // Author cache (author_id -> AuthorInfo)
+    var authorCache by remember { mutableStateOf<Map<String, AuthorInfo>>(emptyMap()) }
+    // Like state (post_id -> Pair(liked, count))
+    var likeState   by remember { mutableStateOf<Map<String, Pair<Boolean, Int>>>(emptyMap()) }
+    // Saved state (post_id -> saved)
+    var savedState  by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+    // ── Phase 2: Comment count state (post_id -> count) ──
+    var commentCountState by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+
+    // Create post sheet + report dialog + comments sheet
+    var showCreateSheet by remember { mutableStateOf(false) }
+    var reportTarget    by remember { mutableStateOf<FeedPostData?>(null) }
+    // ── Phase 2: post yang comment-sheet-nya sedang dibuka (null = tutup) ──
+    var commentsTarget  by remember { mutableStateOf<FeedPostData?>(null) }
+
+    val role     = remember { api.role().ifBlank { "user" } }
+    val roleBadge = role.uppercase()
+
+    fun toast(msg: String) {
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
     }
 
-    LaunchedEffect(Unit) {
-        try {
-            categories       = withContext(Dispatchers.IO) { jsonCategories(api.categories()) }
-            selectedCategory = categories.firstOrNull()
-            topics           = withContext(Dispatchers.IO) { jsonTopics(api.topics(selectedCategory?.id ?: "")) }
-            status           = if (topics.isEmpty()) "Belum ada topik." else "Siap."
-        } catch (t: Throwable) { status = "Error komunitas: ${t.message}" }
+    fun loadPosts() {
+        scope.launch {
+            if (posts.isEmpty()) loading = true
+            errorMsg = ""
+            try {
+                val arr = withContext(Dispatchers.IO) {
+                    if (selectedTab == 0) {
+                        if (!api.loggedIn()) JSONArray()
+                        else api.fetchFeedPostsFollowing(sortBy, 30)
+                    } else {
+                        api.fetchFeedPostsGlobal(sortBy, 30)
+                    }
+                }
+                val raw = (0 until arr.length()).mapNotNull { i ->
+                    runCatching {
+                        val o = arr.getJSONObject(i)
+                        FeedPostData(
+                            id        = o.optString("id"),
+                            authorId  = o.optString("author_id"),
+                            title     = o.optString("title"),
+                            body      = o.optString("body"),
+                            imageUrl  = o.optString("image_url", ""),
+                            type      = o.optString("type", "community"),
+                            pinned    = o.optBoolean("pinned"),
+                            official  = o.optBoolean("official"),
+                            createdAt = o.optString("created_at", "")
+                        )
+                    }.getOrNull()
+                }
+
+                // ── Fetch author profiles (only missing ones) ──
+                val missing = raw.map { it.authorId }.distinct()
+                    .filter { it.isNotBlank() && !authorCache.containsKey(it) }
+                if (missing.isNotEmpty()) {
+                    val fetched = withContext(Dispatchers.IO) {
+                        missing.associateWith { id ->
+                            try {
+                                val p = api.getProfileById(id)
+                                AuthorInfo(
+                                    id          = id,
+                                    username    = p.optString("username", ""),
+                                    displayName = p.optString("display_name", ""),
+                                    avatarUrl   = p.optString("avatar_url", ""),
+                                    role        = p.optString("role", "user")
+                                )
+                            } catch (_: Throwable) {
+                                AuthorInfo(id, "", "Anonim", "", "user")
+                            }
+                        }
+                    }
+                    authorCache = authorCache + fetched
+                }
+
+                // ── Fetch like + saved state per post (concurrent-safe sequential) ──
+                if (api.loggedIn()) {
+                    val newLike = withContext(Dispatchers.IO) {
+                        raw.associate { p ->
+                            try {
+                                val count = api.getPostLikeCount(p.id)
+                                val liked = api.hasLikedPost(p.id)
+                                p.id to (liked to count)
+                            } catch (_: Throwable) { p.id to (false to 0) }
+                        }
+                    }
+                    val newSaved = withContext(Dispatchers.IO) {
+                        raw.associate { p ->
+                            try { p.id to api.hasSavedPost(p.id) }
+                            catch (_: Throwable) { p.id to false }
+                        }
+                    }
+                    likeState  = likeState + newLike
+                    savedState = savedState + newSaved
+                } else {
+                    // Not logged in: only public like counts, no liked/saved flags.
+                    val newLike = withContext(Dispatchers.IO) {
+                        raw.associate { p ->
+                            try { p.id to (false to api.getPostLikeCount(p.id)) }
+                            catch (_: Throwable) { p.id to (false to 0) }
+                        }
+                    }
+                    likeState = likeState + newLike
+                }
+
+                // ── Phase 2: Fetch comment count per post (public read, fire-and-forget per post) ──
+                val newCommentCounts = withContext(Dispatchers.IO) {
+                    raw.associate { p ->
+                        try { p.id to api.getCommentCount(p.id) }
+                        catch (_: Throwable) { p.id to 0 }
+                    }
+                }
+                commentCountState = commentCountState + newCommentCounts
+
+                // ── Apply role + date filters (client-side) ──
+                var filtered = raw
+                if (roleFilter != null) {
+                    filtered = filtered.filter { post ->
+                        (authorCache[post.authorId]?.role?.lowercase() ?: "user") == roleFilter
+                    }
+                }
+                if (dateFilterMillis != null) {
+                    val startMs = dateFilterMillis!!
+                    val endMs   = startMs + 24L * 60L * 60L * 1000L
+                    filtered = filtered.filter { post ->
+                        val ts = parseIsoToMillis(post.createdAt)
+                        ts in startMs until endMs
+                    }
+                }
+                // Pinned first, then by createdAt desc
+                filtered = filtered.sortedWith(
+                    compareByDescending<FeedPostData> { it.pinned }
+                        .thenByDescending { it.createdAt }
+                )
+                posts = filtered
+            } catch (t: Throwable) {
+                errorMsg = t.message ?: "Gagal memuat feed"
+                posts = emptyList()
+            } finally {
+                loading = false
+                refreshing = false
+            }
+        }
     }
 
-    Box(Modifier.fillMaxSize().padding(14.dp)) {
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+    // Reload when tab or sort changes (role/date filters apply client-side → also reload)
+    LaunchedEffect(selectedTab, sortBy, roleFilter, dateFilterMillis) { loadPosts() }
+
+    // ── Phase 2: Deep-link dari notification tap ──
+    // Saat pendingPostId di-set (dari MainShell), cari post di feed dan auto-open comments sheet.
+    // Konsumsi pendingPostId (set null) setelah diproses supaya tidak re-trigger.
+    LaunchedEffect(pendingPostId, posts) {
+        val pid = pendingPostId ?: return@LaunchedEffect
+        if (posts.isEmpty()) return@LaunchedEffect
+        val match = posts.firstOrNull { it.id == pid }
+        if (match != null) {
+            commentsTarget = match
+            onConsumePostId()
+        }
+    }
+
+    // ── Date picker dialog (By Date filter) ──
+    if (showDatePicker) {
+        val dpState = rememberDatePickerState()
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDatePicker = false
+                    val ms = dpState.selectedDateMillis
+                    if (ms != null) { dateFilterMillis = ms }
+                }) { Text("Pilih", color = Color.White) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Batal", color = SoftText) }
+            }
         ) {
-            ChannelPanel(categories, selectedCategory) { selectedCategory = it; selectedTopic = null; posts = emptyList(); loadTopics() }
-            TopicPanel(status, title, body, topics, selectedTopic,
-                onTitle = { title = it }, onBody = { body = it },
-                onCreate = { createTopic() }, onSelect = { t -> selectedTopic = t; loadPosts(t) })
-            ThreadPanel(selectedTopic, posts, reply, onReply = { reply = it }, onSend = { sendReply() })
+            DatePicker(state = dpState)
+        }
+    }
+
+    // ── Create post bottom sheet ──
+    if (showCreateSheet) {
+        CreatePostSheet(
+            api = api,
+            onDismiss = { showCreateSheet = false },
+            onPosted = {
+                showCreateSheet = false
+                toast("Post terkirim!")
+                loading = true
+                loadPosts()
+            },
+            onError = { msg -> toast(msg) }
+        )
+    }
+
+    // ── Report dialog ──
+    reportTarget?.let { target ->
+        ReportPostDialog(
+            onDismiss = { reportTarget = null },
+            onSubmit = { category, reason ->
+                scope.launch {
+                    try {
+                        withContext(Dispatchers.IO) { api.reportPost(target.id, category, reason) }
+                        toast("Laporan terkirim. Terima kasih.")
+                    } catch (t: Throwable) {
+                        toast("Gagal melaporkan: ${t.message}")
+                    }
+                }
+                reportTarget = null
+            }
+        )
+    }
+
+    // ── Phase 2: Comments bottom sheet ──
+    commentsTarget?.let { target ->
+        CommentsBottomSheet(
+            postId    = target.id,
+            api       = api,
+            onDismiss = { commentsTarget = null },
+            onCommentAdded = {
+                // Optimistic +1 ke comment count
+                val cur = commentCountState[target.id] ?: 0
+                commentCountState = commentCountState + (target.id to (cur + 1))
+            }
+        )
+    }
+
+    Box(Modifier.fillMaxSize().background(Carbon)) {
+        // Subtle halftone texture behind the feed
+        HalftoneBackground(modifier = Modifier.fillMaxSize(), alpha = 0.3f)
+
+        Column(Modifier.fillMaxSize()) {
+            // ── Top Bar: role badge | tabs | filter icon ──
+            CommunityTopBar(
+                roleBadge = roleBadge,
+                roleColor = roleBadgeColor(role),
+                selectedTab = selectedTab,
+                onTabSelect = { selectedTab = it },
+                showFilterMenu = showFilterMenu,
+                onToggleFilter = { showFilterMenu = !showFilterMenu },
+                onFilterSelect = { choice ->
+                    showFilterMenu = false
+                    when (choice) {
+                        "newest"         -> { sortBy = "newest"; roleFilter = null; dateFilterMillis = null }
+                        "oldest"         -> { sortBy = "oldest"; roleFilter = null; dateFilterMillis = null }
+                        "role_admin"     -> roleFilter = "admin"
+                        "role_developer" -> roleFilter = "developer"
+                        "role_member"    -> roleFilter = "user"
+                        "date"           -> showDatePicker = true
+                    }
+                }
+            )
+
+            // ── Active filter chips row ──
+            if (roleFilter != null || dateFilterMillis != null) {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+                ) {
+                    if (roleFilter != null) {
+                        CommunityFilterChip(
+                            label = "Role: ${roleFilter!!.replaceFirstChar { it.uppercase() }}",
+                            onClear = { roleFilter = null }
+                        )
+                    }
+                    if (dateFilterMillis != null) {
+                        val dateStr = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault())
+                            .format(java.util.Date(dateFilterMillis!!))
+                        CommunityFilterChip(label = "Tanggal: $dateStr", onClear = { dateFilterMillis = null })
+                    }
+                }
+            }
+
+            // ── Feed (pull-to-refresh + lazy list) — takes remaining space below top bar ──
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                PullToRefreshBox(
+                    isRefreshing = refreshing,
+                    onRefresh = {
+                        if (!refreshing) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            refreshing = true
+                            loadPosts()
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    when {
+                        loading -> {
+                            Column(
+                                Modifier.fillMaxSize().padding(TTSpacing.lg).verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
+                            ) {
+                                repeat(4) { TTGameCardSkeleton() }
+                            }
+                        }
+                        posts.isEmpty() -> {
+                            CommunityEmptyState(
+                                isFollowing = selectedTab == 0,
+                                loggedIn = api.loggedIn(),
+                                errorMsg = errorMsg,
+                                onRetry = { loading = true; loadPosts() },
+                                onSwitchToForYou = { selectedTab = 1 }
+                            )
+                        }
+                        else -> {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(
+                                    start = TTSpacing.lg, end = TTSpacing.lg,
+                                    top = TTSpacing.md, bottom = 96.dp
+                                ),
+                                verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
+                            ) {
+                                items(posts, key = { it.id }) { post ->
+                                    val author = authorCache[post.authorId]
+                                    val like = likeState[post.id] ?: (false to 0)
+                                    val saved = savedState[post.id] ?: false
+                                    val commentCount = commentCountState[post.id] ?: 0
+                                    FeedPostCard(
+                                        post = post,
+                                        author = author,
+                                        liked = like.first,
+                                        likeCount = like.second,
+                                        commentCount = commentCount,
+                                        saved = saved,
+                                        loggedIn = api.loggedIn(),
+                                        onLike = {
+                                            if (!api.loggedIn()) {
+                                                toast("Login dulu untuk like post")
+                                                return@FeedPostCard
+                                            }
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            val wasLiked = likeState[post.id]?.first ?: false
+                                            val curCount = likeState[post.id]?.second ?: 0
+                                            // Optimistic update
+                                            likeState = likeState + (post.id to (!wasLiked to (curCount + if (wasLiked) -1 else 1)))
+                                            scope.launch {
+                                                try {
+                                                    withContext(Dispatchers.IO) {
+                                                        if (wasLiked) api.unlikePost(post.id) else api.likePost(post.id)
+                                                    }
+                                                } catch (t: Throwable) {
+                                                    // Revert
+                                                    likeState = likeState + (post.id to (wasLiked to curCount))
+                                                    toast("Gagal: ${t.message}")
+                                                }
+                                            }
+                                        },
+                                        onOpenComments = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            commentsTarget = post
+                                        },
+                                        onSave = {
+                                            if (!api.loggedIn()) {
+                                                toast("Login dulu untuk menyimpan post")
+                                                return@FeedPostCard
+                                            }
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            val wasSaved = savedState[post.id] ?: false
+                                            savedState = savedState + (post.id to !wasSaved)
+                                            scope.launch {
+                                                try {
+                                                    withContext(Dispatchers.IO) {
+                                                        if (wasSaved) api.unsavePost(post.id) else api.savePost(post.id)
+                                                    }
+                                                    toast(if (wasSaved) "Post dihapus dari simpanan." else "Post disimpan.")
+                                                } catch (t: Throwable) {
+                                                    savedState = savedState + (post.id to wasSaved)
+                                                    toast("Gagal: ${t.message}")
+                                                }
+                                            }
+                                        },
+                                        onShare = {
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_TEXT,
+                                                    "${post.title}\n\n${post.body}\n\n— via DLavie 26 Launcher")
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Bagikan Post"))
+                                        },
+                                        onReport = { reportTarget = post },
+                                        onOpenVideo = { url ->
+                                            runCatching {
+                                                context.startActivity(
+                                                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                )
+                                            }.onFailure { toast("Tidak bisa membuka URL") }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── FAB: create new post (bottom-right, circular white bg + black +) ──
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = TTSpacing.xl, bottom = TTSpacing.xxl)
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            if (!api.loggedIn()) {
+                                toast("Login dulu untuk membuat post")
+                            } else {
+                                showCreateSheet = true
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = "Buat post baru",
+                        tint = Color.Black, modifier = Modifier.size(28.dp))
+                }
+            }
         }
     }
 }
 
-// ─── Profile / Me screen ──────────────────────────────────────────────────────
+// ─── Top bar: role badge + tabs + filter dropdown ──────────────────────────────
 @Composable
-fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
+private fun CommunityTopBar(
+    roleBadge: String,
+    roleColor: Color,
+    selectedTab: Int,
+    onTabSelect: (Int) -> Unit,
+    showFilterMenu: Boolean,
+    onToggleFilter: () -> Unit,
+    onFilterSelect: (String) -> Unit
+) {
+    Box {
+        Row(
+            Modifier.fillMaxWidth()
+                .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Left: user role badge
+            Surface(
+                color = roleColor.copy(0.15f),
+                border = BorderStroke(1.dp, roleColor.copy(0.40f)),
+                shape = TTShapes.chip
+            ) {
+                Text(
+                    roleBadge,
+                    color = roleColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                )
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // Center: tabs (Following | For You) — underline active
+            Row(horizontalArrangement = Arrangement.spacedBy(TTSpacing.lg)) {
+                CommunityTab("Following", selectedTab == 0) { onTabSelect(0) }
+                CommunityTab("For You", selectedTab == 1) { onTabSelect(1) }
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // Right: filter icon + dropdown
+            Box {
+                Box(
+                    Modifier.size(36.dp).clip(CircleShape)
+                        .background(Surface2)
+                        .clickable { onToggleFilter() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.FilterList, contentDescription = "Filter",
+                        tint = Color.White, modifier = Modifier.size(20.dp))
+                }
+                DropdownMenu(
+                    expanded = showFilterMenu,
+                    onDismissRequest = { onToggleFilter() }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Terbaru", color = Color.White, fontSize = 13.sp) },
+                        onClick = { onFilterSelect("newest") }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Terlama", color = Color.White, fontSize = 13.sp) },
+                        onClick = { onFilterSelect("oldest") }
+                    )
+                    Box(Modifier.height(1.dp).fillMaxWidth().background(Color.White.copy(0.08f)))
+                    DropdownMenuItem(
+                        text = { Text("By Role: Admin", color = Color.White, fontSize = 13.sp) },
+                        onClick = { onFilterSelect("role_admin") }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("By Role: Developer", color = Color.White, fontSize = 13.sp) },
+                        onClick = { onFilterSelect("role_developer") }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("By Role: Member", color = Color.White, fontSize = 13.sp) },
+                        onClick = { onFilterSelect("role_member") }
+                    )
+                    Box(Modifier.height(1.dp).fillMaxWidth().background(Color.White.copy(0.08f)))
+                    DropdownMenuItem(
+                        text = { Text("By Date…", color = Color.White, fontSize = 13.sp) },
+                        trailingIcon = { Icon(Icons.Rounded.CalendarMonth, null, tint = SoftText, modifier = Modifier.size(16.dp)) },
+                        onClick = { onFilterSelect("date") }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommunityTab(label: String, active: Boolean, onClick: () -> Unit) {
+    Column(
+        Modifier.clickable(onClick = onClick).padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            label,
+            color = if (active) Color.White else SubText,
+            fontSize = 15.sp,
+            fontWeight = if (active) FontWeight.Black else FontWeight.SemiBold
+        )
+        Spacer(Modifier.height(4.dp))
+        Box(
+            Modifier
+                .width(if (active) 24.dp else 0.dp)
+                .height(2.dp)
+                .background(Color.White, RoundedCornerShape(2.dp))
+        )
+    }
+}
+
+// ─── Active filter chip (clearable) ────────────────────────────────────────────
+@Composable
+private fun CommunityFilterChip(label: String, onClear: () -> Unit) {
+    Surface(
+        color = CandyCyan.copy(0.10f),
+        border = BorderStroke(1.dp, CandyCyan.copy(0.30f)),
+        shape = TTShapes.chip
+    ) {
+        Row(
+            Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Box(
+                Modifier.size(16.dp).clip(CircleShape).clickable { onClear() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.Close, contentDescription = "Hapus filter",
+                    tint = SoftText, modifier = Modifier.size(12.dp))
+            }
+        }
+    }
+}
+
+// ─── Feed post card (TapTap-style) ─────────────────────────────────────────────
+@Composable
+private fun FeedPostCard(
+    post: FeedPostData,
+    author: AuthorInfo?,
+    liked: Boolean,
+    likeCount: Int,
+    commentCount: Int,
+    saved: Boolean,
+    loggedIn: Boolean,
+    onLike: () -> Unit,
+    onOpenComments: () -> Unit,
+    onSave: () -> Unit,
+    onShare: () -> Unit,
+    onReport: () -> Unit,
+    onOpenVideo: (String) -> Unit
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    // Like bounce: scale up briefly when liked toggles
+    val likeScale by animateFloatAsState(
+        targetValue = if (liked) 1.15f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "like_bounce"
+    )
+    // ── Phase 2: detect video URL in body (YouTube/TikTok) ──
+    val videoEmbed = remember(post.body) { extractVideoEmbed(post.body) }
+
+    TTTappableCard(onClick = { /* future: open post detail */ }) {
+        Column(Modifier.fillMaxWidth()) {
+            // Optional image banner (16:9) — Coil AsyncImage
+            if (post.imageUrl.isNotBlank()) {
+                AsyncImage(
+                    model = post.imageUrl,
+                    contentDescription = post.title,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                )
+            }
+
+            Column(Modifier.padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md)) {
+                // Pinned / official badges row
+                if (post.pinned || post.official) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (post.pinned) {
+                            Surface(color = AmberWarn.copy(0.15f), shape = TTShapes.chip) {
+                                Row(Modifier.padding(horizontal = 7.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.PushPin, null, tint = AmberWarn, modifier = Modifier.size(10.dp))
+                                    Spacer(Modifier.width(3.dp))
+                                    Text("PINNED", color = AmberWarn, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
+                        if (post.official) {
+                            Surface(color = NeonGreen.copy(0.15f), shape = TTShapes.chip) {
+                                Row(Modifier.padding(horizontal = 7.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.Verified, null, tint = NeonGreen, modifier = Modifier.size(10.dp))
+                                    Spacer(Modifier.width(3.dp))
+                                    Text("OFFICIAL", color = NeonGreen, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(TTSpacing.sm))
+                }
+
+                // Title (bold white, 15sp)
+                Text(
+                    post.title,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // Body preview (gray, 13sp, 2 lines)
+                if (post.body.isNotBlank()) {
+                    Spacer(Modifier.height(TTSpacing.xs))
+                    Text(
+                        post.body,
+                        color = SoftText,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // ── Phase 2: Video embed preview (YouTube thumbnail / TikTok badge) ──
+                if (videoEmbed != null) {
+                    Spacer(Modifier.height(TTSpacing.md))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.Black)
+                            .clickable { onOpenVideo(videoEmbed.originalUrl) }
+                    ) {
+                        if (videoEmbed.thumbnailUrl != null) {
+                            AsyncImage(
+                                model = videoEmbed.thumbnailUrl,
+                                contentDescription = "Thumbnail ${videoEmbed.platform}",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            // TikTok — tidak ada thumbnail publik. Tampilkan placeholder gradien.
+                            Box(
+                                Modifier.fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(Color(0xFF111111), Color(0xFF222222))
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("TIKTOK", color = Color.White.copy(0.85f),
+                                        fontSize = 11.sp, fontWeight = FontWeight.Black,
+                                        letterSpacing = 2.sp)
+                                    Spacer(Modifier.height(4.dp))
+                                    Text("Tap untuk buka di browser",
+                                        color = Color.White.copy(0.6f), fontSize = 10.sp)
+                                }
+                            }
+                        }
+                        // Dark overlay supaya play icon kontras
+                        Box(
+                            Modifier.fillMaxSize().background(Color.Black.copy(0.28f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Rounded.PlayCircle,
+                                contentDescription = "Putar video",
+                                tint = Color.White,
+                                modifier = Modifier.size(48.dp)
+                            )
+                        }
+                        // Platform badge (top-left)
+                        Surface(
+                            color = Color.Black.copy(0.55f),
+                            shape = TTShapes.chip,
+                            modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                        ) {
+                            Text(
+                                videoEmbed.platform.uppercase(),
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 1.sp,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(TTSpacing.md))
+
+                // Author + timestamp + like + comment + menu
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Avatar (circular, initial letter with gradient)
+                    AuthorAvatar(author = author)
+                    Spacer(Modifier.width(TTSpacing.sm))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            author?.displayName?.ifBlank { author.username } ?: "Anonim",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Schedule, null, tint = SubText, modifier = Modifier.size(11.dp))
+                            Spacer(Modifier.width(3.dp))
+                            Text(relativeTime(post.createdAt), color = SubText, fontSize = 10.sp)
+                            if (post.type.isNotBlank() && post.type != "community") {
+                                Text(" · ${post.type}", color = SubText, fontSize = 10.sp)
+                            }
+                        }
+                    }
+
+                    // Like button (thumbs up + count) with bounce
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .clip(TTShapes.chip)
+                            .clickable { onLike() }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            if (liked) Icons.Rounded.ThumbUp else Icons.Rounded.ThumbUpOffAlt,
+                            contentDescription = "Like",
+                            tint = if (liked) NeonGreen else SoftText,
+                            modifier = Modifier.size(18.dp).scale(likeScale)
+                        )
+                        Text(
+                            if (likeCount > 0) likeCount.toString() else "",
+                            color = if (liked) NeonGreen else SoftText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(Modifier.width(TTSpacing.xs))
+
+                    // ── Phase 2: Comment button (chat bubble + count) ──
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .clip(TTShapes.chip)
+                            .clickable { onOpenComments() }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.ChatBubbleOutline,
+                            contentDescription = "Komentar",
+                            tint = SoftText,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            if (commentCount > 0) commentCount.toString() else "",
+                            color = SoftText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(Modifier.width(TTSpacing.xs))
+
+                    // Three-dot menu (⋮)
+                    Box {
+                        Box(
+                            Modifier.size(32.dp).clip(CircleShape).clickable { menuOpen = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.MoreVert, contentDescription = "Menu",
+                                tint = SoftText, modifier = Modifier.size(18.dp))
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("🚩 Lapor", color = Color.White, fontSize = 13.sp) },
+                                onClick = { menuOpen = false; onReport() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("📤 Bagikan", color = Color.White, fontSize = 13.sp) },
+                                onClick = { menuOpen = false; onShare() }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (saved) "🔖 Hapus Simpanan" else "🔖 Simpan",
+                                        color = Color.White, fontSize = 13.sp
+                                    )
+                                },
+                                onClick = { menuOpen = false; onSave() }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── Author avatar (circular, initial letter with gradient) ────────────────────
+@Composable
+private fun AuthorAvatar(author: AuthorInfo?) {
+    val name = author?.displayName?.ifBlank { author.username } ?: "A"
+    val initial = name.firstOrNull()?.uppercaseChar()?.toString() ?: "A"
+    val avatarUrl = author?.avatarUrl ?: ""
+    Box(
+        Modifier.size(28.dp).clip(CircleShape)
+            .background(Brush.linearGradient(listOf(CandyCyan, CandyBlue))),
+        contentAlignment = Alignment.Center
+    ) {
+        if (avatarUrl.isNotBlank()) {
+            AsyncImage(
+                model = avatarUrl,
+                contentDescription = name,
+                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+            )
+        } else {
+            Text(initial, color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Black)
+        }
+    }
+}
+
+// ─── Empty state ───────────────────────────────────────────────────────────────
+@Composable
+private fun CommunityEmptyState(
+    isFollowing: Boolean,
+    loggedIn: Boolean,
+    errorMsg: String,
+    onRetry: () -> Unit,
+    onSwitchToForYou: () -> Unit
+) {
+    Column(
+        Modifier.fillMaxSize().padding(TTSpacing.xl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            if (isFollowing) Icons.Rounded.AccountCircle else Icons.Rounded.Article,
+            contentDescription = null,
+            tint = SubText,
+            modifier = Modifier.size(64.dp)
+        )
+        Spacer(Modifier.height(TTSpacing.lg))
+        Text(
+            if (isFollowing) "Belum ada post dari yang kamu follow"
+            else "Belum ada post",
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Black,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(TTSpacing.xs))
+        Text(
+            when {
+                errorMsg.isNotEmpty() -> errorMsg
+                isFollowing && !loggedIn -> "Login dulu, lalu follow user lain untuk melihat post mereka di sini."
+                isFollowing -> "Follow user lain untuk melihat post mereka di sini."
+                else -> "Jadilah yang pertama membuat post di komunitas DLavie 26."
+            },
+            color = SoftText,
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(TTSpacing.lg))
+        Button(
+            onClick = { if (isFollowing) onSwitchToForYou() else onRetry() },
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+            shape = TTShapes.button
+        ) {
+            Text(
+                if (isFollowing) "Lihat For You" else "Coba lagi",
+                fontSize = 12.sp, fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+// ─── Create post bottom sheet ──────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CreatePostSheet(
+    api: CommunityApi,
+    onDismiss: () -> Unit,
+    onPosted: () -> Unit,
+    onError: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var title by remember { mutableStateOf("") }
+    var body by remember { mutableStateOf("") }
+    var imageUrl by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("community") }
+    var typeMenuOpen by remember { mutableStateOf(false) }
+    var posting by remember { mutableStateOf(false) }
+    // ── Phase 2: gallery picker state ──
+    var uploading by remember { mutableStateOf(false) }
+
+    val types = listOf("community" to "Community", "developer" to "Developer",
+        "update" to "Update", "tutorial" to "Tutorial", "bugfix" to "Bugfix")
+    val typeLabel = types.firstOrNull { it.first == type }?.second ?: "Community"
+
+    // ── Phase 2: Gallery picker (ActivityResultContracts.PickVisualMedia) ──
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                uploading = true
+                try {
+                    val url = withContext(Dispatchers.IO) {
+                        val inputStream = context.contentResolver.openInputStream(uri)
+                            ?: throw IllegalStateException("Tidak bisa membuka gambar.")
+                        val bytes = inputStream.use { it.readBytes() }
+                        if (bytes.isEmpty()) throw IllegalStateException("Gambar kosong.")
+                        val filename = "post_${System.currentTimeMillis()}.jpg"
+                        api.uploadImage(bytes, filename)
+                    }
+                    imageUrl = url
+                } catch (t: Throwable) {
+                    onError("Gagal upload gambar: ${t.message}")
+                } finally {
+                    uploading = false
+                }
+            }
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = { if (!posting && !uploading) onDismiss() },
+        sheetState = sheetState,
+        containerColor = GlassBase,
+        dragHandle = null
+    ) {
+        Column(
+            Modifier.fillMaxWidth().imePadding()
+                .padding(horizontal = TTSpacing.xl, vertical = TTSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
+        ) {
+            // Header
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Buat Post Baru", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.weight(1f))
+                Box(
+                    Modifier.size(32.dp).clip(CircleShape).clickable { if (!posting && !uploading) onDismiss() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Tutup", tint = SoftText, modifier = Modifier.size(20.dp))
+                }
+            }
+
+            // Title input
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                label = { Text("Judul (wajib)", fontSize = 12.sp, color = SubText) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = TTShapes.input,
+                singleLine = true,
+                textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Next)
+            )
+
+            // Body input (multiline)
+            OutlinedTextField(
+                value = body,
+                onValueChange = { body = it },
+                label = { Text("Deskripsi (wajib)", fontSize = 12.sp, color = SubText) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+                shape = TTShapes.input,
+                minLines = 4,
+                textStyle = TextStyle(color = Color.White, fontSize = 14.sp, lineHeight = 19.sp),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+            )
+
+            // ── Phase 2: Image picker (gallery) + preview ──
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    enabled = !uploading && !posting,
+                    shape = TTShapes.button,
+                    border = BorderStroke(1.dp, GlassStroke),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color.White,
+                        containerColor = Color.White.copy(0.04f)
+                    )
+                ) {
+                    if (uploading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Mengunggah…", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    } else {
+                        Icon(Icons.Rounded.Image, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Pilih Gambar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (imageUrl.isNotBlank()) {
+                    Spacer(Modifier.weight(1f))
+                    Box {
+                        AsyncImage(
+                            model = imageUrl,
+                            contentDescription = "Preview gambar",
+                            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                        // Tiny remove button
+                        Box(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 6.dp, y = (-6).dp)
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(0.75f))
+                                .clickable { if (!posting) imageUrl = "" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Hapus gambar",
+                                tint = Color.White, modifier = Modifier.size(12.dp))
+                        }
+                    }
+                }
+            }
+
+            // Image URL input (optional — manual paste sebagai fallback)
+            OutlinedTextField(
+                value = imageUrl,
+                onValueChange = { imageUrl = it },
+                label = { Text("URL Gambar (opsional — atau pilih dari gallery di atas)", fontSize = 12.sp, color = SubText) },
+                leadingIcon = { Icon(Icons.Rounded.Image, null, tint = SubText, modifier = Modifier.size(18.dp)) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = TTShapes.input,
+                singleLine = true,
+                textStyle = TextStyle(color = Color.White, fontSize = 13.sp)
+            )
+
+            // Type dropdown
+            Box {
+                OutlinedTextField(
+                    value = typeLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Tipe Post", fontSize = 12.sp, color = SubText) },
+                    modifier = Modifier.fillMaxWidth().clickable { typeMenuOpen = true },
+                    shape = TTShapes.input,
+                    singleLine = true,
+                    trailingIcon = {
+                        Icon(if (typeMenuOpen) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            null, tint = SoftText, modifier = Modifier.size(18.dp))
+                    },
+                    textStyle = TextStyle(color = Color.White, fontSize = 14.sp)
+                )
+                DropdownMenu(expanded = typeMenuOpen, onDismissRequest = { typeMenuOpen = false }) {
+                    types.forEach { (value, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label, color = Color.White, fontSize = 13.sp) },
+                            onClick = { type = value; typeMenuOpen = false }
+                        )
+                    }
+                }
+            }
+
+            // Post button
+            Button(
+                onClick = {
+                    if (title.trim().length < 3) { onError("Judul minimal 3 karakter."); return@Button }
+                    if (body.trim().isEmpty()) { onError("Deskripsi wajib diisi."); return@Button }
+                    if (posting || uploading) return@Button
+                    posting = true
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                api.createFeedPost(title, body, imageUrl, type)
+                            }
+                            onPosted()
+                        } catch (t: Throwable) {
+                            onError("Gagal membuat post: ${t.message}")
+                        } finally {
+                            posting = false
+                        }
+                    }
+                },
+                enabled = !posting && !uploading,
+                modifier = Modifier.fillMaxWidth(),
+                shape = TTShapes.button,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
+            ) {
+                if (posting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.Black,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text("Posting", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+// ─── Report post dialog ────────────────────────────────────────────────────────
+@Composable
+private fun ReportPostDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (category: String, reason: String) -> Unit
+) {
+    val reasons = listOf("spam" to "Spam", "inappropriate" to "Konten tidak pantas", "other" to "Lainnya")
+    var selected by remember { mutableStateOf("spam") }
+    var detail by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Laporkan Post", color = Color.White, fontWeight = FontWeight.Black) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
+                Text("Pilih alasan:", color = SoftText, fontSize = 12.sp)
+                reasons.forEach { (value, label) ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { selected = value }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = selected == value,
+                            onClick = { selected = value },
+                            colors = RadioButtonDefaults.colors(selectedColor = Color.White, unselectedColor = SubText)
+                        )
+                        Spacer(Modifier.width(TTSpacing.sm))
+                        Text(label, color = Color.White, fontSize = 13.sp)
+                    }
+                }
+                OutlinedTextField(
+                    value = detail,
+                    onValueChange = { detail = it },
+                    label = { Text("Detail (opsional)", fontSize = 12.sp, color = SubText) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = TTShapes.input,
+                    minLines = 2,
+                    textStyle = TextStyle(color = Color.White, fontSize = 13.sp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSubmit(selected, detail) }) {
+                Text("Kirim Laporan", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Batal", color = SoftText) }
+        },
+        containerColor = GlassBase
+    )
+}
+
+// ─── Phase 2 Community: Comments bottom sheet ─────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CommentsBottomSheet(
+    postId: String,
+    api: CommunityApi,
+    onDismiss: () -> Unit,
+    onCommentAdded: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var comments by remember { mutableStateOf<List<CommentItem>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var commentText by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf("") }
+
+    fun toast(msg: String) {
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    fun loadComments() {
+        scope.launch {
+            loading = true
+            errorMsg = ""
+            try {
+                val list = withContext(Dispatchers.IO) {
+                    val arr = api.fetchComments(postId)
+                    val out = mutableListOf<CommentItem>()
+                    for (i in 0 until arr.length()) {
+                        val c = arr.getJSONObject(i)
+                        val uid = c.optString("user_id", "")
+                        val profile = runCatching { api.getProfileById(uid) }.getOrNull() ?: JSONObject()
+                        out.add(
+                            CommentItem(
+                                id          = c.optString("id"),
+                                userId      = uid,
+                                username    = profile.optString("username", "unknown"),
+                                displayName = profile.optString("display_name", "User"),
+                                body        = c.optString("body", ""),
+                                createdAt   = c.optString("created_at", "")
+                            )
+                        )
+                    }
+                    out
+                }
+                comments = list
+            } catch (t: Throwable) {
+                errorMsg = t.message ?: "Gagal memuat komentar"
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    LaunchedEffect(postId) { loadComments() }
+
+    ModalBottomSheet(
+        onDismissRequest = { if (!sending) onDismiss() },
+        sheetState = sheetState,
+        containerColor = GlassBase,
+        dragHandle = null
+    ) {
+        Column(
+            Modifier.fillMaxWidth().imePadding()
+                .padding(horizontal = TTSpacing.xl, vertical = TTSpacing.lg)
+                .heightIn(min = 280.dp, max = 560.dp)
+        ) {
+            // Header
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.ChatBubbleOutline, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Komentar", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.weight(1f))
+                Box(
+                    Modifier.size(32.dp).clip(CircleShape).clickable { if (!sending) onDismiss() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Tutup", tint = SoftText, modifier = Modifier.size(20.dp))
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+
+            // List / loading / empty
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    loading -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.md)) {
+                            repeat(2) { TTGameCardSkeleton() }
+                        }
+                    }
+                    errorMsg.isNotEmpty() && comments.isEmpty() -> {
+                        Column(
+                            Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(errorMsg, color = SoftText, fontSize = 12.sp, textAlign = TextAlign.Center)
+                            Spacer(Modifier.height(8.dp))
+                            TextButton(onClick = { loadComments() }) {
+                                Text("Coba lagi", color = Color.White)
+                            }
+                        }
+                    }
+                    comments.isEmpty() -> {
+                        Column(
+                            Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Rounded.ChatBubbleOutline, null, tint = SubText, modifier = Modifier.size(48.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("Belum ada komentar.", color = SubText, fontSize = 13.sp)
+                            Text("Jadilah yang pertama.", color = SubText, fontSize = 11.sp)
+                        }
+                    }
+                    else -> {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(bottom = 8.dp)
+                        ) {
+                            items(comments, key = { it.id }) { comment ->
+                                CommentRow(comment)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Comment input
+            if (!api.loggedIn()) {
+                Surface(
+                    color = Color.White.copy(0.04f),
+                    shape = TTShapes.input,
+                    border = BorderStroke(1.dp, GlassStroke)
+                ) {
+                    Text(
+                        "Login dulu untuk menulis komentar.",
+                        color = SubText, fontSize = 12.sp, textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(12.dp)
+                    )
+                }
+            } else {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    OutlinedTextField(
+                        value = commentText,
+                        onValueChange = { commentText = it },
+                        placeholder = { Text("Tulis komentar…", fontSize = 13.sp) },
+                        modifier = Modifier.weight(1f),
+                        shape = TTShapes.input,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color.White.copy(0.3f),
+                            unfocusedBorderColor = GlassStroke,
+                            cursorColor = Color.White,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedPlaceholderColor = SubText,
+                            unfocusedPlaceholderColor = SubText
+                        ),
+                        singleLine = false,
+                        maxLines = 3,
+                        textStyle = TextStyle(color = Color.White, fontSize = 13.sp, lineHeight = 18.sp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(
+                        onClick = {
+                            val text = commentText.trim()
+                            if (text.isEmpty() || sending) return@IconButton
+                            sending = true
+                            scope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) { api.addComment(postId, text) }
+                                    // Optimistic: tambahkan ke list lokal (display name = current user)
+                                    val me = CommentItem(
+                                        id          = "local_${System.currentTimeMillis()}",
+                                        userId      = api.userId(),
+                                        username    = api.username().ifBlank { "you" },
+                                        displayName = api.displayName().ifBlank { "You" },
+                                        body        = text,
+                                        createdAt   = java.text.SimpleDateFormat(
+                                            "yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US
+                                        ).format(java.util.Date())
+                                    )
+                                    comments = comments + me
+                                    commentText = ""
+                                    onCommentAdded()
+                                } catch (t: Throwable) {
+                                    toast("Gagal: ${t.message}")
+                                } finally {
+                                    sending = false
+                                }
+                            }
+                        },
+                        enabled = commentText.isNotBlank() && !sending
+                    ) {
+                        if (sending) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Rounded.Send,
+                                contentDescription = "Kirim komentar",
+                                tint = if (commentText.isNotBlank()) Color.White else SubText,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── Phase 2 Community: Single comment row ────────────────────────────────────
+@Composable
+private fun CommentRow(comment: CommentItem) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Box(
+            Modifier.size(32.dp).clip(CircleShape)
+                .background(Brush.linearGradient(listOf(Color.White.copy(0.22f), Color.White.copy(0.10f)))),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                comment.displayName.firstOrNull()?.uppercase() ?: "U",
+                color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    comment.displayName.ifBlank { comment.username.ifBlank { "Anonim" } },
+                    color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("·", color = SubText, fontSize = 11.sp)
+                Spacer(Modifier.width(6.dp))
+                Text(relativeTime(comment.createdAt), color = SubText, fontSize = 11.sp)
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(comment.body, color = SoftText, fontSize = 13.sp, lineHeight = 18.sp)
+        }
+    }
+}
+
+// ─── Community feed data models ────────────────────────────────────────────────
+private data class FeedPostData(
+    val id: String,
+    val authorId: String,
+    val title: String,
+    val body: String,
+    val imageUrl: String,
+    val type: String,
+    val pinned: Boolean,
+    val official: Boolean,
+    val createdAt: String
+)
+
+private data class AuthorInfo(
+    val id: String,
+    val username: String,
+    val displayName: String,
+    val avatarUrl: String,
+    val role: String
+)
+
+// ─── Time helpers (SimpleDateFormat — safe on all API levels incl. 24/25) ──────
+/** Parse an ISO-8601 timestamptz (Supabase) to epoch millis (UTC). Returns 0 on failure. */
+fun parseIsoToMillis(iso: String): Long {
+    if (iso.isBlank()) return 0L
+    return try {
+        // Truncate to "yyyy-MM-dd'T'HH:mm:ss" (drop fractional + tz offset), assume UTC.
+        val core = iso.substringBefore('.').substringBefore('+').take(19)
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        sdf.parse(core)?.time ?: 0L
+    } catch (_: Throwable) { 0L }
+}
+
+/** Relative time in Indonesian: "baru saja" / "Xm" / "Xj" / "Xd" / date. */
+fun relativeTime(iso: String): String {
+    val ts = parseIsoToMillis(iso)
+    if (ts == 0L) return ""
+    val diff = System.currentTimeMillis() - ts
+    if (diff < 0) return "baru saja"
+    val mins  = diff / 60_000L
+    val hours = diff / 3_600_000L
+    val days  = diff / 86_400_000L
+    return when {
+        mins  < 1   -> "baru saja"
+        mins  < 60  -> "${mins}m"
+        hours < 24  -> "${hours}j"
+        days  < 30  -> "${days}d"
+        else        -> iso.take(10)
+    }
+}
+
+// ─── Phase 2 Community: Video embed (YouTube / TikTok) ────────────────────────
+
+/** Detected video embed inside a post body. */
+data class VideoEmbed(
+    val platform: String,        // "youtube" | "tiktok"
+    val thumbnailUrl: String?,   // null for TikTok (no public thumbnail API)
+    val originalUrl: String      // full URL to open in browser
+)
+
+private val YOUTUBE_REGEX = Regex(
+    "(https?://)?(www\\.)?(youtube\\.com/watch\\?v=|youtu\\.be/|youtube\\.com/shorts/)([\\w-]{6,})"
+)
+private val TIKTOK_REGEX = Regex(
+    "(https?://)?(www\\.)?tiktok\\.com/@[\\w.]+/video/(\\d+)"
+)
+
+/**
+ * Cari URL YouTube atau TikTok di dalam teks post body.
+ * - YouTube: return thumbnail URL (img.youtube.com/vi/ID/hqdefault.jpg) + original watch URL.
+ * - TikTok: return null thumbnail (caller shows TikTok badge) + original URL.
+ * - Tidak ketemu: return null.
+ */
+fun extractVideoEmbed(text: String): VideoEmbed? {
+    if (text.isBlank()) return null
+    // YouTube
+    val ytMatch = YOUTUBE_REGEX.find(text)
+    if (ytMatch != null) {
+        val videoId = ytMatch.groupValues[4]
+        return VideoEmbed(
+            platform     = "youtube",
+            thumbnailUrl = "https://img.youtube.com/vi/$videoId/hqdefault.jpg",
+            originalUrl  = "https://www.youtube.com/watch?v=$videoId"
+        )
+    }
+    // TikTok
+    val ttMatch = TIKTOK_REGEX.find(text)
+    if (ttMatch != null) {
+        return VideoEmbed(
+            platform     = "tiktok",
+            thumbnailUrl = null,  // TikTok tidak punya public thumbnail API
+            originalUrl  = ttMatch.value.let {
+                if (it.startsWith("http")) it else "https://$it"
+            }
+        )
+    }
+    return null
+}
+
+// ─── Phase 2 Community: Comments ──────────────────────────────────────────────
+
+private data class CommentItem(
+    val id: String,
+    val userId: String,
+    val username: String,
+    val displayName: String,
+    val body: String,
+    val createdAt: String
+)
+
+// ─── Profile / Me screen (Phase 2: TapTap-style polish) ──────────────────────
+@Composable
+fun ProfileScreen(
+    api: CommunityApi,
+    onLogout: () -> Unit,
+    onOpenSettings: () -> Unit = {},
+    expandedSection: String? = null,
+    onExpandedSectionChange: (String?) -> Unit = {}
+) {
     val context       = LocalContext.current
     // Load gameInstalled async to avoid blocking main thread
     var gameInstalled by remember { mutableStateOf(false) }
+    // profileLoading: true saat initial load, false setelah gameInstalled ter-resolve.
+    // Dipakai untuk render TTGameCardSkeleton (TapTap-style) sebagai placeholder.
+    var profileLoading by remember { mutableStateOf(true) }
+    // Phase 4: expandedSection di-lift ke MainShell supaya SettingsScreen bisa
+    // membuka Profile dengan section tertentu (password/email/profile) ter-expand.
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { runCatching { gameInstalled = isGameInstalled(context) } }
+        profileLoading = false
     }
     var confirmLogout by remember { mutableStateOf(false) }
     val initial = api.displayName().firstOrNull()?.uppercaseChar()?.toString() ?: "D"
@@ -1605,11 +4752,16 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.xl),
+        verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
     ) {
 
-        // ── Hero Avatar Card (premium gradient ring + glow) ──
+        // ── Hero Avatar Card (atau shimmer skeleton saat loading) ──
+        // Phase 2 polish: gradient border + glow + rotating gradient ring + tap-to-edit
+        if (profileLoading) {
+            // TapTap-style shimmer skeleton sebagai placeholder
+            TTGameCardSkeleton()
+        } else {
         PremiumGlassCard(gradientBorder = true) {
             val infiniteTransition = rememberInfiniteTransition(label = "profile_glow")
             val avatarGlow by infiniteTransition.animateFloat(
@@ -1620,11 +4772,13 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(TTSpacing.lg)
             ) {
-                // Avatar with gradient ring + glow
+                // Avatar with gradient ring + glow — tap to expand "Ganti Profil" section
                 Box(
-                    Modifier.size(72.dp),
+                    Modifier
+                        .size(72.dp)
+                        .clickable { onExpandedSectionChange("profile") },
                     contentAlignment = Alignment.Center
                 ) {
                     // Outer glow
@@ -1662,21 +4816,13 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
                             style = Stroke(width = stroke)
                         )
                     }
-                    // Inner avatar
-                    Box(
-                        Modifier
-                            .size(60.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.linearGradient(listOf(CandyCyan, CandyBlue, PremiumViolet))
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            initial, fontSize = 24.sp, fontWeight = FontWeight.Black,
-                            color = Carbon
-                        )
-                    }
+                    // Inner avatar — v3.0 monochrome (black bg + white initial + halftone)
+                    DLavieLogoCover(
+                        size = 60.dp,
+                        text = initial,
+                        fontSize = 24.sp,
+                        shape = CircleShape
+                    )
                 }
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -1687,116 +4833,223 @@ fun ProfileScreen(api: CommunityApi, onLogout: () -> Unit) {
                         "@${api.username().ifEmpty { "unknown" }}",
                         color = SoftText, fontSize = 12.sp
                     )
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(TTSpacing.sm))
                     ModernPill(role.uppercase(), roleBadgeColor(role))
+                    Spacer(Modifier.height(TTSpacing.xs))
+                    // "Tap avatar untuk edit profil" hint — muted text kecil di bawah role pill
+                    Text(
+                        "Tap avatar untuk edit profil ↓",
+                        color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium
+                    )
                 }
             }
-            Spacer(Modifier.height(14.dp))
-            // Account details tiles
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MiniStatusTile("Game", if (gameInstalled) "Terinstall" else "Belum ada", gameInstalled, Modifier.weight(1f))
-                MiniStatusTile("Sesi", "Aktif", true, Modifier.weight(1f))
-                MiniStatusTile("Server", "Online", true, Modifier.weight(1f))
+        }
+        } // end if (profileLoading) else { ... }
+
+        // ── Phase 2: Stats row (extracted dari hero card, pakai TTShapes.cardLarge) ──
+        // Tiga status tile: Game installed, Sesi, Server. Press scale + tappable.
+        if (!profileLoading) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
+                ProfileStatTile(
+                    label = "Game",
+                    value = if (gameInstalled) "Terinstall" else "Belum ada",
+                    ok = gameInstalled,
+                    modifier = Modifier.weight(1f)
+                )
+                ProfileStatTile(
+                    label = "Sesi",
+                    value = "Aktif",
+                    ok = true,
+                    modifier = Modifier.weight(1f)
+                )
+                ProfileStatTile(
+                    label = "Server",
+                    value = "Online",
+                    ok = true,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
 
-        // ── Game action ──
-        GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.SportsSoccer, null, tint = NeonGreen, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("FIFA 16 Mobile", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(10.dp))
-            if (gameInstalled) {
-                Button(
-                    onClick  = { launchGame(context) },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    shape    = RoundedCornerShape(14.dp),
-                    colors   = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color(0xFF00150B))
+        // ── Game action (TapTap-style TTTappableCard) ──
+        if (!profileLoading) {
+            TTTappableCard(
+                onClick = { if (gameInstalled) launchGame(context) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Main FIFA 16", fontWeight = FontWeight.Bold)
+                    Box(
+                        Modifier.size(36.dp)
+                            .background(NeonGreen.copy(0.12f), TTShapes.small),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.SportsSoccer, null, tint = NeonGreen, modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.width(TTSpacing.md))
+                    Column(Modifier.weight(1f)) {
+                        Text("FIFA 16 Mobile", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
+                        Text(
+                            if (gameInstalled) "Tap untuk mainkan" else "Game belum terinstall",
+                            color = SoftText, fontSize = 11.sp
+                        )
+                    }
+                    if (gameInstalled) {
+                        Icon(Icons.Rounded.PlayCircle, null, tint = NeonGreen, modifier = Modifier.size(24.dp))
+                    }
                 }
-            } else {
-                GlassInfoBox(Icons.Rounded.Info, CandyCyan, "Game belum terinstall. Kembali ke Beranda untuk mengunduh dan menginstal FIFA 16.")
+            }
+        }
+
+        // ── Phase 4: Pengaturan entry (opens SettingsScreen overlay) ──
+        if (!profileLoading) {
+            TTTappableCard(
+                onClick = { onOpenSettings() },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
+                            .background(Color.White.copy(0.05f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Settings, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text("Pengaturan", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Icon(Icons.Rounded.ChevronRight, null, tint = SubText, modifier = Modifier.size(20.dp))
+                }
             }
         }
 
         // ── Info akun ──
         GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.AccountCircle, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Detail Akun", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(10.dp))
+            TTSectionHeader(title = "Detail Akun", icon = Icons.Rounded.AccountCircle)
+            Spacer(Modifier.height(TTSpacing.sm))
             ProfRow("Username",    "@${api.username().ifEmpty { "-" }}")
             ProfRow("Nama",        api.displayName().ifEmpty { "-" })
             ProfRow("Role",        role.replaceFirstChar { it.uppercase() })
             ProfRow("Server",      "DLavie Cloud")
         }
 
-        // ── Akun & Keamanan (Account Settings) ──
-        AccountSettingsCard(api = api, context = context)
+        // ── Akun & Keamanan (Account Settings — TTTappableCard per section) ──
+        AccountSettingsCard(
+            api = api,
+            context = context,
+            expandedSection = expandedSection,
+            onExpandedSectionChange = onExpandedSectionChange
+        )
 
         // ── Keamanan ──
         GlassCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Security, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Keamanan", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(8.dp))
+            TTSectionHeader(title = "Keamanan", icon = Icons.Rounded.Security)
+            Spacer(Modifier.height(TTSpacing.sm))
             listOf(
                 "Sesi terenkripsi — diperbarui otomatis setiap 50 menit.",
                 "Setiap pembaruan diverifikasi sebelum diterapkan.",
                 "Data login tidak pernah disimpan di penyimpanan lokal."
             ).forEach { text ->
-                Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+                ) {
                     Icon(Icons.Rounded.CheckCircle, null, tint = NeonGreen, modifier = Modifier.size(13.dp).padding(top = 2.dp))
                     Text(text, color = SoftText, fontSize = 12.sp, lineHeight = 16.sp)
                 }
             }
         }
 
-        // ── Logout ──
+        // ── Logout (Phase 2: pakai TTShapes.button + design system baru) ──
         AnimatedContent(targetState = confirmLogout, label = "logout") { confirm ->
             if (!confirm) {
                 OutlinedButton(
                     onClick  = { confirmLogout = true },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    shape    = RoundedCornerShape(14.dp),
-                    border   = BorderStroke(1.dp, DangerRed.copy(0.4f))
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape    = TTShapes.button,
+                    border   = BorderStroke(1.dp, DangerRed.copy(0.45f)),
+                    colors   = ButtonDefaults.outlinedButtonColors(contentColor = DangerRed)
                 ) {
-                    Text("Keluar dari Akun", color = DangerRed, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Rounded.Cancel, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(TTSpacing.sm))
+                    Text("Keluar dari Akun", color = DangerRed, fontWeight = FontWeight.Black, fontSize = 14.sp)
                 }
             } else {
-                GlassCard(borderColor = DangerRed.copy(0.5f)) {
-                    Text("Konfirmasi Keluar", color = DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(4.dp))
+                GlassCard(borderColor = DangerRed.copy(0.55f)) {
+                    Text("Konfirmasi Keluar", color = DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                    Spacer(Modifier.height(TTSpacing.xs))
                     Text("Kamu harus login kembali setelah keluar.", color = SoftText, fontSize = 13.sp)
-                    Spacer(Modifier.height(14.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Spacer(Modifier.height(TTSpacing.md))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
                         OutlinedButton(
                             onClick  = { confirmLogout = false },
                             modifier = Modifier.weight(1f).height(48.dp),
-                            shape    = RoundedCornerShape(12.dp),
-                            border   = BorderStroke(1.dp, GlassStroke)
-                        ) { Text("Batal", color = SoftText) }
+                            shape    = TTShapes.button,
+                            border   = BorderStroke(1.dp, GlassStroke),
+                            colors   = ButtonDefaults.outlinedButtonColors(contentColor = SoftText)
+                        ) { Text("Batal", fontWeight = FontWeight.Bold) }
                         Button(
                             onClick  = onLogout,
                             modifier = Modifier.weight(1f).height(48.dp),
-                            shape    = RoundedCornerShape(12.dp),
-                            colors   = ButtonDefaults.buttonColors(containerColor = DangerRed)
-                        ) { Text("Keluar", fontWeight = FontWeight.Bold) }
+                            shape    = TTShapes.button,
+                            colors   = ButtonDefaults.buttonColors(
+                                containerColor = DangerRed,
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Icon(Icons.Rounded.Cancel, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(TTSpacing.xs))
+                            Text("Keluar", fontWeight = FontWeight.Black)
+                        }
                     }
                 }
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(TTSpacing.sm))
+    }
+}
+
+// ─── Profile stat tile (Phase 2: TapTap-style, pakai TTShapes.cardLarge) ──────
+@Composable
+private fun ProfileStatTile(
+    label: String,
+    value: String,
+    ok: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val color by animateColorAsState(
+        if (ok) NeonGreen else DangerRed,
+        tween(400), label = "stat_tile_c_$label"
+    )
+    Card(
+        modifier = modifier,
+        shape = TTShapes.cardLarge,
+        colors = CardDefaults.cardColors(containerColor = GlassBase),
+        border = BorderStroke(1.dp, if (ok) NeonGreen.copy(0.25f) else DangerRed.copy(0.25f))
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(TTSpacing.md),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                Modifier.size(24.dp).clip(CircleShape).background(color.copy(0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (ok) Icons.Rounded.CheckCircle else Icons.Rounded.Cancel,
+                    null, tint = color, modifier = Modifier.size(16.dp)
+                )
+            }
+            Spacer(Modifier.height(TTSpacing.xs))
+            Text(label, color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Black, maxLines = 1)
+            Text(value, color = color, fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
@@ -1966,11 +5219,17 @@ fun ThreadPanel(topic: TopicItem?, posts: List<PostItem>, reply: String, modifie
 }
 
 // ─── Account Settings Card (Profile screen) ──────────────────────────────────
+// expandedSection & onExpandedSectionChange di-lift dari ProfileScreen supaya
+// avatar card bisa trigger expand "profile" section dari luar.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AccountSettingsCard(api: CommunityApi, context: android.content.Context) {
+fun AccountSettingsCard(
+    api: CommunityApi,
+    context: android.content.Context,
+    expandedSection: String? = null,
+    onExpandedSectionChange: (String?) -> Unit = {}
+) {
     val scope = rememberCoroutineScope()
-    var expandedSection by remember { mutableStateOf<String?>(null) }
     var working by remember { mutableStateOf(false) }
     var resultMsg by remember { mutableStateOf("") }
     var isSuccess by remember { mutableStateOf(false) }
@@ -2025,7 +5284,7 @@ fun AccountSettingsCard(api: CommunityApi, context: android.content.Context) {
             title = "Ganti Password",
             subtitle = "Minimal 6 karakter. Sesi lain akan otomatis logout.",
             expanded = expandedSection == "password",
-            onToggle = { expandedSection = if (expandedSection == "password") null else "password"; resultMsg = "" }
+            onToggle = { onExpandedSectionChange(if (expandedSection == "password") null else "password"); resultMsg = "" }
         ) {
             ModernTextField(
                 value = newPass,
@@ -2066,7 +5325,7 @@ fun AccountSettingsCard(api: CommunityApi, context: android.content.Context) {
             title = "Ganti Email",
             subtitle = "Email konfirmasi akan dikirim ke email baru.",
             expanded = expandedSection == "email",
-            onToggle = { expandedSection = if (expandedSection == "email") null else "email"; resultMsg = "" }
+            onToggle = { onExpandedSectionChange(if (expandedSection == "email") null else "email"); resultMsg = "" }
         ) {
             ModernTextField(
                 value = newEmail,
@@ -2093,7 +5352,7 @@ fun AccountSettingsCard(api: CommunityApi, context: android.content.Context) {
             title = "Ganti Profil",
             subtitle = "Username (3-24, a-z 0-9 _) dan Display Name (2-40).",
             expanded = expandedSection == "profile",
-            onToggle = { expandedSection = if (expandedSection == "profile") null else "profile"; resultMsg = "" }
+            onToggle = { onExpandedSectionChange(if (expandedSection == "profile") null else "profile"); resultMsg = "" }
         ) {
             ModernTextField(
                 value = newUsername,
@@ -2135,7 +5394,7 @@ fun AccountSettingsCard(api: CommunityApi, context: android.content.Context) {
             subtitle = if (pinEnabled) "Klik untuk ubah / nonaktifkan PIN."
                        else "Lindungi launcher dengan PIN 6-digit.",
             expanded = expandedSection == "pin",
-            onToggle = { expandedSection = if (expandedSection == "pin") null else "pin"; resultMsg = "" }
+            onToggle = { onExpandedSectionChange(if (expandedSection == "pin") null else "pin"); resultMsg = "" }
         ) {
             if (pinEnabled) {
                 Button(
@@ -2156,7 +5415,7 @@ fun AccountSettingsCard(api: CommunityApi, context: android.content.Context) {
                     onClick  = {
                         PinLockActivity.launch(context, PinLockActivity.MODE_DISABLE)
                         // After disable activity returns, refresh state on resume
-                        expandedSection = null
+                        onExpandedSectionChange(null)
                     },
                     enabled  = !working,
                     modifier = Modifier.fillMaxWidth().height(46.dp),
@@ -2205,6 +5464,7 @@ fun AccountSettingsCard(api: CommunityApi, context: android.content.Context) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -2214,23 +5474,37 @@ private fun SettingRow(
     onToggle: () -> Unit,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
 ) {
-    Surface(
-        color = Color(0xFF0F1828),
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, if (expanded) CandyCyan.copy(0.5f) else GlassStroke)
+    // Phase 2: TTTappableCard style — press scale spring bounce on header row
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "setting_row_press"
+    )
+    Card(
+        modifier = Modifier.fillMaxWidth().scale(scale),
+        shape = TTShapes.button,
+        colors = CardDefaults.cardColors(containerColor = GlassBase),
+        border = BorderStroke(1.dp, if (expanded) CandyCyan.copy(0.5f) else GlassStroke),
+        interactionSource = interactionSource,
+        onClick = onToggle
     ) {
         Column {
             Row(
-                Modifier.fillMaxWidth().clickable { onToggle() }.padding(14.dp),
+                Modifier.fillMaxWidth().padding(TTSpacing.md),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
-                    Modifier.size(32.dp).background(CandyBlue.copy(0.12f), RoundedCornerShape(10.dp)),
+                    Modifier.size(32.dp).background(CandyBlue.copy(0.12f), TTShapes.small),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(icon, null, tint = CandyCyan, modifier = Modifier.size(18.dp))
                 }
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(TTSpacing.md))
                 Column(Modifier.weight(1f)) {
                     Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Text(subtitle, color = SoftText, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -2241,7 +5515,7 @@ private fun SettingRow(
                 )
             }
             AnimatedVisibility(expanded) {
-                Column(Modifier.padding(horizontal = 14.dp).padding(bottom = 14.dp), content = content)
+                Column(Modifier.padding(horizontal = TTSpacing.md).padding(bottom = TTSpacing.md), content = content)
             }
         }
     }
@@ -2275,6 +5549,93 @@ private fun ModernTextField(
     )
 }
 
+// ─── App Update Popup ─────────────────────────────────────────────────────────
+@Composable
+fun AppUpdatePopup(
+    info: AppUpdateChecker.UpdateInfo,
+    downloading: Boolean,
+    progress: Float,
+    onUpdate: () -> Unit,
+    onLater: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { if (!downloading) onLater() },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.SystemUpdate, null, tint = Color.White, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Update Tersedia!", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    "Versi baru ${info.versionName} sudah tersedia.",
+                    color = SoftText, fontSize = 13.sp
+                )
+                Spacer(Modifier.height(8.dp))
+
+                // Release notes (truncate kalau terlalu panjang)
+                val notes = info.releaseNotes.take(500)
+                if (notes.isNotEmpty()) {
+                    Text(
+                        notes,
+                        color = SubText, fontSize = 11.sp, lineHeight = 15.sp,
+                        maxLines = 8,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Download progress
+                if (downloading) {
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color.White,
+                        trackColor = Surface2
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Mengunduh... ${(progress * 100).toInt()}%",
+                        color = SoftText, fontSize = 11.sp
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onUpdate,
+                enabled = !downloading,
+                shape = TTShapes.button,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Carbon
+                )
+            ) {
+                if (downloading) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Carbon, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Mengunduh...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                } else {
+                    Icon(Icons.Rounded.SystemUpdate, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Update Sekarang", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onLater,
+                enabled = !downloading
+            ) {
+                Text("Nanti saja", color = SubText, fontSize = 13.sp)
+            }
+        },
+        containerColor = GlassBase
+    )
+}
+
 // ─── Helper functions ─────────────────────────────────────────────────────────
 
 fun isGameInstalled(context: android.content.Context): Boolean =
@@ -2283,20 +5644,106 @@ fun isGameInstalled(context: android.content.Context): Boolean =
 fun readMarker(): String =
     try { File(MARKER_PATH).readText().trim() } catch (_: Exception) { "" }
 
-fun fetchUpdateInfo(): UpdateInfo {
-    val json       = fetchJson(DEFAULT_MANIFEST)
+/**
+ * Fetch update info — prioritas Supabase update_posts (Dev Dashboard),
+ * fallback ke GitHub manifest (DEFAULT_MANIFEST) jika Supabase error / kosong /
+ * user belum login.
+ *
+ * @param api CommunityApi instance; kalau null atau belum login, langsung fallback
+ *            ke manifest. Boleh null agar caller lama tetap jalan.
+ */
+fun fetchUpdateInfo(api: CommunityApi? = null): UpdateInfo {
+    // ── 1. Coba Supabase update_posts dulu (kalau user login & ada data) ──
+    if (api != null) {
+        try {
+            if (api.loggedIn()) {
+                val latest = api.fetchLatestUpdatePost()
+                if (latest != null) {
+                    val code = latest.optInt("version_code", LOCAL_VER)
+                    val name = latest.optString("version_name", "").ifBlank { "v$code" }
+                    val notesArr = latest.optJSONArray("release_notes")
+                    val notes = if (notesArr != null) List(notesArr.length()) { i -> notesArr.optString(i) } else emptyList()
+                    return UpdateInfo(
+                        latestCode      = code,
+                        latestName      = name,
+                        upToDate        = code <= LOCAL_VER,
+                        releaseNotes    = notes,
+                        patchUrl        = latest.optString("patch_url", ""),
+                        patchSha256     = latest.optString("patch_sha256", ""),
+                        patchSize       = latest.optLong("patch_size_bytes", 0L),
+                        critical        = latest.optBoolean("critical", false),
+                        restartRequired = latest.optBoolean("restart_game_required", false),
+                        source          = "supabase"
+                    )
+                }
+            }
+        } catch (_: Throwable) {
+            // Supabase error / RLS / network — fall through ke manifest.
+        }
+    }
+
+    // ── 2. Fallback ke GitHub manifest ──
+    val json = fetchJson(DEFAULT_MANIFEST)
     // Support both DLavie-Launcher-Data format {version:26} and legacy {latestVersionCode:N}
     val latestCode = json.optInt("version", json.optInt("latestVersionCode", LOCAL_VER))
     val latestName = json.optString("latestVersionName", "v$latestCode")
     val notesArr   = json.optJSONArray("releaseNotes")
     val notes      = if (notesArr != null) List(notesArr.length()) { i -> notesArr.optString(i) } else emptyList()
-    return UpdateInfo(latestCode, latestName, latestCode <= LOCAL_VER, notes)
+    return UpdateInfo(latestCode, latestName, latestCode <= LOCAL_VER, notes, source = "manifest")
+}
+
+/**
+ * Fetch maintenance info dari Supabase app_config (key="maintenance").
+ * Mengembalikan MaintenanceInfo(enabled=false) kalau gagal / belum ada row,
+ * supaya launcher tetap jalan (fail-open).
+ */
+fun fetchMaintenanceInfo(api: CommunityApi): MaintenanceInfo {
+    return try {
+        val obj = api.getAppConfig("maintenance")
+        MaintenanceInfo(
+            enabled         = obj.optBoolean("enabled", false),
+            title           = obj.optString("title", ""),
+            message         = obj.optString("message", ""),
+            scope           = obj.optString("scope", "none"),
+            allowOfflinePlay = obj.optBoolean("allow_offline_play", true)
+        )
+    } catch (_: Throwable) {
+        MaintenanceInfo(enabled = false, title = "", message = "", scope = "none", allowOfflinePlay = true)
+    }
+}
+
+/**
+ * Fetch latest sent notification campaign (untuk inline banner di HomeScreen).
+ * Mengembalikan null kalau user belum login, belum ada campaign, atau error.
+ */
+fun fetchLatestNotifCampaign(api: CommunityApi): NotifCampaign? {
+    return try {
+        if (!api.loggedIn()) return null
+        val arr = api.getNotifications(1)
+        if (arr.length() == 0) return null
+        val n = arr.getJSONObject(0)
+        NotifCampaign(
+            id     = n.optString("id", ""),
+            title  = n.optString("title", ""),
+            body   = n.optString("body", ""),
+            sentAt = n.optString("sent_at", n.optString("created_at", ""))
+        )
+    } catch (_: Throwable) { null }
 }
 
 fun parseFeed(arr: JSONArray): List<FeedItem> = try {
     List(arr.length()) { i ->
         val o = arr.getJSONObject(i)
-        FeedItem(o.optString("id"), o.optString("title"), o.optString("body"), o.optString("type","info"), o.optBoolean("pinned"), o.optBoolean("official"))
+        FeedItem(
+            id        = o.optString("id"),
+            title     = o.optString("title"),
+            body      = o.optString("body"),
+            type      = o.optString("type", "info"),
+            pinned    = o.optBoolean("pinned"),
+            official  = o.optBoolean("official"),
+            imageUrl  = o.optString("image_url", ""),
+            createdAt = o.optString("created_at", "")
+        )
     }
 } catch (_: Exception) { emptyList() }
 
@@ -2308,9 +5755,108 @@ fun roleBadgeColor(role: String): Color = when (role.lowercase()) {
 }
 
 fun launchGame(context: android.content.Context) {
+    // Fire-and-forget telemetry — game_launch event.
+    Telemetry.track(context, Telemetry.EVT_GAME_LAUNCH, mapOf("game_package" to GAME_PKG))
     val intent = context.packageManager.getLaunchIntentForPackage(GAME_PKG)
     if (intent != null) context.startActivity(intent)
     else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(FIFA_APK_URL)))
+}
+
+// ─── Push Notification polling helpers (Module 3) ────────────────────────────────
+private const val SEEN_NOTIFS_PREFS = "dlavie_seen_notifs"
+
+private fun loadSeenNotifs(context: android.content.Context): MutableSet<String> {
+    return context.getSharedPreferences(SEEN_NOTIFS_PREFS, android.content.Context.MODE_PRIVATE)
+        .getStringSet("seen_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+}
+
+private fun saveSeenNotifs(context: android.content.Context, ids: Set<String>) {
+    context.getSharedPreferences(SEEN_NOTIFS_PREFS, android.content.Context.MODE_PRIVATE)
+        .edit().putStringSet("seen_ids", ids).apply()
+}
+
+/**
+ * Polls the most recent sent notification_campaigns and returns the first unseen
+ * (per SharedPreferences) one that targets the current user.
+ *
+ * Target resolution:
+ *   - {type: "all"}           → always show
+ *   - {type: "role", role: X} → show only if api.role() == X
+ *
+ * Side effects:
+ *   - Marks fetched campaign IDs as seen (so subsequent polls don't re-show them).
+ *
+ * @return the newest unseen NotificationItem matching the target, or null if none.
+ */
+fun fetchUnseenNotifications(context: android.content.Context, api: CommunityApi): NotificationItem? {
+    return try {
+        val arr = api.getNotifications(5)
+        if (arr.length() == 0) return null
+        val seen = loadSeenNotifs(context)
+        val myRole = api.role().lowercase()
+
+        // Iterate from newest to oldest; first unseen match wins.
+        for (i in 0 until arr.length()) {
+            val row = arr.getJSONObject(i)
+            val id = row.optString("id", "")
+            if (id.isBlank() || seen.contains(id)) continue
+
+            // Mark as seen immediately so we never re-show it.
+            seen.add(id)
+
+            // Resolve target spec — should be a jsonb object {type:"all"|"role", role?}.
+            val targetObj = row.opt("target")
+            val targetType: String
+            val targetRole: String?
+            when (targetObj) {
+                is JSONObject -> {
+                    targetType = targetObj.optString("type", "all")
+                    targetRole = targetObj.optString("role", "").ifBlank { null }
+                }
+                else -> { targetType = "all"; targetRole = null }
+            }
+
+            // Target filter
+            val matches = when (targetType.lowercase()) {
+                "all"  -> true
+                "role" -> targetRole != null && myRole == targetRole.lowercase()
+                else   -> true // unknown target type — show anyway
+            }
+
+            if (!matches) continue
+
+            // Persist seen set before returning so we don't re-poll the same id.
+            saveSeenNotifs(context, seen)
+
+            // Resolve action spec — {type:"open_app"|"open_url", url?}.
+            val actionObj = row.opt("action")
+            val actionType: String
+            val actionUrl: String?
+            when (actionObj) {
+                is JSONObject -> {
+                    actionType = actionObj.optString("type", "open_app")
+                    actionUrl  = actionObj.optString("url", "").ifBlank { null }
+                }
+                else -> { actionType = "open_app"; actionUrl = null }
+            }
+
+            return NotificationItem(
+                id         = id,
+                title      = row.optString("title", "Notifikasi DLavie"),
+                body       = row.optString("body", ""),
+                actionType = actionType,
+                actionUrl  = actionUrl,
+                targetType = targetType,
+                targetRole = targetRole
+            )
+        }
+        // No matching unseen notification — persist seen set anyway.
+        saveSeenNotifs(context, seen)
+        null
+    } catch (_: Exception) {
+        // Network/parse error — silent failure, don't crash the UI.
+        null
+    }
 }
 
 fun fetchJson(url: String): JSONObject {

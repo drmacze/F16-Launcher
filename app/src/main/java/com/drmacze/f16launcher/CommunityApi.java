@@ -52,6 +52,11 @@ public class CommunityApi {
     public String token() { return prefs.getString("access_token", ""); }
     public String username() { return prefs.getString("username", ""); }
     public String displayName() { return prefs.getString("display_name", ""); }
+    public String country() { return prefs.getString("country", "Indonesia"); }
+    public void setCountry(String country) {
+        if (country == null || country.trim().isEmpty()) return;
+        prefs.edit().putString("country", country.trim()).apply();
+    }
     public void logout() { prefs.edit().clear().apply(); }
 
     public JSONObject register(String email, String password, String username, String displayName, String avatarUrl) throws Exception {
@@ -102,11 +107,34 @@ public class CommunityApi {
     public JSONObject ensureMyProfile(String username, String displayName, String avatarUrl) throws Exception {
         if (userId().isEmpty()) throw new IllegalStateException("Belum login.");
         validateProfile(username, displayName);
+        // Cek apakah profile sudah ada (trigger handle_new_user sudah create)
+        // Kalau sudah ada, hanya update display_name & avatar — JANGAN override username
+        // (karena bisa conflict dengan unique constraint kalau username sudah dipakai user lain)
         JSONObject body = new JSONObject();
         body.put("id", userId());
-        body.put("username", username.trim());
         body.put("display_name", displayName.trim());
         if (avatarUrl != null && !avatarUrl.trim().isEmpty()) body.put("avatar_url", avatarUrl.trim());
+        // Cek username existing — hanya set kalau berbeda dari yang ada
+        try {
+            JSONArray existing = new JSONArray(request("GET", "/rest/v1/profiles?id=eq." + enc(userId()) + "&select=username", null, true, false));
+            if (existing.length() > 0) {
+                String currentUsername = existing.getJSONObject(0).optString("username", "");
+                if (!currentUsername.isEmpty() && !currentUsername.equals(username.trim())) {
+                    // Username di profile berbeda dari input — kemungkinan sudah diambil user lain
+                    // atau di-auto-generate oleh trigger. Coba update kalau available.
+                    try {
+                        body.put("username", username.trim());
+                    } catch (Throwable ignored) { }
+                }
+                // else: username sama, tidak perlu update (hindari duplicate check)
+            } else {
+                // Profile belum ada, set username
+                body.put("username", username.trim());
+            }
+        } catch (Throwable ignored) {
+            // Gagal cek existing, set username (kalau conflict, akan throw — caller handle)
+            body.put("username", username.trim());
+        }
         JSONArray arr = new JSONArray(request("POST", "/rest/v1/profiles?on_conflict=id", body, true, "resolution=merge-duplicates,return=representation"));
         try {
             JSONObject setting = new JSONObject();
@@ -140,14 +168,515 @@ public class CommunityApi {
     }
 
     private void saveProfile(JSONObject p) {
-        prefs.edit().putString("username", p.optString("username", "")).putString("display_name", p.optString("display_name", "")).putString("avatar_url", p.optString("avatar_url", "")).putString("role", p.optString("role", "member")).apply();
+        String country = p.optString("country", "");
+        SharedPreferences.Editor e = prefs.edit()
+            .putString("username", p.optString("username", ""))
+            .putString("display_name", p.optString("display_name", ""))
+            .putString("avatar_url", p.optString("avatar_url", ""))
+            .putString("role", p.optString("role", "member"));
+        if (!country.isEmpty()) e.putString("country", country);
+        e.apply();
     }
 
     public String role() { return prefs.getString("role", "member"); }
     public String avatarUrl() { return prefs.getString("avatar_url", ""); }
 
     public JSONArray feedPosts() throws Exception {
-        return new JSONArray(request("GET", "/rest/v1/feed_posts?select=id,title,body,type,pinned,official,created_at&order=pinned.desc,created_at.desc&limit=8", null, false, (String) null));
+        // Authenticated request — uses user's access token so RLS policies can resolve author + visibility.
+        return new JSONArray(request("GET", "/rest/v1/feed_posts?select=id,author_id,title,body,image_url,type,visibility,pinned,official,created_at&order=pinned.desc,created_at.desc&limit=10", null, true, (String) null));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Community follows (community_follows table — TapTap-style "Following")
+    //  Schema:
+    //    follower_id  uuid PK references profiles(id) on delete cascade
+    //    following_id uuid PK references profiles(id) on delete cascade
+    //    created_at   timestamptz default now()
+    //  RLS: SELECT public, INSERT/UPDATE/DELETE owner (follower) only.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Follow a user. Idempotent (on_conflict merge). Login required. */
+    public void followUser(String userId) throws Exception {
+        JSONObject body = new JSONObject().put("follower_id", userId()).put("following_id", userId);
+        request("POST", "/rest/v1/community_follows?on_conflict=follower_id,following_id", body, true, "resolution=merge-duplicates,return=minimal");
+    }
+
+    /** Unfollow a user. Login required. */
+    public void unfollowUser(String userId) throws Exception {
+        request("DELETE", "/rest/v1/community_follows?follower_id=eq." + enc(userId()) + "&following_id=eq." + enc(userId), null, true, false);
+    }
+
+    /** Check if current user follows a specific user. Login required. */
+    public boolean isFollowing(String userId) throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/community_follows?follower_id=eq." + enc(userId()) + "&following_id=eq." + enc(userId) + "&select=follower_id",
+            null, true, false));
+        return arr.length() > 0;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Feed posts — TapTap-style "For You" (global) + "Following" tabs
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Fetch feed posts for "For You" (global) — with filter. Public read. */
+    public JSONArray fetchFeedPostsGlobal(String sortBy, int limit) throws Exception {
+        String order = "created_at.desc";
+        if ("oldest".equals(sortBy)) order = "created_at.asc";
+        return new JSONArray(request("GET",
+            "/rest/v1/feed_posts?order=" + order + "&limit=" + limit +
+            "&select=id,author_id,title,body,image_url,type,pinned,official,created_at",
+            null, false, false));
+    }
+
+    /** Fetch feed posts for "Following" — only from followed users. Login required. */
+    public JSONArray fetchFeedPostsFollowing(String sortBy, int limit) throws Exception {
+        String order = "created_at.desc";
+        if ("oldest".equals(sortBy)) order = "created_at.asc";
+        // Get list of following IDs first
+        JSONArray follows = new JSONArray(request("GET",
+            "/rest/v1/community_follows?follower_id=eq." + enc(userId()) + "&select=following_id",
+            null, true, false));
+        if (follows.length() == 0) return new JSONArray();
+
+        StringBuilder inList = new StringBuilder();
+        for (int i = 0; i < follows.length(); i++) {
+            if (i > 0) inList.append(",");
+            inList.append(enc(follows.getJSONObject(i).getString("following_id")));
+        }
+
+        return new JSONArray(request("GET",
+            "/rest/v1/feed_posts?author_id=in.(" + inList + ")&order=" + order + "&limit=" + limit +
+            "&select=id,author_id,title,body,image_url,type,pinned,official,created_at",
+            null, true, false));
+    }
+
+    /** Create a new feed post with image. Login required. Returns the created row. */
+    public JSONObject createFeedPost(String title, String body, String imageUrl, String type) throws Exception {
+        JSONObject payload = new JSONObject()
+            .put("author_id", userId())
+            .put("title", title.trim())
+            .put("body", body.trim())
+            .put("type", type != null ? type : "community");
+        if (imageUrl != null && !imageUrl.trim().isEmpty()) payload.put("image_url", imageUrl.trim());
+
+        JSONArray arr = new JSONArray(request("POST", "/rest/v1/feed_posts",
+            payload, true, "return=representation"));
+        return arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Feed likes (feed_likes table)
+    //  Schema:
+    //    post_id  uuid PK references feed_posts(id) on delete cascade
+    //    user_id  uuid PK references profiles(id) on delete cascade
+    //    created_at timestamptz default now()
+    //  RLS: SELECT public, INSERT/DELETE owner only.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Like a post (insert into feed_likes). Login required. */
+    public void likePost(String postId) throws Exception {
+        JSONObject body = new JSONObject().put("post_id", postId).put("user_id", userId());
+        request("POST", "/rest/v1/feed_likes", body, true, "return=minimal");
+    }
+
+    /** Unlike a post. Login required. */
+    public void unlikePost(String postId) throws Exception {
+        request("DELETE", "/rest/v1/feed_likes?post_id=eq." + enc(postId) + "&user_id=eq." + enc(userId()),
+            null, true, false);
+    }
+
+    /** Get like count for a post. Public read. */
+    public int getPostLikeCount(String postId) throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/feed_likes?post_id=eq." + enc(postId) + "&select=post_id",
+            null, false, false));
+        return arr.length();
+    }
+
+    /** Check if current user liked a post. Login required. */
+    public boolean hasLikedPost(String postId) throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/feed_likes?post_id=eq." + enc(postId) + "&user_id=eq." + enc(userId()) + "&select=post_id",
+            null, true, false));
+        return arr.length() > 0;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Storage upload (Supabase Storage bucket 'community-images')
+    //  Bucket setup: see /home/z/my-project/download/supabase-fix-v9-storage.sql
+    //  Path: userId/timestamp.jpg — RLS enforces foldername(name)[1] = auth.uid()
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Upload image ke Supabase Storage bucket 'community-images'.
+     * Path: userId/filename.jpg (foldername(name)[1] must equal auth.uid() — RLS).
+     * Returns the public URL of the uploaded object.
+     *
+     * @param imageBytes raw JPEG bytes
+     * @param filename   e.g. "post_1234567890.jpg"
+     */
+    public String uploadImage(byte[] imageBytes, String filename) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login.");
+        if (imageBytes == null || imageBytes.length == 0) throw new IllegalArgumentException("Image bytes kosong.");
+        if (filename == null || filename.trim().isEmpty()) throw new IllegalArgumentException("Filename kosong.");
+
+        String path = userId() + "/" + filename;
+        String encodedPath = java.net.URLEncoder.encode(path, "UTF-8");
+        String uploadUrl = SUPABASE_URL + "/storage/v1/object/community-images/" + encodedPath;
+
+        HttpURLConnection conn = (HttpURLConnection) new URL(uploadUrl).openConnection();
+        try {
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(60000);
+            conn.setRequestProperty("apikey", SUPABASE_KEY);
+            conn.setRequestProperty("Authorization", "Bearer " + token());
+            conn.setRequestProperty("Content-Type", "image/jpeg");
+            conn.setRequestProperty("x-upsert", "true");
+            conn.getOutputStream().write(imageBytes);
+
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) {
+                String err = "";
+                java.io.InputStream errStream = conn.getErrorStream();
+                if (errStream != null) {
+                    try {
+                        java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(errStream));
+                        StringBuilder sb = new StringBuilder();
+                        String line;
+                        while ((line = br.readLine()) != null) sb.append(line).append('\n');
+                        err = sb.toString().trim();
+                    } catch (Throwable ignored) { }
+                }
+                throw new IllegalStateException("Upload gagal: HTTP " + code + (err.isEmpty() ? "" : " " + err));
+            }
+        } finally {
+            conn.disconnect();
+        }
+
+        // Return public URL (bucket is public)
+        return SUPABASE_URL + "/storage/v1/object/public/community-images/" + encodedPath;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Comments (feed_comments table)
+    //  Schema:
+    //    id uuid PK, post_id uuid FK feed_posts, user_id uuid FK profiles,
+    //    body text (1..2000), deleted boolean default false,
+    //    created_at timestamptz default now()
+    //  RLS: SELECT public (deleted=false), INSERT owner (user_id), DELETE owner
+    //  (see supabase-fix-v10-comments-phase2.sql for DELETE policy)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Fetch comments for a post (oldest first). Public read (deleted=false only). */
+    public JSONArray fetchComments(String postId) throws Exception {
+        return new JSONArray(request("GET",
+            "/rest/v1/feed_comments?post_id=eq." + enc(postId)
+                + "&order=created_at.asc&limit=200"
+                + "&select=id,post_id,user_id,body,created_at",
+            null, false, false));
+    }
+
+    /** Add comment to a post. Login required. Returns the created row. */
+    public JSONObject addComment(String postId, String body) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login.");
+        if (body == null || body.trim().isEmpty()) throw new IllegalArgumentException("Komentar kosong.");
+        JSONObject payload = new JSONObject()
+            .put("post_id", postId)
+            .put("user_id", userId())
+            .put("body", body.trim());
+        JSONArray arr = new JSONArray(request("POST", "/rest/v1/feed_comments",
+            payload, true, "return=representation"));
+        return arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
+    }
+
+    /** Delete (physical) a comment. Owner only (RLS enforced). */
+    public void deleteComment(String commentId) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login.");
+        request("DELETE", "/rest/v1/feed_comments?id=eq." + enc(commentId)
+            + "&user_id=eq." + enc(userId()), null, true, false);
+    }
+
+    /** Get comment count for a post. Public read. */
+    public int getCommentCount(String postId) throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/feed_comments?post_id=eq." + enc(postId) + "&deleted=eq.false&select=id",
+            null, false, false));
+        return arr.length();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Push notification polling — new posts from followed users
+    //  Used by MainShell's 60s polling loop to fire local notifications.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Get list of following user IDs. Login required. */
+    public JSONArray fetchFollowingIds() throws Exception {
+        if (!loggedIn()) return new JSONArray();
+        return new JSONArray(request("GET",
+            "/rest/v1/community_follows?follower_id=eq." + enc(userId()) + "&select=following_id",
+            null, true, false));
+    }
+
+    /**
+     * Fetch new posts from followed users since the given timestamp (epoch millis).
+     * Returns max 10 newest posts. Login required.
+     *
+     * @param followingIds  list of user IDs (from fetchFollowingIds)
+     * @param sinceTimestamp epoch millis (UTC). Posts with created_at &gt; this will be returned.
+     */
+    public JSONArray fetchNewPostsFromFollowing(java.util.List<String> followingIds, long sinceTimestamp) throws Exception {
+        if (followingIds == null || followingIds.isEmpty()) return new JSONArray();
+        StringBuilder inList = new StringBuilder();
+        for (int i = 0; i < followingIds.size(); i++) {
+            if (i > 0) inList.append(",");
+            inList.append(enc(followingIds.get(i)));
+        }
+        // Format timestamp as ISO-8601 UTC (Supabase timestamptz comparison)
+        String sinceIso = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+            .format(new java.util.Date(sinceTimestamp));
+        return new JSONArray(request("GET",
+            "/rest/v1/feed_posts?author_id=in.(" + inList + ")"
+                + "&created_at=gt." + enc(sinceIso)
+                + "&order=created_at.desc&limit=10"
+                + "&select=id,author_id,title,body,created_at",
+            null, true, false));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Saved posts (saved_posts table) — bookmark feature
+    //  Schema:
+    //    post_id  uuid PK references feed_posts(id) on delete cascade
+    //    user_id  uuid PK references profiles(id) on delete cascade
+    //    created_at timestamptz default now()
+    //  RLS: SELECT/INSERT/DELETE owner only.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Save (bookmark) a post. Login required. */
+    public void savePost(String postId) throws Exception {
+        JSONObject body = new JSONObject().put("post_id", postId).put("user_id", userId());
+        request("POST", "/rest/v1/saved_posts?on_conflict=post_id,user_id", body, true,
+            "resolution=merge-duplicates,return=minimal");
+    }
+
+    /** Unsave (remove bookmark) a post. Login required. */
+    public void unsavePost(String postId) throws Exception {
+        request("DELETE", "/rest/v1/saved_posts?post_id=eq." + enc(postId) + "&user_id=eq." + enc(userId()),
+            null, true, false);
+    }
+
+    /** Check if current user saved a post. Login required. */
+    public boolean hasSavedPost(String postId) throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/saved_posts?post_id=eq." + enc(postId) + "&user_id=eq." + enc(userId()) + "&select=post_id",
+            null, true, false));
+        return arr.length() > 0;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Reports (reports table) — flag a post
+    //  Schema:
+    //    id uuid PK, reporter_id uuid, target_type text, target_id text,
+    //    category text, reason text, status report_status, created_at
+    //  RLS: INSERT owner (reporter) only.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Report a feed post. Login required. category: spam|inappropriate|other. */
+    public void reportPost(String postId, String category, String reason) throws Exception {
+        JSONObject body = new JSONObject()
+            .put("reporter_id", userId())
+            .put("target_type", "post")
+            .put("target_id", postId)
+            .put("category", category != null ? category : "other")
+            .put("reason", reason != null ? reason.trim() : "");
+        request("POST", "/rest/v1/reports", body, true, "return=minimal");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Profile lookup — for author info in feed cards
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Get profile by ID (for author info in feed). Public read. */
+    public JSONObject getProfileById(String profileId) throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/profiles?id=eq." + enc(profileId) + "&select=id,username,display_name,avatar_url,role",
+            null, false, false));
+        return arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
+    }
+
+    /**
+     * PATCH country column on the logged-in user's profile row.
+     * Called after successful registration.
+     */
+    public JSONObject updateCountry(String country) throws Exception {
+        if (userId().isEmpty()) throw new IllegalStateException("Belum login.");
+        if (country == null || country.trim().isEmpty()) throw new IllegalStateException("Country kosong.");
+        JSONObject body = new JSONObject();
+        body.put("country", country.trim());
+        JSONArray arr = new JSONArray(request("PATCH", "/rest/v1/profiles?id=eq." + enc(userId()) + "&select=id,country", body, true, "return=representation"));
+        setCountry(country);
+        if (arr.length() > 0) return arr.getJSONObject(0);
+        return new JSONObject();
+    }
+
+    /**
+     * Fetch a single key from app_config (e.g. "maintenance").
+     * Returns the parsed JSON object inside value column (jsonb), or empty object on failure.
+     */
+    public JSONObject getAppConfig(String key) throws Exception {
+        JSONArray arr = new JSONArray(request("GET", "/rest/v1/app_config?key=eq." + enc(key) + "&select=key,value", null, false, (String) null));
+        if (arr.length() == 0) return new JSONObject();
+        JSONObject row = arr.getJSONObject(0);
+        Object value = row.opt("value");
+        if (value instanceof JSONObject) return (JSONObject) value;
+        if (value != null) return new JSONObject().put("raw", value.toString());
+        return new JSONObject();
+    }
+
+    /**
+     * Insert a telemetry event into app_events table.
+     * Fire-and-forget — caller wraps in try/catch + Dispatchers.IO.
+     */
+    public void logEvent(String eventType, JSONObject eventData, String appVersion, String country, JSONObject deviceInfo) throws Exception {
+        if (!loggedIn()) return;
+        JSONObject body = new JSONObject();
+        body.put("user_id", userId());
+        body.put("event_type", eventType);
+        if (eventData != null) body.put("event_data", eventData); else body.put("event_data", new JSONObject());
+        if (appVersion != null && !appVersion.isEmpty()) body.put("app_version", appVersion);
+        if (country != null && !country.isEmpty()) body.put("country", country);
+        if (deviceInfo != null) body.put("device_info", deviceInfo);
+        request("POST", "/rest/v1/app_events", body, true, "return=minimal");
+    }
+
+    /**
+     * Fetch recent sent notification campaigns ordered by sent_at desc.
+     *
+     * Bug 4 fix:
+     *   - auth=true (pakai user access token, supaya RLS check auth.uid() pass).
+     *   - Filter sent_at=not.null (hanya yang sudah dikirim).
+     *   - Order by sent_at.desc (bukan created_at.desc, supaya yang baru dikirim di atas).
+     *   - Limit max 20 (sebelumnya 50, terlalu banyak untuk inline banner).
+     *
+     * RLS requirement: notification_campaigns harus punya policy SELECT untuk
+     * all authenticated users (lihat supabase-fix-v6-notif-rls.sql).
+     */
+    public JSONArray getNotifications(int limit) throws Exception {
+        int safe = Math.max(1, Math.min(limit, 20));
+        return new JSONArray(request("GET",
+            "/rest/v1/notification_campaigns?sent_at=not.null&order=sent_at.desc&limit=" + safe +
+            "&select=id,created_by,title,body,target,action,sent_at,created_at",
+            null, true, (String) null));  // auth=true → pakai user access token (RLS)
+    }
+
+    /**
+     * Fetch recent sent notification campaigns filtered by category.
+     * Categories: "all", "update", "announcement", "maintenance", "community".
+     *
+     * Notes:
+     *   - Column `category` ditambahkan ke notification_campaigns (default 'announcement').
+     *     Kalau kolom belum ada di Supabase (schema lama), filter category=eq.X akan 400.
+     *     Caller wajib wrap dengan try/catch dan fallback ke getNotifications(limit).
+     *   - auth=true (RLS check auth.uid() pass).
+     */
+    public JSONArray getNotificationsByCategory(int limit, String category) throws Exception {
+        int safe = Math.max(1, Math.min(limit, 20));
+        String filter = "sent_at=not.null";
+        if (category != null && !category.trim().isEmpty() && !category.equalsIgnoreCase("all")) {
+            filter += "&category=eq." + enc(category.trim());
+        }
+        return new JSONArray(request("GET",
+            "/rest/v1/notification_campaigns?" + filter + "&order=sent_at.desc&limit=" + safe +
+            "&select=id,created_by,title,body,target,action,sent_at,created_at,category",
+            null, true, (String) null));  // auth=true → pakai user access token (RLS)
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Game ratings (game_ratings table — DLavie 26 community rating)
+    //  Schema:
+    //    user_id   uuid PK references profiles(id)
+    //    rating    smallint NOT NULL CHECK (rating BETWEEN 1 AND 5)
+    //    review    text
+    //    created_at timestamptz default now()
+    //    updated_at timestamptz default now()
+    //  RLS: SELECT public (anon + auth), INSERT/UPDATE owner only.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Fetch average rating (1-5) and total count.
+     * Returns: { "avg": <double 1-5>, "count": <int> }.
+     * Public read (anon key) — does NOT require login.
+     */
+    public JSONObject fetchRatingStats() throws Exception {
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/game_ratings?select=rating", null, false, false));
+        if (arr.length() == 0) return new JSONObject().put("avg", 0.0).put("count", 0);
+        double sum = 0;
+        for (int i = 0; i < arr.length(); i++) sum += arr.getJSONObject(i).optInt("rating", 0);
+        double avg = sum / arr.length();
+        return new JSONObject().put("avg", avg).put("count", arr.length());
+    }
+
+    /**
+     * Submit or update current user's rating (1-5 stars).
+     * Uses upsert (on_conflict=user_id, resolution=merge-duplicates).
+     * Login required.
+     */
+    public void submitRating(int rating, String review) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login.");
+        if (rating < 1 || rating > 5) throw new IllegalArgumentException("Rating harus 1-5.");
+        JSONObject body = new JSONObject()
+            .put("user_id", userId())
+            .put("rating", rating);
+        if (review != null && !review.trim().isEmpty()) body.put("review", review.trim());
+        request("POST", "/rest/v1/game_ratings?on_conflict=user_id", body, true,
+            "resolution=merge-duplicates,return=minimal");
+    }
+
+    /**
+     * Get current user's rating (1-5), or 0 if not yet rated.
+     * Login required.
+     */
+    public int getMyRating() throws Exception {
+        if (!loggedIn()) return 0;
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/game_ratings?user_id=eq." + enc(userId()) + "&select=rating",
+            null, true, false));
+        return arr.length() > 0 ? arr.getJSONObject(0).optInt("rating", 0) : 0;
+    }
+
+    /**
+     * Fetch published update_posts dari Supabase.
+     * Update posts dibuat oleh developer via Dev Dashboard dan mewakili
+     * patch announcements yang sudah published (published=true), diurutkan
+     * by version_code desc (terbaru di index 0).
+     *
+     * Schema update_posts (Supabase):
+     *   id, author_id, version_code, version_name, channel, title, body,
+     *   release_notes (text[]), known_issues (text[]), patch_url, patch_sha256,
+     *   patch_size_bytes, critical, restart_game_required, risk_level, published,
+     *   created_at, updated_at
+     *
+     * @return JSONArray of published update posts (max 10).
+     */
+    public JSONArray fetchUpdatePosts() throws Exception {
+        return new JSONArray(request("GET",
+            "/rest/v1/update_posts?published=eq.true&order=version_code.desc&limit=10"
+                + "&select=id,version_code,version_name,channel,title,body,release_notes,"
+                + "known_issues,patch_url,patch_sha256,patch_size_bytes,critical,"
+                + "restart_game_required,risk_level,created_at",
+            null, false, false));
+    }
+
+    /**
+     * Fetch latest published update_post (highest version_code).
+     *
+     * @return the newest published update post, or null kalau tidak ada satu pun.
+     */
+    public JSONObject fetchLatestUpdatePost() throws Exception {
+        JSONArray arr = fetchUpdatePosts();
+        return arr.length() > 0 ? arr.getJSONObject(0) : null;
     }
 
     public JSONObject refreshToken() throws Exception {
@@ -162,6 +691,36 @@ public class CommunityApi {
 
     public JSONArray categories() throws Exception {
         return new JSONArray(request("GET", "/rest/v1/community_categories?select=id,slug,name,description&order=sort_order.asc", null, false, false));
+    }
+
+    /**
+     * Fetch FAQ items from Supabase (faq_items table).
+     * Schema (assumed):
+     *   id, question, answer, category, sort_order, published, created_at
+     * Public read (anon key) — does NOT require login.
+     * Returns empty array kalau tabel belum ada / error (fail-open).
+     */
+    public JSONArray faqItems() throws Exception {
+        return new JSONArray(request("GET",
+            "/rest/v1/faq_items?published=eq.true&order=sort_order.asc&limit=50"
+                + "&select=id,question,answer,category,sort_order",
+            null, false, false));
+    }
+
+    /**
+     * Fetch current user's support tickets from Supabase (support_tickets table).
+     * Schema (assumed):
+     *   id, user_id, subject, body, status, priority, created_at, updated_at
+     * Auth read (pakai user access token, RLS owner-only).
+     * Returns empty array kalau tabel belum ada / error / user belum punya tiket.
+     */
+    public JSONArray supportTickets() throws Exception {
+        if (!loggedIn()) return new JSONArray();
+        return new JSONArray(request("GET",
+            "/rest/v1/support_tickets?user_id=eq." + enc(userId())
+                + "&order=created_at.desc&limit=50"
+                + "&select=id,subject,body,status,priority,created_at,updated_at",
+            null, true, false));
     }
 
     public JSONArray topics(String categoryId) throws Exception {

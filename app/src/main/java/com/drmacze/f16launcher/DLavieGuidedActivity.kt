@@ -26,8 +26,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -90,6 +96,25 @@ class DLavieGuidedActivity : ComponentActivity() {
     }
 }
 
+// ─── Maintenance config (fetched at startup) ────────────────────────────────────
+private data class MaintenanceState(
+    val enabled: Boolean = false,
+    val title: String = "",
+    val message: String = "",
+    val allowOffline: Boolean = false,
+    val loaded: Boolean = false
+)
+
+// ─── Country picker list (21 entries per spec) ──────────────────────────────────
+private val COUNTRY_LIST: List<String> = listOf(
+    "Indonesia", "Malaysia", "Singapore", "Philippines", "Thailand",
+    "Vietnam", "India", "USA", "UK", "Japan",
+    "South Korea", "Brazil", "Germany", "France", "Canada",
+    "Australia", "Saudi Arabia", "UAE", "Netherlands", "Spain",
+    "Other"
+)
+private const val DEFAULT_COUNTRY = "Indonesia"
+
 private enum class GuidedTab(val label: String, val icon: String) {
     Home("Home", "⌂"), Data("Data", "▣"), Update("Update", "◎"), Me("Me", "♙")
 }
@@ -135,31 +160,72 @@ private data class GuidedUpdateState(
     val knownIssues: List<String> = emptyList()
 )
 
+// v3.0 monochrome palette — match DLavie logo (white-on-black, halftone)
+// GuideGreen tetap vibrant (functional status: success/download).
+// GuideCyan/GuideRed/GuideAmber tetap vibrant untuk status indicators minimal.
 private val GuideGreen = Color(0xFF22E678)
 private val GuideCyan = Color(0xFF2ED3F6)
 private val GuideRed = Color(0xFFFF5B64)
 private val GuideAmber = Color(0xFFFFB84E)
 private val GuideWhite = Color(0xFFF4F7F5)
 private val GuideMuted = Color(0xFF8E9491)
-private val GuideDark = Color(0xFF020403)
-private val GuideCard = Color(0xDD101211)
-private val GuideBorder = Color(0xFF25302B)
+private val GuideDark = Color(0xFF0A0A0A)        // v3.0 near pure black (match logo)
+private val GuideCard = Color(0xDD111111)        // v3.0 monochrome card
+private val GuideBorder = Color(0x30FFFFFF)      // v3.0 subtle white border (halftone-like)
 private val GuideFont = FontFamily.SansSerif
 
 @Composable
 private fun DLavieGuidedApp() {
     val context = LocalContext.current
+    // Maintenance state fetched at app startup BEFORE the login screen is shown.
+    var maintenance by remember { mutableStateOf(MaintenanceState()) }
+    var showLogin  by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        maintenance = withContext(Dispatchers.IO) { fetchMaintenanceConfig() }
+        if (!maintenance.enabled) showLogin = true
+    }
+
     MaterialTheme(darkColorScheme(background = GuideDark, surface = GuideCard, primary = GuideGreen, secondary = GuideCyan, onBackground = GuideWhite, onSurface = GuideWhite)) {
         Surface(color = GuideDark, modifier = Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF082719), GuideDark, Color.Black), radius = 980f))) {
-                GuidedLoginScreen(onLoggedIn = { session ->
-                    saveSession(context, session)
-                    syncToCommunityPrefs(context, session)
-                    context.startActivity(
-                        Intent(context, ModernLauncherActivity::class.java)
-                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+            // v3.0: Halftone particle background (replaces green radial gradient)
+            Box(Modifier.fillMaxSize()) {
+                HalftoneBackground(
+                    modifier = Modifier.fillMaxSize(),
+                    dotSize = 2.5f,
+                    spacing = 24f,
+                    baseColor = HalftoneBright,
+                    alpha = 0.6f
+                )
+                if (maintenance.enabled && !showLogin) {
+                    MaintenanceOverlay(
+                        title        = maintenance.title,
+                        message      = maintenance.message,
+                        allowOffline = maintenance.allowOffline,
+                        onContinueOffline = {
+                            // User opted to play offline — show login screen anyway so they can still log in if they want.
+                            showLogin = true
+                        },
+                        onClose = {
+                            // Close the app
+                            (context as? android.app.Activity)?.finishAffinity()
+                        }
                     )
-                })
+                } else if (showLogin || maintenance.loaded) {
+                    GuidedLoginScreen(onLoggedIn = { session ->
+                        saveSession(context, session)
+                        syncToCommunityPrefs(context, session)
+                        context.startActivity(
+                            Intent(context, ModernLauncherActivity::class.java)
+                                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    })
+                } else {
+                    // Initial loading state (very brief — maintenance fetch is fast).
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        androidx.compose.material3.CircularProgressIndicator(color = GuideGreen, strokeWidth = 2.5.dp)
+                    }
+                }
             }
         }
     }
@@ -177,6 +243,7 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
     var confirmPassword by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
+    var country by remember { mutableStateOf(DEFAULT_COUNTRY) }
     var showPass by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
@@ -185,13 +252,17 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(
-                Brush.radialGradient(
-                    listOf(Color(0xFF071A0F), Color(0xFF040806), Color.Black),
-                    radius = 1200f
-                )
-            )
+            .background(Color(0xFF0A0A0A))   // v3.0 near-black base
     ) {
+        // v3.0 halftone particle background (subtle)
+        HalftoneBackground(
+            modifier = Modifier.fillMaxSize(),
+            dotSize = 2.5f,
+            spacing = 22f,
+            baseColor = HalftoneBright,
+            alpha = 0.5f
+        )
+
         Column(
             Modifier
                 .fillMaxSize()
@@ -201,20 +272,14 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
         ) {
             Spacer(Modifier.height(56.dp))
 
-            // ── Logo + animated ring ──
+            // ── Logo + animated ring (v3.0 monochrome DL cover) ──
             Box(contentAlignment = Alignment.Center) {
-                Box(
-                    Modifier
-                        .size(96.dp)
-                        .background(
-                            Brush.linearGradient(listOf(Color(0xFF0E4228), Color(0xFF061810))),
-                            RoundedCornerShape(28.dp)
-                        )
-                        .border(1.5.dp, GuideGreen.copy(alpha = 0.40f), RoundedCornerShape(28.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("DL", color = GuideGreen, fontSize = 32.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont)
-                }
+                DLavieLogoCover(
+                    size = 96.dp,
+                    fontSize = 32.sp,
+                    shape = RoundedCornerShape(28.dp),
+                    borderWidth = 1.5.dp
+                )
             }
             Spacer(Modifier.height(18.dp))
             Text("DLavie 26", color = GuideWhite, fontSize = 30.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont)
@@ -229,12 +294,12 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
             )
             Spacer(Modifier.height(30.dp))
 
-            // ── Auth Card ──
+            // ── Auth Card (v3.0 monochrome) ──
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFF0C1510),
+                color = Color(0xDD111111),                // v3.0 monochrome card
                 shape = RoundedCornerShape(28.dp),
-                border = BorderStroke(1.dp, Color(0xFF1C2E22))
+                border = BorderStroke(1.dp, Color(0x30FFFFFF))   // v3.0 subtle white border
             ) {
                 Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
@@ -243,7 +308,7 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .background(Color(0xFF080D0A), RoundedCornerShape(14.dp))
+                                .background(Color(0xFF1A1A1A), RoundedCornerShape(14.dp))   // v3.0 monochrome
                                 .padding(4.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
@@ -314,6 +379,10 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
                                 value = displayName, onValueChange = { displayName = it.take(40) },
                                 label = "Display Name (2–40 karakter)", prefix = "◉  "
                             )
+                            CountryPickerDropdown(
+                                selected = country,
+                                onSelect = { country = it }
+                            )
                         }
 
                         // Forgot password link (only in login mode)
@@ -380,7 +449,7 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
                                 val result = withContext(Dispatchers.IO) {
                                     when (mode) {
                                         "login"    -> loginWithPassword(context, email, password)
-                                        "register" -> registerWithUsernamePassword(context, email, password, username.trim(), displayName.trim())
+                                        "register" -> registerWithUsernamePassword(context, email, password, username.trim(), displayName.trim(), country)
                                         "forgot"   -> {
                                             try {
                                                 val msg = AuthManager.requestPasswordReset(email)
@@ -395,6 +464,13 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
                                 working = false
                                 isSuccess = result.session != null || result.message.startsWith("OK")
                                 message = result.message
+                                // Fire telemetry for login / register events
+                                if (result.session != null) {
+                                    when (mode) {
+                                        "login"    -> Telemetry.track(context, Telemetry.EVT_LOGIN,    mapOf("email" to email.trim()))
+                                        "register" -> Telemetry.track(context, Telemetry.EVT_REGISTER, mapOf("email" to email.trim(), "username" to username.trim(), "country" to country))
+                                    }
+                                }
                                 result.session?.let(onLoggedIn)
 
                                 // If forgot password success, switch back to login
@@ -509,6 +585,87 @@ private fun AuthInputField(
     )
 }
 
+/**
+ * Country picker dropdown for the register form.
+ * Uses Compose Material3 DropdownMenu anchored to a Box that mimics the AuthInputField styling.
+ */
+@Composable
+private fun CountryPickerDropdown(
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box {
+        OutlinedTextField(
+            value      = selected,
+            onValueChange = { /* read-only */ },
+            readOnly   = true,
+            enabled    = false,
+            label      = { Text("Negara", fontSize = 11.sp, maxLines = 1) },
+            prefix     = {
+                Icon(
+                    imageVector        = Icons.Rounded.Public,
+                    contentDescription = null,
+                    tint               = GuideMuted,
+                    modifier           = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+            },
+            trailingIcon = {
+                Icon(
+                    imageVector        = Icons.Rounded.ArrowDropDown,
+                    contentDescription = "Pilih negara",
+                    tint               = GuideGreen,
+                    modifier           = Modifier
+                        .size(22.dp)
+                        .clickable { expanded = true }
+                )
+            },
+            singleLine  = true,
+            modifier    = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true },
+            shape       = RoundedCornerShape(16.dp),
+            colors      = OutlinedTextFieldDefaults.colors(
+                disabledBorderColor       = GuideBorder,
+                disabledTextColor         = GuideWhite,
+                disabledLabelColor        = GuideMuted,
+                disabledTrailingIconColor = GuideGreen,
+                disabledPrefixColor       = GuideMuted
+            )
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .background(Color(0xFF1A1A1A), RoundedCornerShape(14.dp))   // v3.0 monochrome
+                .border(1.dp, GuideBorder, RoundedCornerShape(14.dp))
+        ) {
+            COUNTRY_LIST.forEach { name ->
+                val isSelected = name == selected
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            name,
+                            color      = if (isSelected) GuideGreen else GuideWhite,
+                            fontSize   = 13.sp,
+                            fontWeight = if (isSelected) FontWeight.Black else FontWeight.Normal,
+                            fontFamily = GuideFont
+                        )
+                    },
+                    onClick = {
+                        onSelect(name)
+                        expanded = false
+                    },
+                    modifier = Modifier.background(if (isSelected) GuideGreen.copy(alpha = 0.08f) else Color.Transparent)
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun GuidedLauncherScreen(session: AuthSession, onLogout: () -> Unit) {
     var tab by remember { mutableStateOf(GuidedTab.Home) }
@@ -604,7 +761,7 @@ private fun GuidedProfileScreen(session: AuthSession, onLogout: () -> Unit) {
         GuidedPageTitle("Profile", "Akun login, ticket, dan status DLavie.")
         GuidedPanel {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(74.dp).background(Brush.linearGradient(listOf(Color(0xFF063B27), Color(0xFF09110F))), RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(74.dp).background(Brush.linearGradient(listOf(Color(0xFF0A0A0A), Color(0xFF1A1A1A))), RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
                     Text(session.email.firstOrNull()?.uppercase() ?: "D", color = GuideGreen, fontSize = 31.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont)
                 }
                 Spacer(Modifier.width(14.dp))
@@ -636,14 +793,14 @@ private fun GuidedProfileScreen(session: AuthSession, onLogout: () -> Unit) {
 
 @Composable private fun GuidedPage(content: @Composable () -> Unit) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { content() } }
 @Composable private fun GuidedPanel(border: Color = GuideBorder, content: @Composable () -> Unit) { Surface(modifier = Modifier.fillMaxWidth(), color = GuideCard, shape = RoundedCornerShape(30.dp), border = BorderStroke(1.dp, border.copy(alpha = 0.85f))) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() } } }
-@Composable private fun GuidedHeaderCard(session: AuthSession, bootstrap: BootstrapState, marker: String) { GuidedPanel { Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(72.dp).background(Brush.linearGradient(listOf(Color(0xFF06462A), Color(0xFF07130F))), RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) { Text("DL", color = GuideGreen, fontSize = 29.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont) }; Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text("DLavie 26", color = GuideWhite, fontSize = 28.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(session.email, color = GuideMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) }; GuidedPill(if (marker.startsWith("v26")) "READY" else if (bootstrap.maintenance) "MAINT" else "SETUP", if (marker.startsWith("v26")) GuideGreen else GuideCyan) } } }
+@Composable private fun GuidedHeaderCard(session: AuthSession, bootstrap: BootstrapState, marker: String) { GuidedPanel { Row(verticalAlignment = Alignment.CenterVertically) { DLavieLogoCover(size = 72.dp, fontSize = 29.sp, shape = RoundedCornerShape(24.dp)); Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text("DLavie 26", color = GuideWhite, fontSize = 28.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(session.email, color = GuideMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) }; GuidedPill(if (marker.startsWith("v26")) "READY" else if (bootstrap.maintenance) "MAINT" else "SETUP", if (marker.startsWith("v26")) GuideGreen else GuideCyan) } } }
 @Composable private fun GuidedQuickSteps(marker: String, bootstrap: BootstrapState, openData: () -> Unit, openUpdate: () -> Unit, launch: () -> Unit) { GuidedPanel { Text("⚡ Langkah Cepat", color = GuideWhite, fontSize = 23.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont); Text("Ikuti urutan agar patch aktif dengan benar.", color = GuideMuted, fontSize = 13.sp, fontFamily = GuideFont); GuidedStepRow(1, "Cek Base Data", "Pastikan OBB dan marker siap.", if (marker.startsWith("v26")) "OK" else "WAJIB", "🔎", if (marker.startsWith("v26")) GuideGreen else GuideAmber, openData); GuidedStepRow(2, "Install Full Data", "Unduh dan pasang data utama.", if (marker.startsWith("v26")) "SELESAI" else "LANJUT", "⬇", GuideGreen, openData); GuidedStepRow(3, "Update Patch", "Cek versi dari backend.", if (bootstrap.updateAvailable) "TERSEDIA" else "CEK", "🌐", GuideCyan, openUpdate); GuidedStepRow(4, "Mainkan Game", "Launch setelah data siap.", if (marker.startsWith("v26")) "READY" else "NANTI", "🚀", Color(0xFFB783FF), launch) } }
-@Composable private fun GuidedStepRow(no: Int, title: String, subtitle: String, chip: String, icon: String, color: Color, onClick: () -> Unit) { Button(onClick = onClick, modifier = Modifier.fillMaxWidth().height(74.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xBB0C1110), contentColor = GuideWhite), contentPadding = PaddingValues(horizontal = 12.dp)) { Box(Modifier.size(28.dp).background(color, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) { Text(no.toString(), color = Color(0xFF001407), fontWeight = FontWeight.Black, fontSize = 13.sp) }; Spacer(Modifier.width(10.dp)); Text(icon, fontSize = 23.sp); Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) { Text(title, fontSize = 15.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(subtitle, color = GuideMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) }; GuidedPill(chip, color); Text("›", color = GuideMuted, fontSize = 20.sp) } }
+@Composable private fun GuidedStepRow(no: Int, title: String, subtitle: String, chip: String, icon: String, color: Color, onClick: () -> Unit) { Button(onClick = onClick, modifier = Modifier.fillMaxWidth().height(74.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xBB111111), contentColor = GuideWhite), contentPadding = PaddingValues(horizontal = 12.dp)) { Box(Modifier.size(28.dp).background(color, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) { Text(no.toString(), color = Color(0xFF001407), fontWeight = FontWeight.Black, fontSize = 13.sp) }; Spacer(Modifier.width(10.dp)); Text(icon, fontSize = 23.sp); Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) { Text(title, fontSize = 15.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(subtitle, color = GuideMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) }; GuidedPill(chip, color); Text("›", color = GuideMuted, fontSize = 20.sp) } }
 @Composable private fun GuidedPrimaryCta(title: String, subtitle: String, icon: String, onClick: () -> Unit) { Button(onClick = onClick, modifier = Modifier.fillMaxWidth().height(72.dp), shape = RoundedCornerShape(22.dp), colors = ButtonDefaults.buttonColors(containerColor = GuideGreen, contentColor = Color(0xFF001407)), contentPadding = PaddingValues(horizontal = 18.dp)) { Text(icon, fontSize = 23.sp); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) { Text(title, fontSize = 18.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(subtitle, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) }; Text("→", fontSize = 24.sp, fontWeight = FontWeight.Black) } }
-@Composable private fun GuidedMiniChip(title: String, value: String, icon: String, color: Color, modifier: Modifier) { Surface(modifier = modifier.height(74.dp), color = Color(0xCC101211), shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, GuideBorder)) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.Center) { Text(icon, fontSize = 18.sp); Text(title, color = GuideMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1); Text(value, color = color, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis) } } }
-@Composable private fun GuidedInfoBox(label: String, value: String, modifier: Modifier) { Surface(modifier = modifier.height(78.dp), color = Color(0xAA0A0D0C), shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, GuideBorder)) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.Center) { Text(label, color = GuideMuted, fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(value, color = GuideWhite, fontSize = 15.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) } } }
-@Composable private fun GuidedActionButton(label: String, color: Color, onClick: () -> Unit, enabled: Boolean = true) { Button(onClick = onClick, modifier = Modifier.fillMaxWidth().height(58.dp), enabled = enabled, shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color(0xFF001407), disabledContainerColor = Color(0xFF333635), disabledContentColor = GuideMuted)) { Text(label, fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont, maxLines = 1, overflow = TextOverflow.Ellipsis) } }
-@Composable private fun GuidedSmallAction(label: String, color: Color, onClick: () -> Unit, enabled: Boolean, modifier: Modifier) { Button(onClick = onClick, modifier = modifier.height(48.dp), enabled = enabled, shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color(0xFF001407), disabledContainerColor = Color(0xFF333635), disabledContentColor = GuideMuted), contentPadding = PaddingValues(horizontal = 8.dp)) { Text(label, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) } }
+@Composable private fun GuidedMiniChip(title: String, value: String, icon: String, color: Color, modifier: Modifier) { Surface(modifier = modifier.height(74.dp), color = Color(0xCC111111), shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, GuideBorder)) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.Center) { Text(icon, fontSize = 18.sp); Text(title, color = GuideMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1); Text(value, color = color, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis) } } }
+@Composable private fun GuidedInfoBox(label: String, value: String, modifier: Modifier) { Surface(modifier = modifier.height(78.dp), color = Color(0xAA0A0A0A), shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, GuideBorder)) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.Center) { Text(label, color = GuideMuted, fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(value, color = GuideWhite, fontSize = 15.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) } } }
+@Composable private fun GuidedActionButton(label: String, color: Color, onClick: () -> Unit, enabled: Boolean = true) { Button(onClick = onClick, modifier = Modifier.fillMaxWidth().height(58.dp), enabled = enabled, shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color(0xFF001407), disabledContainerColor = Color(0xFF2A2A2A), disabledContentColor = GuideMuted)) { Text(label, fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont, maxLines = 1, overflow = TextOverflow.Ellipsis) } }
+@Composable private fun GuidedSmallAction(label: String, color: Color, onClick: () -> Unit, enabled: Boolean, modifier: Modifier) { Button(onClick = onClick, modifier = modifier.height(48.dp), enabled = enabled, shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color(0xFF001407), disabledContainerColor = Color(0xFF2A2A2A), disabledContentColor = GuideMuted), contentPadding = PaddingValues(horizontal = 8.dp)) { Text(label, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = GuideFont) } }
 @Composable private fun GuidedPill(text: String, color: Color) { Surface(color = color.copy(alpha = 0.16f), border = BorderStroke(1.dp, color.copy(alpha = 0.58f)), shape = RoundedCornerShape(999.dp)) { Text(text, color = color, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), maxLines = 1, fontFamily = GuideFont) } }
 @Composable private fun GuidedPageTitle(title: String, subtitle: String) { Column { Text(title, color = GuideWhite, fontSize = 34.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont); Text(subtitle, color = GuideMuted, fontSize = 14.sp, maxLines = 2, fontFamily = GuideFont) } }
 @Composable private fun GuidedNoticeCard(notices: List<String>) { GuidedPanel(border = GuideCyan) { Text("Developer Notice", color = GuideWhite, fontSize = 20.sp, fontWeight = FontWeight.Black); notices.take(3).forEach { Text("• $it", color = GuideMuted, fontSize = 13.sp) } } }
@@ -662,8 +819,8 @@ private fun userIdFromJwt(token: String): String { return try { val payload = to
 private fun syncToCommunityPrefs(context: Context, session: AuthSession) { val userId = userIdFromJwt(session.accessToken); context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE).edit().putString("access_token", session.accessToken).putString("refresh_token", session.refreshToken).putString("user_id", userId).apply() }
 private fun loginWithPassword(context: Context, email: String, password: String): AuthResult = authPassword(context, "/auth/v1/token?grant_type=password", email, password, "OK: login berhasil.")
 private fun registerWithPassword(context: Context, email: String, password: String): AuthResult = authPassword(context, "/auth/v1/signup", email, password, "OK: akun dibuat.")
-private fun registerWithUsernamePassword(context: Context, email: String, password: String, username: String, displayName: String): AuthResult = try {
-    val meta = JSONObject().put("username", username).put("display_name", displayName)
+private fun registerWithUsernamePassword(context: Context, email: String, password: String, username: String, displayName: String, country: String = DEFAULT_COUNTRY): AuthResult = try {
+    val meta = JSONObject().put("username", username).put("display_name", displayName).put("country", country)
     val signupBody = JSONObject().put("email", email).put("password", password).put("data", meta)
     val json = httpPost("/auth/v1/signup", null, signupBody)
     val token = json.optString("access_token", "")
@@ -676,25 +833,155 @@ private fun registerWithUsernamePassword(context: Context, email: String, passwo
     } else {
         val session = AuthSession(token, refresh, userEmail)
         saveSession(context, session)
-        if (userId.isNotBlank()) runCatching {
-            httpPostWithPrefer(
-                "/rest/v1/profiles",
-                token,
-                JSONObject().put("id", userId).put("username", username).put("display_name", displayName),
-                "resolution=merge-duplicates,return=minimal"
-            )
+        syncToCommunityPrefs(context, session)
+
+        // ── FIX (Bug 1): Populate CommunityApi prefs via login + loadMyProfile ──
+        // Sebelumnya, POST /rest/v1/profiles dengan return=minimal tidak return data,
+        // dan RPC dlavie_v2_create_profile_if_missing tidak ada di project baru,
+        // jadi CommunityApi.username() / displayName() tetap empty setelah register.
+        //
+        // Sekarang: call CommunityApi.login(email, password, username, displayName, "")
+        //   - storeSessionIfPresent → save token + user_id ke dlavie_community prefs
+        //   - loadMyProfile()       → fetch profile dari DB, save username/display_name/role ke prefs
+        //
+        // Karena trigger handle_new_user butuh waktu untuk fire (async), retry 3x dengan delay.
+        var profileLoaded = false
+        try {
+            val api = CommunityApi(context)
+            for (attempt in 1..3) {
+                try {
+                    api.login(email, password, username, displayName, "")
+                    profileLoaded = true
+                    break
+                } catch (_: Exception) {
+                    if (attempt < 3) Thread.sleep(500L)
+                }
+            }
+            if (!profileLoaded) {
+                // Fallback 1: manual ensureMyProfile
+                try { api.ensureMyProfile(username, displayName, "") } catch (_: Exception) { }
+            }
+            // Fallback 2: kalau profile masih belum ter-load, save prefs manual supaya
+            // CommunityApi.username() / displayName() minimal tidak empty.
+            if (!profileLoaded) {
+                val prefs = context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE)
+                prefs.edit()
+                    .putString("username", username)
+                    .putString("display_name", displayName)
+                    .putString("access_token", token)
+                    .putString("refresh_token", refresh)
+                    .putString("user_id", userId)
+                    .apply()
+            }
+            // Best-effort: PATCH country (fire-and-forget).
+            runCatching {
+                if (api.loggedIn()) api.updateCountry(country)
+                else httpPatch("/rest/v1/profiles?id=eq." + userId, token, JSONObject().put("country", country))
+            }
+        } catch (_: Exception) {
+            // CommunityApi totally broken — last resort: manual prefs save.
+            val prefs = context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE)
+            prefs.edit()
+                .putString("username", username)
+                .putString("display_name", displayName)
+                .putString("access_token", token)
+                .putString("refresh_token", refresh)
+                .putString("user_id", userId)
+                .apply()
         }
-        runCatching { httpPost("/rest/v1/rpc/dlavie_v2_create_profile_if_missing", token, JSONObject().put("p_display_name", displayName)) }
         AuthResult(session, "OK: akun dibuat. Selamat datang, $displayName!")
     }
 } catch (e: Exception) { AuthResult(null, "Error: ${e.message ?: "register gagal"}") }
-private fun authPassword(context: Context, path: String, email: String, password: String, okMessage: String): AuthResult = try { val json = httpPost(path, null, JSONObject().put("email", email).put("password", password)); val token = json.optString("access_token", ""); val refresh = json.optString("refresh_token", ""); val userEmail = json.optJSONObject("user")?.optString("email", email) ?: email; if (token.isBlank()) AuthResult(null, "Akun dibuat. Cek email lalu login.") else { val session = AuthSession(token, refresh, userEmail); saveSession(context, session); runCatching { httpPost("/rest/v1/rpc/dlavie_v2_create_profile_if_missing", session.accessToken, JSONObject().put("p_display_name", "DLavie Player")) }; AuthResult(session, okMessage) } } catch (e: Exception) { AuthResult(null, "Error: ${e.message ?: "auth gagal"}") }
+private fun authPassword(context: Context, path: String, email: String, password: String, okMessage: String): AuthResult = try {
+    val json = httpPost(path, null, JSONObject().put("email", email).put("password", password))
+    val token = json.optString("access_token", "")
+    val refresh = json.optString("refresh_token", "")
+    val userEmail = json.optJSONObject("user")?.optString("email", email) ?: email
+    val userId = json.optJSONObject("user")?.optString("id", "") ?: ""
+    if (token.isBlank()) AuthResult(null, "Akun dibuat. Cek email lalu login.") else {
+        val session = AuthSession(token, refresh, userEmail)
+        saveSession(context, session)
+        syncToCommunityPrefs(context, session)
+
+        // ── FIX (Bug 1): Populate CommunityApi prefs via login + loadMyProfile ──
+        // Sebelumnya hanya call RPC dlavie_v2_create_profile_if_missing yang tidak ada
+        // di project baru, jadi prefs dlavie_community (username/display_name) tetap empty.
+        // Sekarang: CommunityApi.login() → storeSessionIfPresent + loadMyProfile.
+        // Retry 3x karena trigger handle_new_user butuh waktu untuk fire (async).
+        try {
+            val api = CommunityApi(context)
+            var loaded = false
+            for (attempt in 1..3) {
+                try {
+                    api.login(email, password, "", "", "")
+                    loaded = true
+                    break
+                } catch (_: Exception) {
+                    if (attempt < 3) Thread.sleep(500L)
+                }
+            }
+            if (!loaded) {
+                // Trigger profile belum fire — save prefs minimal manual supaya user_id minimal ter-set.
+                val prefs = context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE)
+                prefs.edit()
+                    .putString("access_token", token)
+                    .putString("refresh_token", refresh)
+                    .putString("user_id", userId)
+                    .apply()
+            }
+        } catch (_: Exception) {
+            // CommunityApi totally broken — last resort: manual prefs save.
+            val prefs = context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE)
+            prefs.edit()
+                .putString("access_token", token)
+                .putString("refresh_token", refresh)
+                .putString("user_id", userId)
+                .apply()
+        }
+        AuthResult(session, okMessage)
+    }
+} catch (e: Exception) { AuthResult(null, "Error: ${e.message ?: "auth gagal"}") }
 private fun loadBootstrap(session: AuthSession): BootstrapState = try { val json = httpPost("/rest/v1/rpc/dlavie_v2_get_launcher_bootstrap", session.accessToken, JSONObject().put("p_local_version_code", LOCAL_VERSION_CODE)); parseBootstrap(json) } catch (e: Exception) { BootstrapState(loaded = false, error = e.message ?: "backend gagal") }
 private fun parseBootstrap(json: JSONObject): BootstrapState { val profile = json.optJSONObject("profile") ?: JSONObject(); val update = json.optJSONObject("update") ?: JSONObject(); val patch = update.optJSONObject("patch"); val maintenance = json.optJSONObject("maintenance") ?: JSONObject(); val notices = jsonArrayObjectsToTitles(json.optJSONArray("notices")); return BootstrapState(displayName = profile.optString("display_name", "DLavie Player"), role = profile.optString("role", "user"), maintenance = maintenance.optBoolean("enabled", false), maintenanceMessage = maintenance.optString("message", ""), latestVersionCode = update.optInt("latestVersionCode", 0), latestVersionName = update.optString("latestVersionName", "Belum dicek"), updateAvailable = update.optBoolean("updateAvailable", false), patchName = patch?.optString("name", "") ?: "", patchUrl = patch?.optString("url", "") ?: "", notices = notices, unreadNotifications = json.optInt("unreadNotifications", 0), loaded = true) }
 private fun createSupportTicket(session: AuthSession, message: String): String = try { val marker = guidedReadMarkerSmart(); val json = httpPost("/rest/v1/rpc/dlavie_v2_create_ticket", session.accessToken, JSONObject().put("p_title", "DLavie Support").put("p_category", "general").put("p_message", message).put("p_app_version", "0.19.0-login-foundation").put("p_local_version", LOCAL_VERSION_NAME).put("p_latest_version", "").put("p_data_marker", marker).put("p_shizuku_status", guidedShizukuState())); "OK: ticket dibuat #${json.optString("public_code", json.optString("id", ""))}" } catch (e: Exception) { "Error: ${e.message ?: "ticket gagal"}" }
 private fun httpPost(path: String, token: String?, body: JSONObject): JSONObject { val conn = (URL(SUPABASE_URL + path).openConnection() as HttpURLConnection); conn.requestMethod = "POST"; conn.doOutput = true; conn.setRequestProperty("apikey", SUPABASE_KEY); conn.setRequestProperty("Content-Type", "application/json"); conn.setRequestProperty("Accept", "application/json"); if (!token.isNullOrBlank()) conn.setRequestProperty("Authorization", "Bearer $token"); conn.outputStream.use { it.write(body.toString().toByteArray()) }; val code = conn.responseCode; val stream = if (code in 200..299) conn.inputStream else conn.errorStream; val text = stream?.bufferedReader()?.readText().orEmpty(); conn.disconnect(); if (code !in 200..299) throw IllegalStateException(parseError(text)); return if (text.isBlank()) JSONObject() else JSONObject(text) }
 private fun httpPostWithPrefer(path: String, token: String?, body: JSONObject, prefer: String): JSONObject { val conn = (URL(SUPABASE_URL + path).openConnection() as HttpURLConnection); conn.requestMethod = "POST"; conn.doOutput = true; conn.setRequestProperty("apikey", SUPABASE_KEY); conn.setRequestProperty("Content-Type", "application/json"); conn.setRequestProperty("Accept", "application/json"); conn.setRequestProperty("Prefer", prefer); if (!token.isNullOrBlank()) conn.setRequestProperty("Authorization", "Bearer $token"); conn.outputStream.use { it.write(body.toString().toByteArray()) }; val code = conn.responseCode; val stream = if (code in 200..299) conn.inputStream else conn.errorStream; val text = stream?.bufferedReader()?.readText().orEmpty(); conn.disconnect(); if (code !in 200..299) throw IllegalStateException(parseError(text)); return if (text.isBlank()) JSONObject() else runCatching { JSONObject(text) }.getOrElse { JSONObject() } }
+private fun httpGet(path: String, token: String? = null): JSONObject { val conn = (URL(SUPABASE_URL + path).openConnection() as HttpURLConnection); conn.requestMethod = "GET"; conn.setRequestProperty("apikey", SUPABASE_KEY); conn.setRequestProperty("Accept", "application/json"); if (!token.isNullOrBlank()) conn.setRequestProperty("Authorization", "Bearer $token"); val code = conn.responseCode; val stream = if (code in 200..299) conn.inputStream else conn.errorStream; val text = stream?.bufferedReader()?.readText().orEmpty(); conn.disconnect(); if (code !in 200..299) throw IllegalStateException(parseError(text)); return if (text.isBlank()) JSONObject() else runCatching { JSONObject(text) }.getOrElse { JSONObject() } }
+private fun httpGetArray(path: String, token: String? = null): JSONArray { val conn = (URL(SUPABASE_URL + path).openConnection() as HttpURLConnection); conn.requestMethod = "GET"; conn.setRequestProperty("apikey", SUPABASE_KEY); conn.setRequestProperty("Accept", "application/json"); if (!token.isNullOrBlank()) conn.setRequestProperty("Authorization", "Bearer $token"); val code = conn.responseCode; val stream = if (code in 200..299) conn.inputStream else conn.errorStream; val text = stream?.bufferedReader()?.readText().orEmpty(); conn.disconnect(); if (code !in 200..299) throw IllegalStateException(parseError(text)); return if (text.isBlank()) JSONArray() else JSONArray(text) }
+private fun httpPatch(path: String, token: String?, body: JSONObject): JSONObject { val conn = (URL(SUPABASE_URL + path).openConnection() as HttpURLConnection); conn.requestMethod = "PATCH"; conn.doOutput = true; conn.setRequestProperty("apikey", SUPABASE_KEY); conn.setRequestProperty("Content-Type", "application/json"); conn.setRequestProperty("Accept", "application/json"); conn.setRequestProperty("Prefer", "return=minimal"); if (!token.isNullOrBlank()) conn.setRequestProperty("Authorization", "Bearer $token"); conn.outputStream.use { it.write(body.toString().toByteArray()) }; val code = conn.responseCode; val stream = if (code in 200..299) conn.inputStream else conn.errorStream; val text = stream?.bufferedReader()?.readText().orEmpty(); conn.disconnect(); if (code !in 200..299) throw IllegalStateException(parseError(text)); return if (text.isBlank()) JSONObject() else runCatching { JSONObject(text) }.getOrElse { JSONObject() } }
 private fun parseError(text: String): String = runCatching { JSONObject(text).optString("message", text.take(160)) }.getOrElse { text.take(160).ifBlank { "request gagal" } }
+
+/**
+ * Fetch maintenance config from app_config (key = 'maintenance').
+ * Returns MaintenanceState(loaded = true) on success.
+ * On any failure, returns a non-maintenance state so users can still log in.
+ *
+ * Expected shape:
+ *   { "enabled": true, "scope": "all", "title": "...", "message": "...", "allow_offline_play": true }
+ */
+private fun fetchMaintenanceConfig(): MaintenanceState {
+    return try {
+        val arr = httpGetArray("/rest/v1/app_config?key=eq.maintenance&select=key,value")
+        if (arr.length() == 0) return MaintenanceState(loaded = true)
+        val row = arr.getJSONObject(0)
+        val value = row.opt("value")
+        val cfg = when (value) {
+            is JSONObject -> value
+            is org.json.JSONArray -> if (value.length() > 0) value.optJSONObject(0) else JSONObject()
+            else -> JSONObject()
+        }
+        MaintenanceState(
+            enabled      = cfg.optBoolean("enabled", false),
+            title        = cfg.optString("title", ""),
+            message      = cfg.optString("message", ""),
+            allowOffline = cfg.optBoolean("allow_offline_play", cfg.optBoolean("allowOffline", false)),
+            loaded       = true
+        )
+    } catch (_: Exception) {
+        // Network/parse failure — don't block login.
+        MaintenanceState(loaded = true)
+    }
+}
 private fun jsonArrayObjectsToTitles(arr: JSONArray?): List<String> { if (arr == null) return emptyList(); val out = mutableListOf<String>(); for (i in 0 until arr.length()) { val o = arr.optJSONObject(i); if (o != null) out += (o.optString("title", "Notice") + ": " + o.optString("body", "")) }; return out }
 private fun guidedShizukuState(): String = try { when { !Shizuku.pingBinder() -> "Start"; Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED -> "Ready"; else -> "Permission" } } catch (_: Exception) { "Start" }
 private fun guidedRequestShizuku() { runCatching { if (Shizuku.pingBinder() && Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) Shizuku.requestPermission(SHIZUKU_REQUEST) } }
