@@ -278,11 +278,9 @@ fun YouTubeVideoBackground(
 ) {
     val context = LocalContext.current
     val videoErrorState = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    val videoError: Boolean get() = videoErrorState.value
-    val setVideoError: (Boolean) -> Unit = { v -> videoErrorState.value = v }
 
     Box(modifier) {
-        if (!videoError) {
+        if (!videoErrorState.value) {
             // Try WebView with YouTube iframe embed first
             AndroidView(
                 factory = { ctx ->
@@ -307,7 +305,7 @@ fun YouTubeVideoBackground(
                             ) {
                                 super.onReceivedError(view, request, error)
                                 // Mark video as failed → fallback to thumbnail
-                                setVideoError(true)
+                                videoErrorState.value = true
                             }
                         }
 
@@ -319,7 +317,7 @@ fun YouTubeVideoBackground(
                                 if (msg.contains("152") || msg.contains("101") ||
                                     msg.contains("150") || msg.contains("not available") ||
                                     msg.contains("embed")) {
-                                    setVideoError(true)
+                                    videoErrorState.value = true
                                 }
                                 return super.onConsoleMessage(consoleMessage)
                             }
