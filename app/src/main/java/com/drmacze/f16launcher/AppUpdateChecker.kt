@@ -75,17 +75,23 @@ object AppUpdateChecker {
 
             val release = arr.getJSONObject(0)
             val versionCode = release.optInt("version_code", 0)
+            // Jika versionCode <= currentCode, tidak ada update
             if (versionCode <= currentCode) return null
+
+            // Jika apk_download_url kosong, jangan tampilkan popup (tidak bisa download)
+            val apkUrl = release.optString("apk_download_url", "")
+            if (apkUrl.isBlank()) return null
 
             UpdateInfo(
                 versionName = release.optString("version_name", "unknown"),
                 versionCode = versionCode,
                 releaseNotes = release.optString("changelog", ""),
-                apkUrl = release.optString("apk_download_url", ""),
+                apkUrl = apkUrl,
                 isPublished = release.optBoolean("is_published", false),
                 isUpdateAvailable = true
             )
         } catch (_: Throwable) {
+            // Tabel app_releases belum ada atau error → tidak show popup (bukan error fatal)
             null
         }
     }

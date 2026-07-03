@@ -482,7 +482,7 @@ public class CommunityApi {
     //  RLS: INSERT owner (reporter) only.
     // ──────────────────────────────────────────────────────────────────────
 
-    /** Report a feed post. Login required. category: spam|inappropriate|other. */
+    /** Report a feed post. Login required. category: spam|inappropriate|scam|other. */
     public void reportPost(String postId, String category, String reason) throws Exception {
         JSONObject body = new JSONObject()
             .put("reporter_id", userId())
@@ -491,6 +491,92 @@ public class CommunityApi {
             .put("category", category != null ? category : "other")
             .put("reason", reason != null ? reason.trim() : "");
         request("POST", "/rest/v1/reports", body, true, "return=minimal");
+    }
+
+    /**
+     * Convenience overload — report a post with default category "community".
+     * Matches the simplified call site signature `reportPost(postId, reason)`.
+     * Login required.
+     */
+    public void reportPost(String postId, String reason) throws Exception {
+        JSONObject body = new JSONObject()
+            .put("reporter_id", userId())
+            .put("target_type", "post")
+            .put("target_id", postId)
+            .put("category", "community")
+            .put("reason", reason != null ? reason.trim() : "");
+        request("POST", "/rest/v1/reports", body, true, "return=minimal");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Profile avatar upload (Supabase Storage bucket 'community-images')
+    //  Avatar path: userId/avatar_<userId>.jpg (foldername(name)[1] = auth.uid() — RLS).
+    //  Avatar URL disimpan di kolom `avatar_url` profiles table.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Upload avatar image ke Supabase Storage bucket 'community-images'.
+     * Path: userId/avatar_<userId>.jpg (x-upsert:true → overwrite kalau sudah ada).
+     * Returns the public URL of the uploaded avatar object.
+     *
+     * @param imageBytes raw JPEG bytes (size < 2MB recommended)
+     */
+    public String uploadAvatar(byte[] imageBytes) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login.");
+        if (imageBytes == null || imageBytes.length == 0)
+            throw new IllegalArgumentException("Image bytes kosong.");
+
+        String filename = "avatar_" + userId() + ".jpg";
+        String path = userId() + "/" + filename;
+        String encodedPath = java.net.URLEncoder.encode(path, "UTF-8");
+        String url = SUPABASE_URL + "/storage/v1/object/community-images/" + encodedPath;
+
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        try {
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(60000);
+            conn.setRequestProperty("apikey", SUPABASE_KEY);
+            conn.setRequestProperty("Authorization", "Bearer " + token());
+            conn.setRequestProperty("Content-Type", "image/jpeg");
+            conn.setRequestProperty("x-upsert", "true");
+            conn.getOutputStream().write(imageBytes);
+
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) {
+                String err = "";
+                java.io.InputStream errStream = conn.getErrorStream();
+                if (errStream != null) {
+                    try {
+                        java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(errStream));
+                        StringBuilder sb = new StringBuilder();
+                        String line;
+                        while ((line = br.readLine()) != null) sb.append(line).append('\n');
+                        err = sb.toString().trim();
+                    } catch (Throwable ignored) { }
+                }
+                throw new IllegalStateException("Upload avatar gagal: HTTP " + code + (err.isEmpty() ? "" : " " + err));
+            }
+        } finally {
+            conn.disconnect();
+        }
+
+        return SUPABASE_URL + "/storage/v1/object/public/community-images/" + encodedPath;
+    }
+
+    /**
+     * Update `avatar_url` column on the logged-in user's profile row.
+     * Also writes the new URL to local prefs so avatarUrl() returns it immediately.
+     */
+    public void updateAvatar(String avatarUrl) throws Exception {
+        if (userId().isEmpty()) throw new IllegalStateException("Belum login.");
+        if (avatarUrl == null || avatarUrl.trim().isEmpty())
+            throw new IllegalArgumentException("Avatar URL kosong.");
+        JSONObject body = new JSONObject().put("avatar_url", avatarUrl.trim());
+        request("PATCH", "/rest/v1/profiles?id=eq." + enc(userId()), body, true, "return=minimal");
+        // Update local prefs supaya avatarUrl() langsung return URL baru tanpa perlu reload profile
+        prefs.edit().putString("avatar_url", avatarUrl.trim()).apply();
     }
 
     // ──────────────────────────────────────────────────────────────────────

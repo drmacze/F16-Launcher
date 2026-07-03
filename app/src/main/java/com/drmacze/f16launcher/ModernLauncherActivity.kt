@@ -34,6 +34,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -86,6 +87,7 @@ import androidx.compose.material.icons.rounded.Article
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CloudDownload
@@ -2527,6 +2529,8 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
     var cleanupMsg      by remember { mutableStateOf("") }
     var showRollback    by remember { mutableStateOf(false) }
     var showCleanup     by remember { mutableStateOf(false) }
+    // Storage permission reminder saat apply patch (Task 2)
+    var showStoragePermissionDialog by remember { mutableStateOf(false) }
 
     val engine = remember {
         DevPatchEngine(context,
@@ -2574,6 +2578,13 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
     }
 
     fun applyPatch() {
+        // Task 2: Cek storage permission (MANAGE_EXTERNAL_STORAGE) dulu sebelum apply patch.
+        // Kalau belum granted → tampilkan dialog remind user untuk allow storage access,
+        // jangan lanjut apply patch (akan gagal karena tidak bisa write ke folder game).
+        if (!StorageAccess.isGranted()) {
+            showStoragePermissionDialog = true
+            return
+        }
         patchLogs.clear(); patchError = ""; patchDone = false; patching = true
         scope.launch {
             // Telemetry for patch_apply (status ok/failed/noop/blocked) is fired inside
@@ -3118,6 +3129,46 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
                 TextButton(onClick = { showCleanup = false }) { Text("Batal", color = SoftText) }
             },
             containerColor   = GlassBase
+        )
+    }
+
+    // ── Storage permission reminder dialog (Task 2) ──
+    // Saat user tap "Terapkan Pembaruan" tanpa MANAGE_EXTERNAL_STORAGE,
+    // tampilkan dialog → "Izinkan" (buka Settings) atau "Nanti" (dismiss).
+    if (showStoragePermissionDialog) {
+        AlertDialog(
+            onDismissRequest = { showStoragePermissionDialog = false },
+            title = { Text("Izinkan Akses Penyimpanan", color = Color.White, fontWeight = FontWeight.Black) },
+            text = {
+                Text(
+                    "Untuk menerapkan patch mod, launcher membutuhkan izin akses penyimpanan " +
+                    "(MANAGE_EXTERNAL_STORAGE). Tanpa izin ini, patch tidak bisa ditulis ke folder " +
+                    "data FIFA 16 (Android/data/com.ea.gp.fifaworld).\n\n" +
+                    "Tap \"Izinkan\" untuk membuka pengaturan, lalu aktifkan toggle \"Izinkan akses ke semua file\".",
+                    color = SoftText, fontSize = 13.sp, lineHeight = 18.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showStoragePermissionDialog = false
+                        StorageAccess.request(context)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CandyCyan, contentColor = Color(0xFF00111D)
+                    )
+                ) {
+                    Icon(Icons.Rounded.Security, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Izinkan", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStoragePermissionDialog = false }) {
+                    Text("Nanti", color = SubText)
+                }
+            },
+            containerColor = GlassBase
         )
     }
 }
@@ -4314,7 +4365,12 @@ private fun ReportPostDialog(
     onDismiss: () -> Unit,
     onSubmit: (category: String, reason: String) -> Unit
 ) {
-    val reasons = listOf("spam" to "Spam", "inappropriate" to "Konten tidak pantas", "other" to "Lainnya")
+    val reasons = listOf(
+        "spam" to "Spam",
+        "inappropriate" to "Konten tidak pantas",
+        "scam" to "Penipuan/scam",
+        "other" to "Lainnya"
+    )
     var selected by remember { mutableStateOf("spam") }
     var detail by remember { mutableStateOf("") }
 
@@ -4735,6 +4791,7 @@ fun ProfileScreen(
     onExpandedSectionChange: (String?) -> Unit = {}
 ) {
     val context       = LocalContext.current
+    val scope         = rememberCoroutineScope()
     // Load gameInstalled async to avoid blocking main thread
     var gameInstalled by remember { mutableStateOf(false) }
     // profileLoading: true saat initial load, false setelah gameInstalled ter-resolve.
@@ -4749,6 +4806,48 @@ fun ProfileScreen(
     var confirmLogout by remember { mutableStateOf(false) }
     val initial = api.displayName().firstOrNull()?.uppercaseChar()?.toString() ?: "D"
     val role    = api.role()
+
+    // Task 3: Avatar image picker + upload state.
+    // avatarUrlState di-init dari prefs (api.avatarUrl()), dan di-update setelah
+    // upload sukses supaya AsyncImage langsung re-render dengan URL baru.
+    var avatarUrlState  by remember { mutableStateOf(api.avatarUrl()) }
+    var avatarUploading by remember { mutableStateOf(false) }
+
+    fun toast(msg: String) {
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    // Avatar image picker — PickVisualMedia (gallery, image only).
+    // Saat user pilih foto → baca bytes → upload ke Supabase Storage → PATCH profile.
+    val avatarPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            avatarUploading = true
+            scope.launch {
+                try {
+                    val newUrl = withContext(Dispatchers.IO) {
+                        val inputStream = context.contentResolver.openInputStream(uri)
+                        val bytes = inputStream?.readBytes()
+                        inputStream?.close()
+                        if (bytes == null || bytes.isEmpty())
+                            throw IllegalStateException("Gagal membaca gambar dari gallery.")
+                        // Upload ke Supabase Storage bucket 'community-images'
+                        val uploadedUrl = api.uploadAvatar(bytes)
+                        // PATCH profiles.avatar_url + update local prefs
+                        api.updateAvatar(uploadedUrl)
+                        uploadedUrl
+                    }
+                    avatarUrlState = newUrl
+                    toast("Foto profil diperbarui.")
+                } catch (t: Throwable) {
+                    toast("Gagal upload foto: ${t.message}")
+                } finally {
+                    avatarUploading = false
+                }
+            }
+        }
+    }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
@@ -4774,11 +4873,22 @@ fun ProfileScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(TTSpacing.lg)
             ) {
-                // Avatar with gradient ring + glow — tap to expand "Ganti Profil" section
+                // Avatar with gradient ring + glow — Task 3: tap to pick new photo from gallery.
+                // Kalau ada avatar_url → tampilkan AsyncImage (Coil). Kalau belum → initial letter.
+                // Camera icon overlay di pojok kanan bawah sebagai affordance.
                 Box(
                     Modifier
                         .size(72.dp)
-                        .clickable { onExpandedSectionChange("profile") },
+                        .clickable {
+                            if (!api.loggedIn()) {
+                                toast("Login dulu untuk ganti foto profil.")
+                                return@clickable
+                            }
+                            if (avatarUploading) return@clickable
+                            avatarPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     // Outer glow
@@ -4816,13 +4926,52 @@ fun ProfileScreen(
                             style = Stroke(width = stroke)
                         )
                     }
-                    // Inner avatar — v3.0 monochrome (black bg + white initial + halftone)
-                    DLavieLogoCover(
-                        size = 60.dp,
-                        text = initial,
-                        fontSize = 24.sp,
-                        shape = CircleShape
-                    )
+                    // Inner avatar — kalau ada avatar_url → tampilkan foto (Coil AsyncImage).
+                    // Kalau belum → fallback ke v3.0 monochrome (black bg + white initial).
+                    if (avatarUrlState.isNotEmpty()) {
+                        AsyncImage(
+                            model = avatarUrlState,
+                            contentDescription = "Avatar",
+                            modifier = Modifier.size(60.dp).clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        DLavieLogoCover(
+                            size = 60.dp,
+                            text = initial,
+                            fontSize = 24.sp,
+                            shape = CircleShape
+                        )
+                    }
+                    // Upload progress overlay
+                    if (avatarUploading) {
+                        Box(
+                            Modifier
+                                .matchParentSize()
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(0.55f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                color = Color.White, strokeWidth = 2.dp
+                            )
+                        }
+                    }
+                    // Camera/edit icon overlay di pojok kanan bawah (affordance: tap to change)
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(24.dp)
+                            .background(Color.White, CircleShape)
+                            .border(1.dp, Carbon, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Rounded.CameraAlt, null,
+                            tint = Carbon, modifier = Modifier.size(14.dp)
+                        )
+                    }
                 }
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -4836,9 +4985,9 @@ fun ProfileScreen(
                     Spacer(Modifier.height(TTSpacing.sm))
                     ModernPill(role.uppercase(), roleBadgeColor(role))
                     Spacer(Modifier.height(TTSpacing.xs))
-                    // "Tap avatar untuk edit profil" hint — muted text kecil di bawah role pill
+                    // Task 3: hint diubah — tap avatar untuk ganti foto profil
                     Text(
-                        "Tap avatar untuk edit profil ↓",
+                        "Tap avatar untuk ganti foto ↓",
                         color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium
                     )
                 }
