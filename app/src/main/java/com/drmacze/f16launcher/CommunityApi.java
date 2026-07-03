@@ -20,15 +20,18 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class CommunityApi {
+public class CommunityApi extends SupabaseClient {
 
+    // P4A: CommunityApi now extends SupabaseClient (shared infrastructure).
+    // SUPABASE_URL, SUPABASE_KEY, prefs, request(), loggedIn(), userId(),
+    // token(), etc. are all inherited from SupabaseClient. CommunityApi keeps
+    // its own private request() / saveProfile() / enc() helpers (which hide
+    // the inherited protected ones — Java allows this for private methods).
+    // This facade is preserved for source-compat with all existing call sites;
+    // new code should prefer the narrow facades (AuthApi / FeedApi / GameApi).
     private static final String TAG = "DLavieApi";
-    public static final String SUPABASE_URL = "https://lvmucsxbmadtsgrxuwmo.supabase.co";
-    public static final String SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2bXVjc3hibWFkdHNncnh1d21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODUyODksImV4cCI6MjA5ODU2MTI4OX0.y-1sE6uYTn4Wbter6g6NozY6uojzD5x9YVeYif-5nJs";
 
-    private final SharedPreferences prefs;
-
-    public CommunityApi(Context ctx) { prefs = ctx.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE); }
+    public CommunityApi(Context ctx) { super(ctx); }
 
     public boolean loggedIn() {
         String token = prefs.getString("access_token", "");

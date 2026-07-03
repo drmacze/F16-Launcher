@@ -73,17 +73,13 @@ import androidx.compose.ui.unit.sp
 // single source of truth. File ini hanya simpan extend "Premium*" palette
 // (untuk backward compat dengan komponen lama yang pakai premium tint).
 
-// ─── Premium Palette (v3.0 — monochrome, match DLavie logo) ───────────────────
-// Deep near-black base (match logo bg) — dipakai untuk skeleton shimmer
-// background dan gradient border hero cards. Sebelumnya navy-blue, sekarang
-// pure monochrome dark gray.
+// ─── Premium Palette (v4.0 — strict alias to canonical tokens) ────────────────
+// Deep near-black base — alias ke Carbon/GlassBase untuk single source of truth.
+// PremiumGold & PremiumViolet are declared in TapTapDesignSystem.kt (strict
+// aliases to AmberWarn & SubText) — kept there for single source of truth.
 val PremiumBg         = Color(0xFF050505)   // deepest base — near pure black
-val PremiumSurface    = Color(0xFF0B0B0B)   // elevated surface — dark gray
-val PremiumSurfaceHi  = Color(0xFF111111)   // highest surface
-
-// Premium accents (v3.0 monochrome — ganti violet ke gray, keep gold for verified only)
-val PremiumGold = Color(0xFFFFD700)   // tetap gold — verified badge only
-val PremiumViolet = Color(0xFF9E9E9E) // monochrome gray — ganti violet (logo has no violet)
+val PremiumSurface    get() = Carbon        // alias — same as GlassBase palette root
+val PremiumSurfaceHi  get() = GlassBase     // alias — same as GlassBase
 
 // ─── Typography Scale ──────────────────────────────────────────────────────────
 // System font with proper weight hierarchy

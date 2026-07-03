@@ -170,6 +170,11 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.ExperimentalFoundationApi
+import com.airbnb.lottie.compose.LottieAnimation
+import com.airbnb.lottie.compose.LottieCompositionSpec
+import com.airbnb.lottie.compose.animateLottieCompositionAsState
+import com.airbnb.lottie.compose.rememberLottieComposition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -407,12 +412,34 @@ fun DLavieModernApp(initialPostId: String? = null) {
         try { kotlinx.coroutines.awaitCancellation() } finally { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    MaterialTheme(colorScheme = darkColorScheme(
-        background   = Carbon,    surface      = GlassBase,
-        primary      = CandyCyan, secondary    = CandyBlue,
-        onPrimary    = Color(0xFF00111D), onSecondary = Color.White,
-        onBackground = Color.White, onSurface  = Color.White
-    )) {
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            background   = Carbon,    surface      = GlassBase,
+            primary      = AccentGreen, secondary  = SoftText,
+            tertiary     = AmberWarn,
+            onPrimary    = Carbon, onSecondary = Carbon, onTertiary = Carbon,
+            onBackground = Color.White, onSurface  = Color.White
+        ),
+        // P1B: Inter font applied globally — every Text() in the app inherits
+        // Inter via MaterialTheme typography. No per-call fontFamily needed.
+        typography = androidx.compose.material3.Typography(
+            displayLarge   = TTTypography.displayLarge,
+            displayMedium  = TTTypography.displayMedium,
+            displaySmall   = TTTypography.headlineLarge,
+            headlineLarge  = TTTypography.headlineLarge,
+            headlineMedium = TTTypography.headlineMedium,
+            headlineSmall  = TTTypography.titleLarge,
+            titleLarge     = TTTypography.titleLarge,
+            titleMedium    = TTTypography.titleMedium,
+            titleSmall     = TTTypography.labelMedium,
+            bodyLarge      = TTTypography.bodyLarge,
+            bodyMedium     = TTTypography.bodyMedium,
+            bodySmall      = TTTypography.bodySmall,
+            labelLarge     = TTTypography.labelMedium,
+            labelMedium    = TTTypography.labelMedium,
+            labelSmall     = TTTypography.caption
+        )
+    ) {
         Surface(Modifier.fillMaxSize(), color = Carbon) {
             Box(
                 Modifier.fillMaxSize()
@@ -709,6 +736,27 @@ fun MainShell(
     // Jika initialPostId != null, default page = Chat (Komunitas) supaya user
     // langsung lihat feed. Kita juga tampilkan toast singkat untuk konfirmasi.
     var page by remember { mutableStateOf(if (initialPostId != null) Page.Chat else Page.Home) }
+    // ── P3A: HorizontalPager for tab navigation (swipe between Home/Update/Chat/Me) ──
+    // pagePagerState is declared at MainShell scope so it survives the
+    // showGameDetail AnimatedContent toggling (which would otherwise dispose
+    // any state declared inside its branches). Sync is bidirectional:
+    //   - User swipes pager → page updated (so FloatingNav highlights the right tab)
+    //   - User taps FloatingNav / onNav callback → pager animates to that page
+    val pagePagerState = rememberPagerState(
+        initialPage = page.ordinal,
+        pageCount = { Page.values().size }
+    )
+    // Pager → page (only when actually different to avoid feedback loop)
+    LaunchedEffect(pagePagerState.currentPage) {
+        val newPage = Page.values()[pagePagerState.currentPage]
+        if (newPage != page) page = newPage
+    }
+    // page → pager (animate when page changes from outside the pager)
+    LaunchedEffect(page) {
+        if (page.ordinal != pagePagerState.currentPage) {
+            pagePagerState.animateScrollToPage(page.ordinal)
+        }
+    }
     val pendingPostId = remember { mutableStateOf(initialPostId) }
 
     // ── Active notification banner state (Module 3: Push Notification Receiver) ──
@@ -980,27 +1028,19 @@ fun MainShell(
                                 maintenanceBlocked = detailMaintenanceBlocked
                             )
                         } else {
-                            AnimatedContent(
-                                targetState    = page,
-                                label          = "page_anim",
-                                // Task 4 UI polish: fade + slight scale (0.98 → 1.0), 300ms (was 380ms).
-                                // Slide is kept subtle (it/12) for direction cue without being heavy.
-                                transitionSpec = {
-                                    (fadeIn(tween(300, easing = FastOutSlowInEasing)) +
-                                     scaleIn(initialScale = 0.98f, animationSpec = tween(300, easing = FastOutSlowInEasing)) +
-                                     androidx.compose.animation.slideInHorizontally(
-                                         initialOffsetX = { it / 12 },
-                                         animationSpec = tween(300, easing = FastOutSlowInEasing)
-                                     )) togetherWith
-                                    (fadeOut(tween(200)) +
-                                     scaleOut(targetScale = 0.98f, animationSpec = tween(200, easing = FastOutSlowInEasing)) +
-                                     androidx.compose.animation.slideOutHorizontally(
-                                         targetOffsetX = { -it / 24 },
-                                         animationSpec = tween(240, easing = FastOutSlowInEasing)
-                                     ))
-                                },
-                                modifier       = Modifier.fillMaxSize().padding(bottom = 100.dp)
-                            ) { target ->
+                            // ── P3A: HorizontalPager replaces AnimatedContent for tab nav ──
+                            // Swipe between Home / Update / Chat / Me. Sync with `page`
+                            // is handled at MainShell scope (LaunchedEffect above).
+                            // beyondViewportPageCount = 0 keeps only current page alive
+                            // (matches old AnimatedContent behavior — adjacent pages
+                            // are disposed and re-fetch on mount via their LaunchedEffect).
+                            HorizontalPager(
+                                state = pagePagerState,
+                                modifier = Modifier.fillMaxSize().padding(bottom = 100.dp),
+                                pageSpacing = 0.dp,
+                                beyondViewportPageCount = 0
+                            ) { pageIndex ->
+                                val target = Page.values()[pageIndex]
                                 // ── Partial maintenance: NO blur, just block action buttons ──
                                 when (target) {
                                     Page.Home   -> HomeScreen(
@@ -1410,13 +1450,8 @@ fun HomeScreen(
         state = pullState,
         modifier = Modifier.fillMaxSize(),
         indicator = {
-            PullToRefreshDefaults.Indicator(
-                state = pullState,
-                isRefreshing = isRefreshing,
-                modifier = Modifier.align(Alignment.TopCenter),
-                containerColor = MaterialTheme.colorScheme.surface,
-                color = CandyCyan
-            )
+            // P2D: custom halftone dot spinner replaces default Material indicator.
+            HalftonePullIndicator(state = pullState, isRefreshing = isRefreshing)
         }
     ) {
     Column(
@@ -3523,6 +3558,45 @@ fun CommunityScreen(
     // Reload when tab or sort changes (role/date filters apply client-side → also reload)
     LaunchedEffect(selectedTab, sortBy, roleFilter, dateFilterMillis) { loadPosts() }
 
+    // ── P3C: Debounced real-time search ──
+    // LaunchedEffect(searchQuery) auto-cancels the previous run when the query
+    // changes → the delay(300) effectively debounces. Only fires api.searchUsers
+    // when the trimmed query is >= 2 chars; clears results otherwise.
+    LaunchedEffect(searchQuery) {
+        val q = searchQuery.trim()
+        if (q.length < 2) {
+            searching = false
+            searchResults = emptyList()
+            return@LaunchedEffect
+        }
+        delay(300L)  // debounce window — cancels if user keeps typing
+        searching = true
+        try {
+            val arr = withContext(Dispatchers.IO) { api.searchUsers(q) }
+            val list = (0 until arr.length()).mapNotNull { i ->
+                runCatching {
+                    val o = arr.getJSONObject(i)
+                    UserSearchResult(
+                        id          = o.optString("id"),
+                        username    = o.optString("username"),
+                        displayName = o.optString("display_name"),
+                        avatarUrl   = o.optString("avatar_url", "").let { s ->
+                            val ss = s.trim()
+                            if (ss.isBlank() || ss.equals("null", ignoreCase = true)) "" else ss
+                        },
+                        uniqueId    = o.optInt("unique_id", 0),
+                        role        = o.optString("role", "user")
+                    )
+                }.getOrNull()
+            }.filter { it.id.isNotBlank() && it.id != api.userId() }
+            searchResults = list
+        } catch (_: Throwable) {
+            searchResults = emptyList()
+        } finally {
+            searching = false
+        }
+    }
+
     // ── Phase 2: Deep-link dari notification tap ──
     // Saat pendingPostId di-set (dari MainShell), cari post di feed dan auto-open comments sheet.
     // Konsumsi pendingPostId (set null) setelah diproses supaya tidak re-trigger.
@@ -3653,43 +3727,12 @@ fun CommunityScreen(
             // ── Task 3: Username search bar ──
             // Triggers api.searchUsers() when query length >= 2. Results render as a
             // dropdown overlay (max 10 rows). Tapping a row → onVisitProfile(uid).
+            // P3C: Debounced search — the actual api.searchUsers call is made in
+            // the LaunchedEffect(searchQuery) below, 300ms after the user stops
+            // typing. The onValueChange here just updates the query text.
             OutlinedTextField(
                 value = searchQuery,
-                onValueChange = { raw ->
-                    searchQuery = raw
-                    if (raw.trim().length >= 2) {
-                        searching = true
-                        scope.launch {
-                            try {
-                                val arr = withContext(Dispatchers.IO) { api.searchUsers(raw.trim()) }
-                                val list = (0 until arr.length()).mapNotNull { i ->
-                                    runCatching {
-                                        val o = arr.getJSONObject(i)
-                                        UserSearchResult(
-                                            id          = o.optString("id"),
-                                            username    = o.optString("username"),
-                                            displayName = o.optString("display_name"),
-                                            avatarUrl   = o.optString("avatar_url", "").let { s ->
-                                                val ss = s.trim()
-                                                if (ss.isBlank() || ss.equals("null", ignoreCase = true)) "" else ss
-                                            },
-                                            uniqueId    = o.optInt("unique_id", 0),
-                                            role        = o.optString("role", "user")
-                                        )
-                                    }.getOrNull()
-                                }.filter { it.id.isNotBlank() && it.id != api.userId() }
-                                searchResults = list
-                            } catch (_: Throwable) {
-                                searchResults = emptyList()
-                            } finally {
-                                searching = false
-                            }
-                        }
-                    } else {
-                        searchResults = emptyList()
-                        searching = false
-                    }
-                },
+                onValueChange = { raw -> searchQuery = raw },
                 placeholder = { Text("Cari username komunitas…", fontSize = 13.sp, color = SubText) },
                 leadingIcon = { Icon(Icons.Rounded.Search, null, tint = SubText, modifier = Modifier.size(18.dp)) },
                 trailingIcon = {
@@ -3756,6 +3799,8 @@ fun CommunityScreen(
 
             // ── Feed (pull-to-refresh + lazy list) — takes remaining space below top bar ──
             Box(Modifier.weight(1f).fillMaxWidth()) {
+                // P2D: custom halftone pull indicator (same as HomeScreen).
+                val communityPullState = rememberPullToRefreshState()
                 PullToRefreshBox(
                     isRefreshing = refreshing,
                     onRefresh = {
@@ -3765,7 +3810,11 @@ fun CommunityScreen(
                             loadPosts()
                         }
                     },
-                    modifier = Modifier.fillMaxSize()
+                    state = communityPullState,
+                    modifier = Modifier.fillMaxSize(),
+                    indicator = {
+                        HalftonePullIndicator(state = communityPullState, isRefreshing = refreshing)
+                    }
                 ) {
                     when {
                         loading -> {
@@ -3786,6 +3835,20 @@ fun CommunityScreen(
                             )
                         }
                         else -> {
+                            // ── P3B: Infinite scroll — reveal posts in pages of 10 ──
+                            // The /feed_posts RLS endpoint returns up to N posts in one
+                            // shot (no cursor), so we client-side paginate: take the
+                            // first `displayCount` from the full `posts` list, and when
+                            // the user reaches the bottom, show a skeleton + reveal
+                            // the next 10 after a short delay. This gives the visual
+                            // feel of infinite scroll without backend pagination.
+                            val pageSize = 10
+                            var displayCount by remember { mutableStateOf(pageSize) }
+                            // Reset pagination whenever a fresh fetch happens
+                            LaunchedEffect(posts) { displayCount = pageSize }
+                            val displayedPosts = posts.take(displayCount)
+                            val canLoadMore = displayedPosts.size < posts.size
+
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(
@@ -3794,7 +3857,7 @@ fun CommunityScreen(
                                 ),
                                 verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
                             ) {
-                                items(posts, key = { it.id }) { post ->
+                                items(displayedPosts, key = { it.id }) { post ->
                                     val author = authorCache[post.authorId]
                                     val like = likeState[post.id] ?: (false to 0)
                                     val saved = savedState[post.id] ?: false
@@ -3872,6 +3935,19 @@ fun CommunityScreen(
                                         },
                                         onVisitProfile = { uid -> onVisitProfile(uid) }
                                     )
+                                }
+                                // P3B: Load-more footer — when this item enters the
+                                // viewport, LaunchedEffect(Unit) fires once and reveals
+                                // the next `pageSize` posts. Skeleton gives the visual
+                                // cue that more is loading.
+                                if (canLoadMore) {
+                                    item(key = "load_more_footer") {
+                                        LaunchedEffect(Unit) {
+                                            delay(250L)  // brief skeleton flash
+                                            displayCount = (displayCount + pageSize).coerceAtMost(posts.size)
+                                        }
+                                        TTGameCardSkeleton()
+                                    }
                                 }
                             }
                         }
@@ -4042,6 +4118,7 @@ private fun CommunityFilterChip(label: String, onClear: () -> Unit) {
 }
 
 // ─── Feed post card (TapTap-style) ─────────────────────────────────────────────
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FeedPostCard(
     post: FeedPostData,
@@ -4066,6 +4143,32 @@ private fun FeedPostCard(
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
         label = "like_bounce"
     )
+    // ── P2B: Lottie heart-burst animation on like ──
+    // Loads like_animation.json (AccentGreen heart + 6 particles). Plays once when
+    // the user toggles liked false → true. The LottieAnimation overlay is sized
+    // 48dp centered over the Like button so the burst visibly emanates from it.
+    val likeComposition by rememberLottieComposition(
+        LottieCompositionSpec.RawRes(R.raw.like_animation)
+    )
+    var playLikeBurst by remember { mutableStateOf(false) }
+    // `by` delegation gives us a Float (animation progress 0..1) — matches the
+    // existing LottieLoading pattern. We can't read isPlaying from a Float, so
+    // we reset the overlay via a fixed delay after the one-shot finishes.
+    val likeProgress by animateLottieCompositionAsState(
+        composition = likeComposition,
+        isPlaying = playLikeBurst,
+        restartOnPlay = true,
+        iterations = 1,
+        speed = 1.4f
+    )
+    LaunchedEffect(playLikeBurst) {
+        // The animation runs 60 frames @ 60fps / 1.4x speed ≈ 715ms.
+        // Keep the overlay visible slightly longer, then dismiss.
+        if (playLikeBurst) {
+            delay(900L)
+            playLikeBurst = false
+        }
+    }
     // ── Phase 2: detect video URL in body (YouTube/TikTok) ──
     val videoEmbed = remember(post.body) { extractVideoEmbed(post.body) }
 
@@ -4240,27 +4343,41 @@ private fun FeedPostCard(
                         }
                     }
 
-                    // Like button (thumbs up + count) with bounce
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier
-                            .clip(TTShapes.chip)
-                            .clickable { onLike() }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Icon(
-                            if (liked) Icons.Rounded.ThumbUp else Icons.Rounded.ThumbUpOffAlt,
-                            contentDescription = "Like",
-                            tint = if (liked) NeonGreen else SoftText,
-                            modifier = Modifier.size(18.dp).scale(likeScale)
-                        )
-                        Text(
-                            if (likeCount > 0) likeCount.toString() else "",
-                            color = if (liked) NeonGreen else SoftText,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                    // Like button (thumbs up + count) with Lottie heart-burst overlay.
+                    // P2B: when user likes (false → true), playLikeBurst toggles true
+                    // and the Lottie animation plays once on top of the icon.
+                    Box(contentAlignment = Alignment.Center) {
+                        if (playLikeBurst) {
+                            LottieAnimation(
+                                composition = likeComposition,
+                                progress = { likeProgress },
+                                modifier = Modifier.size(48.dp)
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .clip(TTShapes.chip)
+                                .clickable {
+                                    if (!liked) playLikeBurst = true
+                                    onLike()
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                if (liked) Icons.Rounded.ThumbUp else Icons.Rounded.ThumbUpOffAlt,
+                                contentDescription = "Like",
+                                tint = if (liked) AccentGreen else SoftText,
+                                modifier = Modifier.size(18.dp).scale(likeScale)
+                            )
+                            Text(
+                                if (likeCount > 0) likeCount.toString() else "",
+                                color = if (liked) AccentGreen else SoftText,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
                     Spacer(Modifier.width(TTSpacing.xs))

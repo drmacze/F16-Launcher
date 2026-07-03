@@ -62,6 +62,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -257,7 +258,17 @@ fun TTBannerCarousel(
             modifier = Modifier.fillMaxWidth().height(180.dp),
             pageSpacing = TTSpacing.md
         ) { page ->
-            TTBannerItem(banners[page]) { onBannerClick(banners[page]) }
+            // P2C: Parallax — banner background moves at half speed of the page
+            // swipe. currentPageOffsetFraction is in [-0.5, 0.5] during settle.
+            // We translate the inner content by a fraction of the page width so
+            // it lags behind the swipe → depth feel.
+            val pageOffset = pagerState.currentPageOffsetFraction
+            val parallaxOffset = (page - pagerState.currentPage + pageOffset) * 80f
+            TTBannerItem(
+                banner = banners[page],
+                parallaxOffsetPx = parallaxOffset,
+                onClick = { onBannerClick(banners[page]) }
+            )
         }
 
         // Page indicator dots
@@ -279,7 +290,7 @@ fun TTBannerCarousel(
                         .size(width = width, height = 6.dp)
                         .clip(CircleShape)
                         .background(
-                            if (isSelected) CandyCyan else Color.White.copy(0.3f)
+                            if (isSelected) AccentGreen else Color.White.copy(0.3f)
                         )
                 )
             }
@@ -291,6 +302,7 @@ fun TTBannerCarousel(
 @Composable
 private fun TTBannerItem(
     banner: BannerItem,
+    parallaxOffsetPx: Float = 0f,
     onClick: () -> Unit
 ) {
     Card(
@@ -307,8 +319,13 @@ private fun TTBannerItem(
                     Brush.linearGradient(banner.gradientColors)
                 )
         ) {
-            // Mesh gradient overlay (radial highlight top-left)
-            Canvas(Modifier.fillMaxSize()) {
+            // P2C: Parallax — the mesh overlay translates by half the swipe
+            // distance, creating depth between background and foreground text.
+            Canvas(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { translationX = parallaxOffsetPx * 0.5f }
+            ) {
                 val w = size.width
                 val h = size.height
                 drawRect(
@@ -320,8 +337,12 @@ private fun TTBannerItem(
                 )
             }
 
+            // Foreground content moves at quarter speed — subtler parallax.
             Column(
-                Modifier.fillMaxSize().padding(TTSpacing.xl),
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { translationX = parallaxOffsetPx * 0.25f }
+                    .padding(TTSpacing.xl),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
@@ -546,6 +567,82 @@ fun HalftoneBackground(
                 radius = w * 0.6f
             )
         )
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// P2D — Custom Pull-to-Refresh Indicator (Halftone Dot Spinner)
+//
+// Replaces Material3 default PullToRefreshDefaults.Indicator with a halftone
+// dot circle that scales with drag distance and rotates while refreshing.
+// Visually matches the DLavie monochrome halftone signature.
+//
+// Usage:
+//   PullToRefreshBox(
+//       isRefreshing = isRefreshing,
+//       onRefresh = { ... },
+//       state = pullState,
+//       indicator = { HalftonePullIndicator(pullState, isRefreshing) }
+//   ) { ... }
+// ════════════════════════════════════════════════════════════════════════════
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun androidx.compose.foundation.layout.BoxScope.HalftonePullIndicator(
+    state: androidx.compose.material3.pulltorefresh.PullToRefreshState,
+    isRefreshing: Boolean
+) {
+    // Only render when user is actively dragging (distanceFraction > 0) or
+    // a refresh is in-flight. Avoids empty space when idle.
+    val distance = state.distanceFraction
+    if (distance <= 0f && !isRefreshing) return
+
+    // Scale: 0 → 1 as user pulls past the trigger threshold. While refreshing,
+    // force full scale so the spinner stays visible.
+    val scale = (if (isRefreshing) 1f else distance).coerceIn(0f, 1f)
+    if (scale <= 0f) return
+
+    // Rotation: spin only while refreshing. Uses an infinite transition.
+    val infiniteTransition = rememberInfiniteTransition(label = "pull_spin")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            tween(900, easing = LinearEasing),
+            RepeatMode.Restart
+        ),
+        label = "pull_rotation"
+    )
+
+    Box(
+        Modifier
+            .align(Alignment.TopCenter)
+            .padding(top = TTSpacing.md)
+            .size(40.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                rotationZ = if (isRefreshing) rotation else 0f
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val radius = 15f
+            // 8 dots arranged in a circle with varying opacity (brighter at top,
+            // dimmer at bottom → classic "loading spinner" look).
+            for (i in 0..7) {
+                val angleDeg = i * 45f
+                val angleRad = (angleDeg * Math.PI / 180.0).toFloat()
+                val dotAlpha = ((i + 1) / 8f) * scale
+                drawCircle(
+                    color = Color.White.copy(alpha = dotAlpha),
+                    radius = 3f,
+                    center = Offset(
+                        center.x + kotlin.math.cos(angleRad) * radius,
+                        center.y + kotlin.math.sin(angleRad) * radius
+                    )
+                )
+            }
+        }
     }
 }
 
