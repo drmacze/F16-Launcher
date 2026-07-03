@@ -127,7 +127,7 @@ public class GameHubActivity extends Activity {
         nav.addView(navBtn("⌂  Home", () -> home()));
         nav.addView(navBtn("◉  Community", () -> startActivity(new Intent(this, CommunityActivity.class))));
         nav.addView(navBtn("◇  Upgrade Plan", () -> plan()));
-        nav.addView(navBtn("☻  Profile", () -> profile()));
+        nav.addView(navBtn("◆  Profile", () -> profile()));
         nav.addView(space(1, dp(12)), new LinearLayout.LayoutParams(1, 0, 1));
         nav.addView(txt(dark ? "Dark liquid glass" : "Light liquid glass", 11, muted, false));
         ScrollView scroll = new ScrollView(this);

@@ -2,6 +2,7 @@ package com.drmacze.f16launcher
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -134,3 +135,139 @@ object TTElevation {
     val modal = 8.dp
     val nav   = 12.dp
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// DLAVIE AURORA GLASS — Glassmorphism layer (v5.0)
+//
+// Built ON TOP of the strict tokens above (does not replace them).
+// Adds:
+//   - Aurora gradient backgrounds (cyan + violet glow)
+//   - Frosted glass surfaces (white-alpha + blur)
+//   - Soft glow shadows
+//   - Cyan accent for primary actions
+//   - Violet accent for secondary highlights
+//
+// All new screens should prefer DLavieGlass* components. Existing screens
+// continue to work unchanged because the strict tokens are preserved.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ─── Aurora Glass palette ───────────────────────────────────────────────────
+// Deep space backgrounds (slightly different from Carbon to give aurora depth)
+object DLavieGlass {
+    // Backgrounds (darker than Carbon for more depth)
+    val SpaceBlack    = Color(0xFF050507)   // deepest bg
+    val SpaceCharcoal = Color(0xFF0B0B10)   // elevated bg
+    val SpaceSurface  = Color(0xFF13131A)   // cards without glass
+
+    // Glass surfaces (white with low alpha — paired with blur)
+    val GlassSurface     = Color(0x14FFFFFF)   // 8% white — base glass
+    val GlassSurfaceHigh = Color(0x1FFFFFFF)   // 12% white — pressed/elevated
+    val GlassSurfaceLow  = Color(0x0AFFFFFF)   // 4% white — subtle
+    val GlassStroke      = Color(0x24FFFFFF)   // 14% white border (stronger than legacy)
+    val GlassStrokeHigh  = Color(0x3DFFFFFF)   // 24% white — focused/active border
+
+    // Aurora gradient colors (cyan + violet glow)
+    val AuroraCyan    = Color(0xFF00E5FF)   // primary accent (electric cyan)
+    val AuroraViolet  = Color(0xFFB388FF)   // secondary accent (soft violet)
+    val AuroraMint    = Color(0xFF00E676)   // success/play (same as AccentGreen)
+    val AuroraCoral   = Color(0xFFFF5252)   // danger
+    val AuroraAmber   = Color(0xFFFFAB00)   // warning/rating
+
+    // Glow halos (for radial gradients behind cards / buttons)
+    val GlowCyan   = Color(0x6600E5FF)   // 40% cyan glow
+    val GlowViolet = Color(0x66B388FF)   // 40% violet glow
+    val GlowMint   = Color(0x6600E676)   // 40% mint glow
+
+    // Text on glass
+    val TextPrimary   = Color(0xFFFFFFFF)   // pure white for headlines
+    val TextSecondary = Color(0xFFE0E0E8)   // body
+    val TextMuted     = Color(0xFF8A8A95)   // captions
+    val TextDim       = Color(0xFF555560)   // micro/disabled
+
+    // DLavie brand mark colors
+    val BrandMarkCyan   = Color(0xFF28D7FF)
+    val BrandMarkMint   = Color(0xFF20E070)
+    val BrandMarkStroke = Color(0xFF5A6662)
+}
+
+// Convenience aliases for new code (prefer these in NEW screens)
+val DLAuroraCyan    get() = DLavieGlass.AuroraCyan
+val DLAuroraViolet  get() = DLavieGlass.AuroraViolet
+val DLAuroraMint    get() = DLavieGlass.AuroraMint
+val DLAuroraCoral   get() = DLavieGlass.AuroraCoral
+val DLGlassSurface     get() = DLavieGlass.GlassSurface
+val DLGlassStroke      get() = DLavieGlass.GlassStroke
+val DLTextPrimary   get() = DLavieGlass.TextPrimary
+val DLTextSecondary get() = DLavieGlass.TextSecondary
+val DLTextMuted     get() = DLavieGlass.TextMuted
+
+// ─── Aurora Gradients (for backgrounds + glows) ─────────────────────────────
+object DLavieGradients {
+    // Top-of-screen aurora — cyan to violet, top-down
+    val auroraTopToBottom = Brush.verticalGradient(
+        colors = listOf(
+            Color(0xFF00E5FF).copy(alpha = 0.18f),
+            Color(0xFFB388FF).copy(alpha = 0.10f),
+            Color(0x00000000),
+        )
+    )
+
+    // Card glass gradient — subtle white top-to-bottom
+    val glassCard = Brush.verticalGradient(
+        colors = listOf(
+            Color.White.copy(alpha = 0.10f),
+            Color.White.copy(alpha = 0.04f),
+        )
+    )
+
+    // Button primary gradient (cyan glow)
+    val primaryButton = Brush.horizontalGradient(
+        colors = listOf(
+            Color(0xFF00E5FF),
+            Color(0xFF00B8D4),
+        )
+    )
+
+    // Accent ring (cyan to violet)
+    val accentRing = Brush.sweepGradient(
+        colors = listOf(
+            Color(0xFF00E5FF),
+            Color(0xFFB388FF),
+            Color(0xFF00E5FF),
+        )
+    )
+}
+
+// ─── Glass Spacing (slightly more generous for breathing room) ──────────────
+object DLSpacing {
+    val xs   = 4.dp
+    val sm   = 8.dp
+    val md   = 12.dp
+    val lg   = 16.dp
+    val xl   = 20.dp
+    val xxl  = 24.dp
+    val xxxl = 32.dp
+    val huge = 48.dp
+}
+
+// ─── Glass Radius (rounder for modern feel) ─────────────────────────────────
+object DLRadius {
+    val xs    = 8.dp
+    val sm    = 12.dp
+    val md    = 16.dp
+    val lg    = 20.dp
+    val xl    = 24.dp
+    val xxl   = 28.dp
+    val pill  = 999.dp
+
+    val card     get() = RoundedCornerShape(xl)
+    val cardLg   get() = RoundedCornerShape(xxl)
+    val button   get() = RoundedCornerShape(md)
+    val pill     get() = RoundedCornerShape(pill)
+    val input    get() = RoundedCornerShape(md)
+    val chip     get() = RoundedCornerShape(sm)
+}
+
+// ─── Glass Border ────────────────────────────────────────────────────────────
+val DLBorderStroke: BorderStroke = BorderStroke(1.dp, DLavieGlass.GlassStroke)
+val DLBorderActive: BorderStroke = BorderStroke(1.5.dp, DLavieGlass.GlassStrokeHigh)

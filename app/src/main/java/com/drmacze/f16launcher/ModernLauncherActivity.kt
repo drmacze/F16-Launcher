@@ -73,7 +73,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.BookmarkBorder
+import androidx.compose.material.icons.rounded.BookmarkRemove
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.FilterList
@@ -1215,34 +1217,38 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
     val haptic = LocalHapticFeedback.current
     val infiniteTransition = rememberInfiniteTransition(label = "nav_glow")
     val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f, targetValue = 0.75f,
-        animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        initialValue = 0.5f, targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "glow"
     )
 
     Box(modifier = modifier.widthIn(max = 600.dp).padding(horizontal = 16.dp)) {
-        // Multi-layer glow backdrop — soft white halo di belakang pill (v3.0 monochrome)
+        // Aurora glow backdrop — cyan + violet halo di belakang pill
         Box(
             Modifier.matchParentSize()
                 .clip(RoundedCornerShape(999.dp))
                 .background(
                     Brush.horizontalGradient(
                         listOf(
-                            Color.White.copy(alpha = glowAlpha * 0.06f),
-                            Color.White.copy(alpha = glowAlpha * 0.10f),
-                            Color.White.copy(alpha = glowAlpha * 0.06f)
+                            DLavieGlass.AuroraCyan.copy(alpha = glowAlpha * 0.18f),
+                            DLavieGlass.AuroraViolet.copy(alpha = glowAlpha * 0.12f),
+                            DLavieGlass.AuroraCyan.copy(alpha = glowAlpha * 0.18f)
                         )
                     )
                 )
-                .blur(20.dp)
+                .blur(28.dp)
         )
         Surface(
             shape           = RoundedCornerShape(999.dp),  // true pill
-            color           = Color(0xF00A0A0A),   // v3.0 monochrome near-black glass
+            color           = DLavieGlass.SpaceBlack.copy(alpha = 0.92f),   // deep glass
             border          = BorderStroke(1.dp, Brush.horizontalGradient(
-                listOf(GlassStroke, Color.White.copy(0.20f), GlassStroke)
+                listOf(
+                    DLavieGlass.GlassStroke,
+                    DLavieGlass.AuroraCyan.copy(alpha = 0.30f),
+                    DLavieGlass.GlassStroke
+                )
             )),
-            shadowElevation = 16.dp,   // slightly flatter, lebih modern
+            shadowElevation = 20.dp,
             tonalElevation  = 0.dp
         ) {
             Row(
@@ -1252,7 +1258,7 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
                 Page.values().forEach { item ->
                     val selected  = page == item
                     val iconTint  by animateColorAsState(
-                        if (selected) Carbon else SubText,
+                        if (selected) DLavieGlass.SpaceBlack else DLavieGlass.TextSecondary,
                         tween(380, easing = FastOutSlowInEasing), label = "nav_tint_${item.label}"
                     )
                     val scaleAnim by animateFloatAsState(
@@ -1260,10 +1266,9 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
                         label = "nav_scale_${item.label}"
                     )
                     val iconScale by animateFloatAsState(
-                        if (selected) 1.1f else 1f, tween(280, easing = FastOutSlowInEasing),
+                        if (selected) 1.15f else 1f, tween(280, easing = FastOutSlowInEasing),
                         label = "nav_iconscale_${item.label}"
                     )
-                    // animateDpAsState untuk indicator padding (active tab lebih lega)
                     val horizontalPad by androidx.compose.animation.core.animateDpAsState(
                         if (selected) 18.dp else 12.dp,
                         tween(280, easing = FastOutSlowInEasing),
@@ -1275,16 +1280,18 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
                             .weight(1f)
                             .height(52.dp)
                             .scale(scaleAnim)
-                            .clip(RoundedCornerShape(999.dp))  // true pill
+                            .clip(RoundedCornerShape(999.dp))
                             .background(
-                                // v3.0 monochrome — active tab solid white (inverted premium)
+                                // Active tab: aurora cyan gradient (modern, vibrant)
                                 if (selected) Brush.horizontalGradient(
-                                    listOf(Color.White, Color.White.copy(0.92f))
+                                    listOf(
+                                        DLavieGlass.AuroraCyan,
+                                        DLavieGlass.AuroraCyan.copy(alpha = 0.85f)
+                                    )
                                 )
                                 else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
                             )
                             .clickable {
-                                // Phase 4: light haptic on tab switch.
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onPage(item)
                             },
@@ -1605,34 +1612,48 @@ fun HomeScreen(
             }
         }
 
-        // ── Hero Banner (FIFA 16 Mobile — v3.0 halftone monochrome) ────────────
-        // Halftone particle background (match DLavie logo) + shiny title
-        // + typewriter subtitle + rating badge + DL logo cover.
+        // ── Hero Banner (FIFA 16 Mobile — v5.0 Aurora Glass) ──────────────────
+        // Deep space background + aurora glow + halftone overlay + DLavie logo
         Box(
-            Modifier.fillMaxWidth().height(200.dp)
-                .clip(RoundedCornerShape(24.dp))
+            Modifier.fillMaxWidth().height(220.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .border(
+                    BorderStroke(1.dp, DLavieGlass.GlassStroke.copy(alpha = 0.7f)),
+                    RoundedCornerShape(28.dp)
+                )
         ) {
-            // v3.0: Halftone particle background (replaces MeshGradientBackground)
-            HalftoneBackground(
+            // Aurora background (cyan + violet glow + halftone overlay)
+            AuroraBackground(
                 modifier = Modifier.fillMaxSize(),
-                dotSize = 2.5f,
-                spacing = 18f,
-                baseColor = HalftoneBright
+                showHalftone = true,
+                glowIntensity = 1.2f
             )
 
             Column(
                 Modifier.fillMaxSize().padding(20.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // Top row: title + rating badge
+                // Top row: DLavie logo + brand text + rating badge
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Top
                 ) {
                     Column(Modifier.weight(1f)) {
-                        ShinyTitle("FIFA 16 Mobile")
-                        Spacer(Modifier.height(10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DLavieLogo(size = 28.dp, strokeWidth = 2.dp)
+                            Column {
+                                Text(
+                                    "DLAVIE",
+                                    color = DLavieGlass.TextPrimary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = 2.sp
+                                )
+                                ShinyTitle("FIFA 16 Mobile")
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
                         TypewriterText(
                             texts = listOf(
                                 "Play FIFA 16 Mobile everywhere",
@@ -1644,26 +1665,29 @@ fun HomeScreen(
                     // Rating badge — pojok kanan atas banner
                     Column(horizontalAlignment = Alignment.End) {
                         val rating10 = String.format("%.1f", avgRating * 2.0)
-                        Text("⭐ $rating10", color = NeonGreen, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.Rounded.Star, contentDescription = null, tint = DLavieGlass.AuroraAmber, modifier = Modifier.size(16.dp))
+                            Text(rating10, color = DLavieGlass.AuroraAmber, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                        }
                         Text("$ratingCount ratings", color = SoftText, fontSize = 10.sp)
                     }
                 }
 
-                // Bottom row: DL logo + small "verified" pill
+                // Bottom row: DL logo cover + small "verified" pill
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // v3.0 monochrome DL logo cover (black bg + white DL + halftone)
+                    // DLavie logo cover (kept for brand mark)
                     DLavieLogoCover(
                         size = 60.dp,
                         fontSize = 22.sp,
                         shape = CircleShape
                     )
                     Surface(
-                        color = NeonGreen.copy(0.16f),
-                        border = BorderStroke(1.dp, NeonGreen.copy(0.45f)),
+                        color = DLavieGlass.AuroraMint.copy(0.16f),
+                        border = BorderStroke(1.dp, DLavieGlass.AuroraMint.copy(0.45f)),
                         shape = RoundedCornerShape(999.dp)
                     ) {
                         Row(
@@ -1769,7 +1793,7 @@ fun HomeScreen(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             TTGameCard(
                 title          = "DLavie 26: Football Game",
-                subtitle       = "⚽ Olahraga · FIFA 16 Mod",
+                subtitle       = "Olahraga · FIFA 16 Mod",
                 rating         = "$rating10 · $ratingCount ratings",
                 coverGradient  = coverGradient,
                 coverText      = "DL",
@@ -2930,7 +2954,7 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
             if (lowStorage) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "⚠ Storage menipis. Patch OBB/data besar (>1 GB) mungkin gagal. Hapus file tidak terpakai atau backup lama.",
+                    "Storage menipis. Patch OBB/data besar (>1 GB) mungkin gagal. Hapus file tidak terpakai atau backup lama.",
                     color = AmberWarn, fontSize = 11.sp, lineHeight = 15.sp
                 )
             }
@@ -3156,7 +3180,7 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
                         Spacer(Modifier.width(8.dp))
                         Text(
                             when {
-                                patchDone      -> "Sudah Diperbarui ✓"
+                                patchDone      -> "Sudah Diperbarui"
                                 patchAvailable -> "Terapkan Pembaruan"
                                 else           -> "Sudah Terbaru"
                             },
@@ -4418,19 +4442,32 @@ private fun FeedPostCard(
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text("🚩 Lapor", color = Color.White, fontSize = 13.sp) },
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Icon(Icons.Rounded.Flag, contentDescription = null, tint = DLavieGlass.AuroraCoral, modifier = Modifier.size(16.dp))
+                                        Text("Lapor", color = Color.White, fontSize = 13.sp)
+                                    }
+                                },
                                 onClick = { menuOpen = false; onReport() }
                             )
                             DropdownMenuItem(
-                                text = { Text("📤 Bagikan", color = Color.White, fontSize = 13.sp) },
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Icon(Icons.Rounded.Share, contentDescription = null, tint = DLavieGlass.AuroraCyan, modifier = Modifier.size(16.dp))
+                                        Text("Bagikan", color = Color.White, fontSize = 13.sp)
+                                    }
+                                },
                                 onClick = { menuOpen = false; onShare() }
                             )
                             DropdownMenuItem(
                                 text = {
-                                    Text(
-                                        if (saved) "🔖 Hapus Simpanan" else "🔖 Simpan",
-                                        color = Color.White, fontSize = 13.sp
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Icon(if (saved) Icons.Rounded.BookmarkRemove else Icons.Rounded.BookmarkAdd, contentDescription = null, tint = DLavieGlass.AuroraViolet, modifier = Modifier.size(16.dp))
+                                        Text(
+                                            if (saved) "Hapus Simpanan" else "Simpan",
+                                            color = Color.White, fontSize = 13.sp
+                                        )
+                                    }
                                 },
                                 onClick = { menuOpen = false; onSave() }
                             )
@@ -5187,16 +5224,29 @@ fun formatBadgeName(code: String): String {
     }
 }
 
-/** Map a badge code to a representative emoji icon (stored fallback). */
+/** Map a badge code to a representative Material icon (replaces emoji). */
+@Composable
+fun badgeIcon(code: String): ImageVector = when {
+    code.contains("login")            -> Icons.Rounded.HowToReg
+    code.contains("gamer") || code.contains("play") -> Icons.Rounded.SportsEsports
+    code.contains("streak") || code.contains("daily") -> Icons.Rounded.LocalFireDepartment
+    code.contains("post")             -> Icons.Rounded.Edit
+    code.contains("social") || code.contains("follow") -> Icons.Rounded.Group
+    code.contains("rate")             -> Icons.Rounded.Star
+    code.contains("comment")          -> Icons.Rounded.ChatBubbleOutline
+    else                              -> Icons.Rounded.EmojiEvents
+}
+
+/** Legacy alias kept for source-compat — returns the icon name string. */
 fun badgeEmoji(code: String): String = when {
-    code.contains("login")            -> "🎉"
-    code.contains("gamer") || code.contains("play") -> "🎮"
-    code.contains("streak") || code.contains("daily") -> "🔥"
-    code.contains("post")             -> "✍️"
-    code.contains("social") || code.contains("follow") -> "🤝"
-    code.contains("rate")             -> "⭐"
-    code.contains("comment")          -> "💬"
-    else                              -> "🏆"
+    code.contains("login")            -> "icon_login"
+    code.contains("gamer") || code.contains("play") -> "icon_gamer"
+    code.contains("streak") || code.contains("daily") -> "icon_streak"
+    code.contains("post")             -> "icon_post"
+    code.contains("social") || code.contains("follow") -> "icon_social"
+    code.contains("rate")             -> "icon_rate"
+    code.contains("comment")          -> "icon_comment"
+    else                              -> "icon_trophy"
 }
 
 private data class AuthorInfo(
@@ -5655,7 +5705,7 @@ fun ProfileScreen(
                         ) {
                             myBadges.take(8).forEach { badge ->
                                 BadgeChip(
-                                    emoji = badgeEmoji(badge.badgeCode),
+                                    icon = badgeIcon(badge.badgeCode),
                                     label = formatBadgeName(badge.badgeCode)
                                 )
                             }
@@ -5980,12 +6030,12 @@ private fun ProfileStatColumn(
     }
 }
 
-/** Pill-shaped badge chip (emoji + label) for the Lencana horizontal scroll. */
+/** Pill-shaped badge chip (icon + label) for the Lencana horizontal scroll. */
 @Composable
-private fun BadgeChip(emoji: String, label: String) {
+private fun BadgeChip(icon: ImageVector, label: String) {
     Surface(
-        color = Surface2,
-        border = BorderStroke(1.dp, GlassStroke),
+        color = DLavieGlass.GlassSurface,
+        border = BorderStroke(1.dp, DLavieGlass.GlassStroke),
         shape = TTShapes.small
     ) {
         Column(
@@ -5993,11 +6043,21 @@ private fun BadgeChip(emoji: String, label: String) {
                 .width(72.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(emoji, fontSize = 20.sp)
-            Spacer(Modifier.height(2.dp))
+            Box(
+                Modifier.size(28.dp).clip(CircleShape).background(DLavieGlass.AuroraCyan.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = DLavieGlass.AuroraCyan,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Spacer(Modifier.height(4.dp))
             Text(
                 label,
-                color = Color.White,
+                color = DLavieGlass.TextPrimary,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 2,
@@ -6623,7 +6683,7 @@ fun UserProfileScreen(
                             ) {
                                 userBadges.take(8).forEach { badge ->
                                     BadgeChip(
-                                        emoji = badgeEmoji(badge.badgeCode),
+                                        icon = badgeIcon(badge.badgeCode),
                                         label = formatBadgeName(badge.badgeCode)
                                     )
                                 }
@@ -7271,10 +7331,13 @@ fun AppUpdatePopup(
                 )
                 if (!info.isPublished) {
                     Spacer(Modifier.height(4.dp))
-                    Text(
-                        "⚠ Versi draft — belum dirilis ke publik. Hanya untuk testing.",
-                        color = AmberWarn, fontSize = 10.sp
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Rounded.Warning, contentDescription = null, tint = AmberWarn, modifier = Modifier.size(12.dp))
+                        Text(
+                            "Versi draft — belum dirilis ke publik. Hanya untuk testing.",
+                            color = AmberWarn, fontSize = 10.sp
+                        )
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
 

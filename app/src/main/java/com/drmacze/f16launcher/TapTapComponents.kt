@@ -41,6 +41,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -414,7 +415,10 @@ fun TTGameCard(
                 Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
                 Text(subtitle, color = SoftText, fontSize = 11.sp)
                 Spacer(Modifier.height(2.dp))
-                Text("★ $rating", color = NeonGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Icon(Icons.Rounded.Star, contentDescription = null, tint = DLavieGlass.AuroraAmber, modifier = Modifier.size(12.dp))
+                    Text(rating, color = DLavieGlass.AuroraAmber, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
             }
             // Button
             FilledTonalButton(
