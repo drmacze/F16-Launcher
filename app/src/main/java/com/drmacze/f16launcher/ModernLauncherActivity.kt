@@ -926,6 +926,32 @@ fun MainShell(
         if (activeBanner?.id == banner.id) activeBanner = null
     }
 
+    // ── FCM Token sync (Task: push notifications) ──────────────────────────────
+    // On app open: get FCM token, upload to user_fcm_tokens table (if logged in).
+    // Token refresh is handled by DLavieFirebaseMessagingService.onNewToken().
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                    .addOnCompleteListener { task ->
+                        if (!task.isSuccessful) {
+                            android.util.Log.w("DLavieFCM", "FCM token fetch failed", task.exception)
+                            return@addOnCompleteListener
+                        }
+                        val token = task.result
+                        android.util.Log.d("DLavieFCM", "FCM Token: ${token.take(20)}...${token.takeLast(10)}")
+                        // Persist locally
+                        context.getSharedPreferences("dlavie_fcm", Context.MODE_PRIVATE)
+                            .edit().putString("fcm_token", token).apply()
+                        // Upload to Supabase (best-effort)
+                        if (api.loggedIn()) {
+                            uploadFcmTokenToSupabase(api, token)
+                        }
+                    }
+            }
+        }
+    }
+
     // ── Play-time tracking (Task 2): on resume, if a game session is in flight,
     // compute duration and persist via api.recordGameSession + checkAndAwardBadges.
     // The session is considered terminated when our activity returns to foreground
@@ -7612,3 +7638,58 @@ fun jsonTopics(arr: JSONArray): List<TopicItem> = List(arr.length()) { i ->
     val o = arr.getJSONObject(i); TopicItem(o.optString("id"), o.optString("title"), o.optString("body"), o.optInt("reply_count"), o.optString("created_at")) }
 fun jsonPosts(arr: JSONArray): List<PostItem> = List(arr.length()) { i ->
     val o = arr.getJSONObject(i); PostItem(o.optString("id"), o.optString("author_id"), o.optString("body"), o.optString("created_at")) }
+
+/**
+ * Upload FCM token to Supabase user_fcm_tokens table.
+ * Idempotent: uses upsert on fcm_token (unique constraint).
+ * Best-effort: silently fails if Supabase returns error (table missing, RLS, etc).
+ *
+ * Called when:
+ * - Launcher opens (DLavieModernApp LaunchedEffect)
+ * - User logs in (after successful auth)
+ * - Token refreshes (DLavieFirebaseMessagingService.onNewToken via SharedPreferences)
+ */
+fun uploadFcmTokenToSupabase(api: CommunityApi, fcmToken: String) {
+    try {
+        val userId = api.userId()
+        if (userId.isEmpty()) return
+        val accessToken = api.token()
+        if (accessToken.isEmpty()) return
+        val deviceInfo = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE})"
+
+        // Build upsert payload
+        val payload = org.json.JSONObject().apply {
+            put("user_id", userId)
+            put("fcm_token", fcmToken)
+            put("device_info", deviceInfo)
+            put("is_active", true)
+            put("updated_at", java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US)
+                .format(java.util.Date()))
+        }
+
+        // POST with Prefer: resolution=merge-duplicates for upsert
+        val url = java.net.URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/user_fcm_tokens")
+        val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 15000
+            readTimeout = 15000
+            doOutput = true
+            setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+            setRequestProperty("Authorization", "Bearer $accessToken")
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Prefer", "resolution=merge-duplicates,return=minimal")
+            setRequestProperty("X-Client-Info", "dlavie-launcher/fcm-token-sync")
+        }
+
+        conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+        val code = conn.responseCode
+        if (code in 200..299) {
+            android.util.Log.d("DLavieFCM", "FCM token uploaded to Supabase for user $userId")
+        } else {
+            android.util.Log.w("DLavieFCM", "FCM token upload failed: HTTP $code")
+        }
+        conn.disconnect()
+    } catch (e: Exception) {
+        android.util.Log.w("DLavieFCM", "FCM token upload error", e)
+    }
+}
