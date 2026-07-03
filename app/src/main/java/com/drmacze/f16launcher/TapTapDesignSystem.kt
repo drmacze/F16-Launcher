@@ -258,12 +258,12 @@ object DLRadius {
     val lg    = 20.dp
     val xl    = 24.dp
     val xxl   = 28.dp
-    val pill  = 999.dp
+    val pillDp = 999.dp
 
     val card     get() = RoundedCornerShape(xl)
     val cardLg   get() = RoundedCornerShape(xxl)
     val button   get() = RoundedCornerShape(md)
-    val pill     get() = RoundedCornerShape(pill)
+    val pill     get() = RoundedCornerShape(pillDp)
     val input    get() = RoundedCornerShape(md)
     val chip     get() = RoundedCornerShape(sm)
 }

@@ -65,7 +65,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.intoImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -724,7 +723,7 @@ fun GlassListItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val haptic = LocalHapticFeedback.current
-    val shape = DLRadius.md
+    val shape = RoundedCornerShape(DLRadius.md)
 
     Row(
         modifier
@@ -837,7 +836,11 @@ fun GlassGlowBox(
         Box(
             Modifier
                 .matchParentSize()
-                .blur(glowRadius, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                .blur(
+                    radiusX = glowRadius,
+                    radiusY = glowRadius,
+                    edgeTreatment = BlurredEdgeTreatment.Unbounded
+                )
                 .background(glowColor.copy(alpha = 0.40f))
         )
         content()
