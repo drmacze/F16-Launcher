@@ -76,6 +76,45 @@ jobs:
           fi
           exit 0
 
+      - name: Sign APK with fixed keystore
+        if: success()
+        shell: bash
+        run: |
+          # Decode keystore from secret
+          echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > /tmp/dlavie.keystore
+          
+          # Find the built APK
+          APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+          if [ -z "$APK_FILE" ]; then
+            echo "No APK found to sign"
+            exit 1
+          fi
+          
+          echo "Signing $APK_FILE with fixed keystore..."
+          
+          # Zip-align
+          ${ANDROID_HOME}/build-tools/35.0.0/zipalign -v -p 4 "$APK_FILE" /tmp/aligned.apk || cp "$APK_FILE" /tmp/aligned.apk
+          
+          # Sign with apksigner (fixed keystore = same signature every build)
+          ${ANDROID_HOME}/build-tools/35.0.0/apksigner sign \
+            --ks /tmp/dlavie.keystore \
+            --ks-key-alias ${{ secrets.SIGNING_KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.SIGNING_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.SIGNING_KEY_PASSWORD }} \
+            --out /tmp/dlavie-signed.apk \
+            /tmp/aligned.apk
+          
+          # Replace original APK with signed version
+          cp /tmp/dlavie-signed.apk "$APK_FILE"
+          
+          # Verify signature
+          ${ANDROID_HOME}/build-tools/35.0.0/apksigner verify --print-certs "$APK_FILE" | head -5
+          
+          echo "✅ APK signed with fixed keystore (SHA1: 39:21:FE:4D:2F:E3:E1:C9:79:C0:DD:FF:EA:2C:A4:6A:C3:2A:24:61)"
+          
+          # Cleanup
+          rm -f /tmp/dlavie.keystore /tmp/aligned.apk /tmp/dlavie-signed.apk
+
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
