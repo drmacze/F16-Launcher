@@ -962,6 +962,8 @@ fun MainShell(
                             uploadFcmTokenToSupabase(api, tokenResult)
                             hasUploadedToken = true
                             android.util.Log.d("DLavieFCM", "Upload complete!")
+                        } else {
+                            android.util.Log.w("DLavieFCM", "User logged out before upload could happen")
                         }
                     } catch (e: Exception) {
                         android.util.Log.e("DLavieFCM", "FCM token fetch/upload failed", e)
