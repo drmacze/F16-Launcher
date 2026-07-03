@@ -372,13 +372,19 @@ fun DLavieModernApp(initialPostId: String? = null) {
     }
 
     // ── Cek app update saat app dibuka ──
+    // Cek SharedPreferences: kalau user sudah dismiss versi ini, jangan show lagi
+    val updatePrefs = remember { context.getSharedPreferences("dlavie_update_prefs", Context.MODE_PRIVATE) }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             runCatching {
                 val info = AppUpdateChecker.checkForUpdate(api)
                 if (info != null && info.isUpdateAvailable) {
-                    updateInfo = info
-                    showUpdatePopup = true
+                    // Cek apakah user sudah dismiss versi ini
+                    val dismissedVersion = updatePrefs.getInt("dismissed_version_code", -1)
+                    if (dismissedVersion != info.versionCode) {
+                        updateInfo = info
+                        showUpdatePopup = true
+                    }
                 }
             }
         }
@@ -446,7 +452,13 @@ fun DLavieModernApp(initialPostId: String? = null) {
                                 }
                             }
                         },
-                        onLater = { showUpdatePopup = false }
+                        onLater = {
+                            // Simpan dismissed versionCode — jangan show lagi untuk versi ini
+                            updateInfo?.let { info ->
+                                updatePrefs.edit().putInt("dismissed_version_code", info.versionCode).apply()
+                            }
+                            showUpdatePopup = false
+                        }
                     )
                 }
 
