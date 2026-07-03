@@ -28,9 +28,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Email
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -49,6 +54,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -249,177 +255,268 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
     var message by remember { mutableStateOf("") }
     var isSuccess by remember { mutableStateOf(false) }
 
+    // v4.0 monochrome login remake — halftone bg + DLavie text logo + star,
+    // glass card, white inverted CTA button, inline error/success message.
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xFF0A0A0A))   // v3.0 near-black base
+            .background(Color(0xFF000000))   // v4.0 pure-black base
     ) {
-        // v3.0 halftone particle background (subtle)
+        // Halftone particle background (subtle, monochrome)
         HalftoneBackground(
             modifier = Modifier.fillMaxSize(),
             dotSize = 2.5f,
-            spacing = 22f,
+            spacing = 24f,
             baseColor = HalftoneBright,
-            alpha = 0.5f
+            alpha = 0.55f
         )
 
         Column(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 26.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(horizontal = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Spacer(Modifier.height(56.dp))
+            Spacer(Modifier.height(60.dp))
 
-            // ── Logo + animated ring (v3.0 monochrome DL cover) ──
-            Box(contentAlignment = Alignment.Center) {
-                DLavieLogoCover(
-                    size = 96.dp,
-                    fontSize = 32.sp,
-                    shape = RoundedCornerShape(28.dp),
-                    borderWidth = 1.5.dp
+            // ── Logo: "DLavie" text + star icon (sama seperti splash screen) ──
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "DLavie",
+                    color = Color.White,
+                    fontSize = 36.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = GuideFont,
+                    letterSpacing = (-1).sp
+                )
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    Icons.Rounded.Star,
+                    null,
+                    tint = Color.White.copy(0.8f),
+                    modifier = Modifier.size(20.dp)
                 )
             }
-            Spacer(Modifier.height(18.dp))
-            Text("DLavie 26", color = GuideWhite, fontSize = 30.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont)
+            Spacer(Modifier.height(8.dp))
             Text(
                 when (mode) {
-                    "login"    -> "Masuk untuk lanjut ke launcher"
-                    "register" -> "Buat akun DLavie baru"
+                    "login"    -> "Masuk untuk lanjut"
+                    "register" -> "Buat akun baru"
                     "forgot"   -> "Reset password via email"
-                    else -> "FIFA 16 Mobile 2026 Mod Hub"
+                    else        -> "FIFA 16 Mobile 2026 Mod Hub"
                 },
-                color = GuideMuted, fontSize = 12.sp, fontFamily = GuideFont
+                color = GuideMuted, fontSize = 13.sp, fontFamily = GuideFont
             )
-            Spacer(Modifier.height(30.dp))
+            Spacer(Modifier.height(32.dp))
 
-            // ── Auth Card (v3.0 monochrome) ──
+            // ── Glass Card (subtle white border) ──
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = Color(0xDD111111),                // v3.0 monochrome card
-                shape = RoundedCornerShape(28.dp),
-                border = BorderStroke(1.dp, Color(0x30FFFFFF))   // v3.0 subtle white border
+                color = Color(0xF0111111),                  // v4.0 near-opaque dark glass
+                shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(1.dp, Color.White.copy(0.08f))
             ) {
-                Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
-                    // Tab switcher (only for login/register)
+                    // ── Tab switcher (Masuk | Daftar) — hidden in forgot mode ──
                     if (mode != "forgot") {
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .background(Color(0xFF1A1A1A), RoundedCornerShape(14.dp))   // v3.0 monochrome
+                                .background(Color(0xFF0A0A0A), RoundedCornerShape(12.dp))
                                 .padding(4.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Button(
-                                onClick = { mode = "login"; message = "" },
-                                modifier = Modifier.weight(1f).height(42.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (mode == "login") GuideGreen else Color.Transparent,
-                                    contentColor = if (mode == "login") Color(0xFF001407) else GuideMuted
-                                ),
-                                elevation = ButtonDefaults.buttonElevation(0.dp),
-                                contentPadding = PaddingValues(0.dp)
-                            ) { Text("Login", fontSize = 13.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont) }
-
-                            Button(
-                                onClick = { mode = "register"; message = "" },
-                                modifier = Modifier.weight(1f).height(42.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (mode == "register") GuideCyan else Color.Transparent,
-                                    contentColor = if (mode == "register") Color(0xFF001407) else GuideMuted
-                                ),
-                                elevation = ButtonDefaults.buttonElevation(0.dp),
-                                contentPadding = PaddingValues(0.dp)
-                            ) { Text("Register", fontSize = 13.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont) }
-                        }
-                    }
-
-                    // ── Forgot password mode ──
-                    if (mode == "forgot") {
-                        Text(
-                            "Masukkan email akunmu. Kami akan kirim link reset password ke email tersebut.",
-                            color = GuideMuted, fontSize = 12.sp, fontFamily = GuideFont, lineHeight = 17.sp
-                        )
-                        AuthInputField(
-                            value = email, onValueChange = { email = it.trim() },
-                            label = "Email akun DLavie", prefix = "✉  "
-                        )
-                    } else {
-                        // ── Login / Register fields ──
-                        AuthInputField(
-                            value = email, onValueChange = { email = it.trim() },
-                            label = "Email", prefix = "✉  "
-                        )
-                        AuthInputField(
-                            value = password, onValueChange = { password = it },
-                            label = "Password", prefix = "🔒  ",
-                            isPassword = !showPass,
-                            trailingLabel = if (showPass) "Sembunyikan" else "Tampilkan",
-                            onTrailing = { showPass = !showPass }
-                        )
-
-                        if (mode == "register") {
-                            AuthInputField(
-                                value = confirmPassword, onValueChange = { confirmPassword = it },
-                                label = "Konfirmasi Password", prefix = "🔒  ",
-                                isPassword = !showPass
-                            )
-                            AuthInputField(
-                                value = username,
-                                onValueChange = { raw ->
-                                    username = raw.trim().lowercase().filter { c -> c.isLetterOrDigit() || c == '_' }.take(24)
-                                },
-                                label = "Username (3–24 karakter, a-z 0-9 _)", prefix = "@  "
-                            )
-                            AuthInputField(
-                                value = displayName, onValueChange = { displayName = it.take(40) },
-                                label = "Display Name (2–40 karakter)", prefix = "◉  "
-                            )
-                            CountryPickerDropdown(
-                                selected = country,
-                                onSelect = { country = it }
-                            )
-                        }
-
-                        // Forgot password link (only in login mode)
-                        if (mode == "login") {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
+                            // Login tab
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .height(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (mode == "login") Color.White else Color.Transparent)
+                                    .clickable { mode = "login"; message = "" },
+                                contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    "Lupa password?",
-                                    color = GuideCyan,
-                                    fontSize = 12.sp,
+                                    "Masuk",
+                                    color = if (mode == "login") Color.Black else GuideMuted,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
-                                    fontFamily = GuideFont,
-                                    modifier = Modifier.clickable {
-                                        mode = "forgot"; message = ""; email = ""
-                                    }
+                                    fontFamily = GuideFont
+                                )
+                            }
+                            // Register tab
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .height(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (mode == "register") Color.White else Color.Transparent)
+                                    .clickable { mode = "register"; message = "" },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "Daftar",
+                                    color = if (mode == "register") Color.Black else GuideMuted,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = GuideFont
                                 )
                             }
                         }
                     }
 
-                    // Message box
+                    // ── Forgot password mode ── hint text
+                    if (mode == "forgot") {
+                        Text(
+                            "Masukkan email akunmu. Kami akan kirim link reset password ke email tersebut.",
+                            color = GuideMuted, fontSize = 12.sp, fontFamily = GuideFont, lineHeight = 17.sp
+                        )
+                    }
+
+                    // ── Email field (always shown) ──
+                    AuthField(
+                        value = email,
+                        onValueChange = { email = it.trim() },
+                        label = "Email",
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.Email,
+                                contentDescription = null,
+                                tint = GuideMuted,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+
+                    // ── Password field (login + register only) ──
+                    if (mode != "forgot") {
+                        AuthField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = "Password",
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Rounded.Lock,
+                                    contentDescription = null,
+                                    tint = GuideMuted,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            isPassword = !showPass,
+                            trailingLabel = if (showPass) "Sembunyikan" else "Tampilkan",
+                            onTrailing = { showPass = !showPass }
+                        )
+                    }
+
+                    // ── Register-only fields ──
+                    if (mode == "register") {
+                        AuthField(
+                            value = confirmPassword,
+                            onValueChange = { confirmPassword = it },
+                            label = "Konfirmasi Password",
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Rounded.Lock,
+                                    contentDescription = null,
+                                    tint = GuideMuted,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            isPassword = !showPass
+                        )
+                        AuthField(
+                            value = username,
+                            onValueChange = { raw ->
+                                username = raw.trim().lowercase().filter { c -> c.isLetterOrDigit() || c == '_' }.take(24)
+                            },
+                            label = "Username (3-24, a-z 0-9 _)",
+                            leadingIcon = {
+                                Text(
+                                    "@",
+                                    color = GuideMuted,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = GuideFont
+                                )
+                            }
+                        )
+                        AuthField(
+                            value = displayName,
+                            onValueChange = { displayName = it.take(40) },
+                            label = "Display Name (2-40)",
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Rounded.Person,
+                                    contentDescription = null,
+                                    tint = GuideMuted,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        )
+                        CountryPickerDropdown(
+                            selected = country,
+                            onSelect = { country = it }
+                        )
+                    }
+
+                    // ── Forgot password link (login mode only) ──
+                    if (mode == "login") {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            Text(
+                                "Lupa password?",
+                                color = GuideMuted,
+                                fontSize = 12.sp,
+                                fontFamily = GuideFont,
+                                modifier = Modifier.clickable {
+                                    mode = "forgot"; message = ""; email = ""
+                                }
+                            )
+                        }
+                    }
+
+                    // ── Back to login link (forgot mode only) ──
+                    if (mode == "forgot") {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Start
+                        ) {
+                            Text(
+                                "← Kembali ke Login",
+                                color = GuideMuted,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = GuideFont,
+                                modifier = Modifier.clickable {
+                                    mode = "login"; message = ""; email = ""
+                                }
+                            )
+                        }
+                    }
+
+                    // ── Error / success message (inline, subtle background) ──
                     AnimatedVisibility(visible = message.isNotBlank()) {
                         Box(
                             Modifier
                                 .fillMaxWidth()
                                 .background(
                                     (if (isSuccess) GuideGreen else GuideRed).copy(alpha = 0.10f),
-                                    RoundedCornerShape(12.dp)
+                                    RoundedCornerShape(10.dp)
                                 )
                                 .border(
                                     1.dp,
                                     (if (isSuccess) GuideGreen else GuideRed).copy(alpha = 0.28f),
-                                    RoundedCornerShape(12.dp)
+                                    RoundedCornerShape(10.dp)
                                 )
-                                .padding(12.dp)
+                                .padding(10.dp)
                         ) {
                             Text(
                                 message,
@@ -431,7 +528,7 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
                         }
                     }
 
-                    // CTA button
+                    // ── CTA button (full width, white inverted) ──
                     val canSubmit = when (mode) {
                         "forgot"  -> !working && email.isNotBlank() && email.contains("@")
                         "login"   -> !working && email.isNotBlank() && password.length >= 6
@@ -483,69 +580,63 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
                             }
                         },
                         enabled = canSubmit,
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = when (mode) {
-                                "login"    -> GuideGreen
-                                "register" -> GuideCyan
-                                "forgot"   -> GuideAmber
-                                else       -> GuideGreen
-                            },
-                            contentColor = Color(0xFF001407),
-                            disabledContainerColor = Color(0xFF181E1A),
+                            containerColor = Color.White,
+                            contentColor = Color.Black,
+                            disabledContainerColor = Color.White.copy(0.2f),
                             disabledContentColor = GuideMuted
                         )
                     ) {
+                        if (working) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.Black,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
                         Text(
                             when {
                                 working -> "Memproses..."
-                                mode == "login"    -> "Masuk  →"
-                                mode == "register" -> "Buat Akun  →"
-                                mode == "forgot"   -> "Kirim Link Reset  →"
+                                mode == "login"    -> "Masuk"
+                                mode == "register" -> "Daftar"
+                                mode == "forgot"   -> "Kirim Link Reset"
                                 else -> "→"
                             },
-                            fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = GuideFont
-                        )
-                    }
-
-                    // Back to login link (in forgot mode)
-                    if (mode == "forgot") {
-                        Text(
-                            "← Kembali ke Login",
-                            color = GuideMuted,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = GuideFont,
-                            modifier = Modifier.clickable {
-                                mode = "login"; message = ""; email = ""
-                            }
+                            fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont
                         )
                     }
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
             Text(
                 when (mode) {
-                    "login"    -> "Belum punya akun? Tap Register di atas."
-                    "register" -> "Sudah punya akun? Tap Login di atas."
+                    "login"    -> "Belum punya akun? Tap Daftar."
+                    "register" -> "Sudah punya akun? Tap Masuk."
                     "forgot"   -> "Link reset hanya berlaku 1 jam."
                     else -> ""
                 },
-                color = Color(0xFF3E5446), fontSize = 12.sp, textAlign = TextAlign.Center, fontFamily = GuideFont
+                color = GuideMuted, fontSize = 12.sp, textAlign = TextAlign.Center, fontFamily = GuideFont
             )
             Spacer(Modifier.height(40.dp))
         }
     }
 }
 
+/**
+ * v4.0 monochrome AuthField — OutlinedTextField dengan leading icon, optional
+ * password toggle (trailing text), white-on-dark theme, subtle white border.
+ * Replaces the old AuthInputField (prefix-string based) dengan leading icon.
+ */
 @Composable
-private fun AuthInputField(
+private fun AuthField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
-    prefix: String,
+    leadingIcon: @Composable (() -> Unit)? = null,
     isPassword: Boolean = false,
     trailingLabel: String? = null,
     onTrailing: (() -> Unit)? = null
@@ -553,41 +644,47 @@ private fun AuthInputField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        prefix = { Text(prefix, color = GuideMuted, fontSize = 14.sp) },
+        label = { Text(label, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        leadingIcon = leadingIcon,
         trailingIcon = if (trailingLabel != null && onTrailing != null) {
             {
                 Text(
                     trailingLabel,
-                    color = GuideCyan,
+                    color = GuideMuted,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = GuideFont,
                     modifier = Modifier
                         .clickable { onTrailing() }
-                        .padding(end = 14.dp)
+                        .padding(end = 12.dp)
                 )
             }
         } else null,
         singleLine = true,
         visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = GuideGreen,
-            unfocusedBorderColor = GuideBorder,
-            focusedLabelColor = GuideGreen,
-            unfocusedLabelColor = GuideMuted,
-            cursorColor = GuideGreen,
-            focusedTextColor = GuideWhite,
-            unfocusedTextColor = GuideWhite
+            focusedBorderColor   = Color.White.copy(0.3f),
+            unfocusedBorderColor = Color.White.copy(0.1f),
+            cursorColor          = Color.White,
+            focusedTextColor     = Color.White,
+            unfocusedTextColor   = Color.White,
+            focusedLabelColor    = Color.White.copy(0.6f),
+            unfocusedLabelColor  = GuideMuted,
+            focusedLeadingIconColor    = GuideMuted,
+            unfocusedLeadingIconColor  = GuideMuted,
+            focusedTrailingIconColor   = GuideMuted,
+            unfocusedTrailingIconColor = GuideMuted
         )
     )
 }
 
 /**
  * Country picker dropdown for the register form.
- * Uses Compose Material3 DropdownMenu anchored to a Box that mimics the AuthInputField styling.
+ * v4.0 monochrome — uses leading Icon (Public) + trailing ArrowDropDown,
+ * white-on-dark theme matching AuthField. Dropdown list tetap monochrome
+ * (selected = white highlight, others = white text).
  */
 @Composable
 private fun CountryPickerDropdown(
@@ -602,21 +699,20 @@ private fun CountryPickerDropdown(
             onValueChange = { /* read-only */ },
             readOnly   = true,
             enabled    = false,
-            label      = { Text("Negara", fontSize = 11.sp, maxLines = 1) },
-            prefix     = {
+            label      = { Text("Negara", fontSize = 12.sp, maxLines = 1) },
+            leadingIcon = {
                 Icon(
                     imageVector        = Icons.Rounded.Public,
                     contentDescription = null,
                     tint               = GuideMuted,
-                    modifier           = Modifier.size(16.dp)
+                    modifier           = Modifier.size(18.dp)
                 )
-                Spacer(Modifier.width(6.dp))
             },
             trailingIcon = {
                 Icon(
                     imageVector        = Icons.Rounded.ArrowDropDown,
                     contentDescription = "Pilih negara",
-                    tint               = GuideGreen,
+                    tint               = GuideMuted,
                     modifier           = Modifier
                         .size(22.dp)
                         .clickable { expanded = true }
@@ -626,13 +722,13 @@ private fun CountryPickerDropdown(
             modifier    = Modifier
                 .fillMaxWidth()
                 .clickable { expanded = true },
-            shape       = RoundedCornerShape(16.dp),
+            shape       = RoundedCornerShape(12.dp),
             colors      = OutlinedTextFieldDefaults.colors(
-                disabledBorderColor       = GuideBorder,
-                disabledTextColor         = GuideWhite,
-                disabledLabelColor        = GuideMuted,
-                disabledTrailingIconColor = GuideGreen,
-                disabledPrefixColor       = GuideMuted
+                disabledBorderColor         = Color.White.copy(0.1f),
+                disabledTextColor           = Color.White,
+                disabledLabelColor          = GuideMuted,
+                disabledTrailingIconColor   = GuideMuted,
+                disabledLeadingIconColor    = GuideMuted
             )
         )
         DropdownMenu(
@@ -640,8 +736,8 @@ private fun CountryPickerDropdown(
             onDismissRequest = { expanded = false },
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .background(Color(0xFF1A1A1A), RoundedCornerShape(14.dp))   // v3.0 monochrome
-                .border(1.dp, GuideBorder, RoundedCornerShape(14.dp))
+                .background(Color(0xFF111111), RoundedCornerShape(12.dp))
+                .border(1.dp, Color.White.copy(0.08f), RoundedCornerShape(12.dp))
         ) {
             COUNTRY_LIST.forEach { name ->
                 val isSelected = name == selected
@@ -649,9 +745,9 @@ private fun CountryPickerDropdown(
                     text = {
                         Text(
                             name,
-                            color      = if (isSelected) GuideGreen else GuideWhite,
+                            color      = if (isSelected) Color.White else Color.White.copy(0.7f),
                             fontSize   = 13.sp,
-                            fontWeight = if (isSelected) FontWeight.Black else FontWeight.Normal,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                             fontFamily = GuideFont
                         )
                     },
@@ -659,7 +755,7 @@ private fun CountryPickerDropdown(
                         onSelect(name)
                         expanded = false
                     },
-                    modifier = Modifier.background(if (isSelected) GuideGreen.copy(alpha = 0.08f) else Color.Transparent)
+                    modifier = Modifier.background(if (isSelected) Color.White.copy(alpha = 0.10f) else Color.Transparent)
                 )
             }
         }

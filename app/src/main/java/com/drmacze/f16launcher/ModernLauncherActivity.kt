@@ -1211,7 +1211,14 @@ fun HomeScreen(
     suspend fun loadAllData() {
         withContext(Dispatchers.IO) {
             gameInstalled = isGameInstalled(context)
-            dataReady     = readMarker().startsWith("v26", ignoreCase = true)
+            // Cek data ready dari MULTIPLE sources (fix: user yang baru install
+            // game + download OBB tidak punya marker file dari DevPatchEngine).
+            // 1. Marker file (kalau patch sudah diapply)
+            // 2. OBB main / patch file
+            // 3. Game data folder exists & punya konten
+            // 4. files/ subfolder punya konten
+            // → dataReady = markerReady || obbReady || filesReady
+            dataReady     = isDataReady()
             // Phase 4: always check updates (settings toggle can be added later)
             runCatching { updateInfo = fetchUpdateInfo(api) }
             runCatching { feed       = parseFeed(api.feedPosts()) }
@@ -2500,7 +2507,10 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
     // Initialize with safe defaults; real values populate from background.
     var gameInstalled   by remember { mutableStateOf(false) }
     var marker          by remember { mutableStateOf("") }
-    val dataReady       = marker.startsWith("v26", ignoreCase = true)
+    // dataReady = multi-source detection: marker file (DevPatchEngine) ATAU
+    // OBB file exists ATAU files/ folder punya konten. Fix bug "Belum siap"
+    // untuk user yang baru install game + download OBB dari dalam game.
+    var dataReady       by remember { mutableStateOf(false) }
     var updateInfo      by remember { mutableStateOf<UpdateInfo?>(null) }
     var loading         by remember { mutableStateOf(true) }
     var updateError     by remember { mutableStateOf("") }
@@ -2562,6 +2572,8 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
         scope.launch {
             withContext(Dispatchers.IO) {
                 runCatching { marker = readMarker() }
+                // Re-evaluate dataReady dari multiple sources (marker / OBB / files dir).
+                runCatching { dataReady = isDataReady() }
             }
             refreshStorage()
         }
@@ -2603,6 +2615,8 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
         withContext(Dispatchers.IO) {
             runCatching { gameInstalled = isGameInstalled(context) }
             runCatching { marker = readMarker() }
+            // Multi-source data ready detection (marker / OBB / files dir).
+            runCatching { dataReady = isDataReady() }
             runCatching { filesAccessGranted = StorageAccess.isGranted() }
             runCatching {
                 freeBytes = GameUtils.freeBytesSdcard()
@@ -3258,7 +3272,13 @@ fun CommunityScreen(
                             authorId  = o.optString("author_id"),
                             title     = o.optString("title"),
                             body      = o.optString("body"),
-                            imageUrl  = o.optString("image_url", ""),
+                            // Normalize image_url: treat null/blank/"null" string as empty
+                            // supaya FeedPostCard tidak render kotak gambar kosong.
+                            // (org.json.optString bisa return "null" string kalau value == JSONObject.NULL)
+                            imageUrl  = o.optString("image_url", "").let { raw ->
+                                val s = raw.trim()
+                                if (s.isBlank() || s.equals("null", ignoreCase = true)) "" else s
+                            },
                             type      = o.optString("type", "community"),
                             pinned    = o.optBoolean("pinned"),
                             official  = o.optBoolean("official"),
@@ -3805,8 +3825,11 @@ private fun FeedPostCard(
 
     TTTappableCard(onClick = { /* future: open post detail */ }) {
         Column(Modifier.fillMaxWidth()) {
-            // Optional image banner (16:9) — Coil AsyncImage
-            if (post.imageUrl.isNotBlank()) {
+            // ── Image banner (16:9) — HANYA kalau image_url valid (tidak kosong / bukan "null"). ──
+            // Fix: jangan render kotak gambar kosong untuk post tanpa image.
+            // image_url sudah di-normalize saat parse (lihat FeedPostData parsing di
+            // CommunityScreen.loadPosts dan parseFeed), jadi isNotBlank() cukup di sini.
+            if (post.imageUrl.isNotBlank() && !post.imageUrl.equals("null", ignoreCase = true)) {
                 AsyncImage(
                     model = post.imageUrl,
                     contentDescription = post.title,
@@ -5817,6 +5840,38 @@ fun readMarker(): String =
     try { File(MARKER_PATH).readText().trim() } catch (_: Exception) { "" }
 
 /**
+ * Cek apakah data FIFA 16 sudah siap. Mendeteksi MULTIPLE indicators:
+ *
+ * 1. Marker file `.dlavie26_data_installed` (kalau patch sudah diapply via DevPatchEngine).
+ * 2. OBB main / patch file di /sdcard/Android/obb/com.ea.gp.fifaworld/.
+ * 3. Folder game data /sdcard/Android/data/com.ea.gp.fifaworld/ exists & punya konten.
+ * 4. Subfolder files/ punya konten (FIFA sering download data ke sini).
+ *
+ * Data dianggap ready kalau SALAH SATU indicator terpenuhi. Ini fix bug
+ * "Data: Belum siap" untuk user yang baru install game + download OBB
+ * dari dalam game (tidak punya marker file dari DevPatchEngine).
+ */
+fun isDataReady(): Boolean {
+    // 1. Marker file (v26 marker via DevPatchEngine)
+    if (readMarker().startsWith("v26", ignoreCase = true)) return true
+
+    // 2. OBB files (main / patch)
+    val obbMain  = File("/sdcard/Android/obb/com.ea.gp.fifaworld/main.13.com.ea.gp.fifaworld.obb")
+    val obbPatch = File("/sdcard/Android/obb/com.ea.gp.fifaworld/patch.26.com.ea.gp.fifaworld.obb")
+    if (obbMain.exists() || obbPatch.exists()) return true
+
+    // 3. Game data folder exists dan punya konten
+    val gameDataDir = File("/sdcard/Android/data/com.ea.gp.fifaworld")
+    if (gameDataDir.exists() && (gameDataDir.listFiles()?.isNotEmpty() == true)) return true
+
+    // 4. files/ subfolder punya konten (FIFA sering download data ke sini)
+    val filesDir = File("/sdcard/Android/data/com.ea.gp.fifaworld/files")
+    if (filesDir.exists() && (filesDir.listFiles()?.isNotEmpty() == true)) return true
+
+    return false
+}
+
+/**
  * Fetch update info — prioritas Supabase update_posts (Dev Dashboard),
  * fallback ke GitHub manifest (DEFAULT_MANIFEST) jika Supabase error / kosong /
  * user belum login.
@@ -5913,7 +5968,11 @@ fun parseFeed(arr: JSONArray): List<FeedItem> = try {
             type      = o.optString("type", "info"),
             pinned    = o.optBoolean("pinned"),
             official  = o.optBoolean("official"),
-            imageUrl  = o.optString("image_url", ""),
+            // Normalize image_url (treat null/blank/"null" string as empty)
+            imageUrl  = o.optString("image_url", "").let { raw ->
+                val s = raw.trim()
+                if (s.isBlank() || s.equals("null", ignoreCase = true)) "" else s
+            },
             createdAt = o.optString("created_at", "")
         )
     }
