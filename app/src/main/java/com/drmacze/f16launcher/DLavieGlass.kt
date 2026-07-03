@@ -62,12 +62,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -269,13 +264,7 @@ fun DLavieLogo(
     val accentColor = DLavieGlass.BrandMarkMint
 
     Box(
-        modifier
-            .size(size)
-            .graphicsLayer {
-                if (glow) {
-                    shadowElevation = 0f
-                }
-            },
+        modifier.size(size),
         contentAlignment = Alignment.Center
     ) {
         Canvas(Modifier.fillMaxSize()) {
@@ -284,10 +273,6 @@ fun DLavieLogo(
             val stroke = strokeWidth.toPx()
 
             // D shape — vertical line + curved arc on the right
-            // Path: M(0.25w, 0.15h) L(0.25w, 0.85h) L(0.55w, 0.85h)
-            //       C(0.78w, 0.85h, 0.90w, 0.65h, 0.90w, 0.5h)
-            //       C(0.90w, 0.35h, 0.78w, 0.15h, 0.55w, 0.15h) Z
-
             val dPath = androidx.compose.ui.graphics.Path().apply {
                 moveTo(0.25f * w, 0.15f * h)
                 lineTo(0.25f * w, 0.85f * h)
@@ -305,45 +290,23 @@ fun DLavieLogo(
                 close()
             }
 
-            // L accent (mint) — vertical line + horizontal at bottom
+            // L accent (mint) — horizontal stroke at bottom
             val lPath = androidx.compose.ui.graphics.Path().apply {
                 moveTo(0.55f * w, 0.85f * h)
                 lineTo(0.85f * w, 0.85f * h)
             }
 
-            // Glow underlay
+            // Glow underlay (simple — draw D path with bigger stroke + lower alpha)
             if (glow) {
-                drawContext.canvas.nativeCanvas.apply {
-                    val paint = android.graphics.Paint().apply {
-                        isAntiAlias = true
-                        color = strokeColor.copy(alpha = 0.40f).toArgb()
-                        style = android.graphics.Paint.Style.STROKE
-                        strokeWidth = stroke * 2.5f
-                        strokeCap = android.graphics.Paint.Cap.ROUND
-                        strokeJoin = android.graphics.Paint.Join.ROUND
-                        maskFilter = android.graphics.BlurMaskFilter(
-                            stroke * 1.5f,
-                            android.graphics.BlurMaskFilter.Blur.NORMAL
-                        )
-                    }
-                    val androidPath = android.graphics.Path().apply {
-                        moveTo(0.25f * w, 0.15f * h)
-                        lineTo(0.25f * w, 0.85f * h)
-                        lineTo(0.55f * w, 0.85f * h)
-                        cubicTo(
-                            0.78f * w, 0.85f * h,
-                            0.90f * w, 0.65f * h,
-                            0.90f * w, 0.50f * h
-                        )
-                        cubicTo(
-                            0.90f * w, 0.35f * h,
-                            0.78f * w, 0.15f * h,
-                            0.55f * w, 0.15f * h
-                        )
-                        close()
-                    }
-                    drawPath(androidPath, paint)
-                }
+                drawPath(
+                    path = dPath,
+                    color = strokeColor.copy(alpha = 0.30f),
+                    style = Stroke(
+                        width = stroke * 3.5f,
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                        join = androidx.compose.ui.graphics.StrokeJoin.Round
+                    )
+                )
             }
 
             // Main D stroke (cyan)
