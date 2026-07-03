@@ -5868,6 +5868,11 @@ fun ProfileScreen(
             ProfRow("Server",      "DLavie Cloud")
         }
 
+        // ── FCM Diagnostic Card (v5.4.3) ──────────────────────────────────────
+        // Shows real-time FCM token + upload status on screen (no laptop needed).
+        // User can see exactly what's happening with push notification setup.
+        FcmDiagnosticCard(api = api, context = context)
+
         // ── Akun & Keamanan (Account Settings — password/email/profile/pin) ──
         AccountSettingsCard(
             api = api,
@@ -7713,5 +7718,167 @@ fun uploadFcmTokenToSupabase(api: CommunityApi, fcmToken: String) {
         conn.disconnect()
     } catch (e: Exception) {
         android.util.Log.w("DLavieFCM", "FCM token upload error", e)
+    }
+}
+
+/**
+ * FCM Diagnostic Card — displays real-time FCM token + upload status on screen.
+ * No laptop/ADB needed. User can see exactly what's happening with push setup.
+ *
+ * Shows:
+ * - FCM token (or "Belum didapat" if Firebase hasn't returned one yet)
+ * - Login status (logged in user ID)
+ * - Upload status (idle / uploading / success / failed + error message)
+ * - Last attempt timestamp
+ *
+ * Auto-refreshes every 3 seconds.
+ */
+@Composable
+fun FcmDiagnosticCard(api: CommunityApi, context: android.content.Context) {
+    var fcmToken by remember { mutableStateOf("") }
+    var uploadStatus by remember { mutableStateOf("idle") }  // idle | uploading | success | failed
+    var uploadError by remember { mutableStateOf("") }
+    var lastAttempt by remember { mutableStateOf("") }
+    var attemptCount by remember { mutableStateOf(0) }
+
+    // Auto-refresh every 3 seconds
+    LaunchedEffect(Unit) {
+        while (true) {
+            // Read cached FCM token from SharedPreferences
+            val cachedToken = context.getSharedPreferences("dlavie_fcm", android.content.Context.MODE_PRIVATE)
+                .getString("fcm_token", "") ?: ""
+            if (cachedToken.isNotEmpty() && cachedToken != fcmToken) {
+                fcmToken = cachedToken
+            }
+
+            // If logged in and have token but not yet uploaded → attempt upload
+            val loggedIn = api.loggedIn()
+            if (loggedIn && fcmToken.isNotEmpty() && uploadStatus != "success" && uploadStatus != "uploading") {
+                attemptCount++
+                uploadStatus = "uploading"
+                uploadError = ""
+                lastAttempt = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+
+                withContext(Dispatchers.IO) {
+                    try {
+                        // Direct upload via REST API
+                        val userId = api.userId()
+                        val accessToken = api.token()
+                        val deviceInfo = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+
+                        val payload = org.json.JSONObject().apply {
+                            put("user_id", userId)
+                            put("fcm_token", fcmToken)
+                            put("device_info", deviceInfo)
+                            put("is_active", true)
+                        }
+
+                        val url = java.net.URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/user_fcm_tokens")
+                        val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                            requestMethod = "POST"
+                            connectTimeout = 15000
+                            readTimeout = 15000
+                            doOutput = true
+                            setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+                            setRequestProperty("Authorization", "Bearer $accessToken")
+                            setRequestProperty("Content-Type", "application/json")
+                            setRequestProperty("Prefer", "resolution=merge-duplicates,return=minimal")
+                        }
+                        conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+                        val code = conn.responseCode
+                        conn.disconnect()
+
+                        if (code in 200..299) {
+                            uploadStatus = "success"
+                            uploadError = ""
+                        } else {
+                            val errStream = conn.errorStream
+                            val errBody = errStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
+                            uploadStatus = "failed"
+                            uploadError = "HTTP $code: $errBody"
+                        }
+                    } catch (e: Exception) {
+                        uploadStatus = "failed"
+                        uploadError = e.message ?: e.toString()
+                    }
+                }
+            }
+
+            delay(3_000L)
+        }
+    }
+
+    GlassCard {
+        TTSectionHeader(title = "Notifikasi Push (FCM)", icon = Icons.Rounded.Notifications)
+        Spacer(Modifier.height(TTSpacing.sm))
+
+        // Login status
+        val loggedIn = api.loggedIn()
+        ProfRow("Login", if (loggedIn) "Ya (${api.userId().take(8)}...)" else "Tidak")
+
+        // FCM token
+        val tokenDisplay = if (fcmToken.isEmpty()) "Belum didapat" else "${fcmToken.take(20)}... (${fcmToken.length} chars)"
+        ProfRow("FCM Token", tokenDisplay)
+
+        // Upload status with color
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Text("Status Upload", color = SoftText, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            val statusColor = when (uploadStatus) {
+                "success" -> DLavieGlass.AuroraMint
+                "uploading" -> DLavieGlass.AuroraCyan
+                "failed" -> DLavieGlass.AuroraCoral
+                else -> DLavieGlass.TextMuted
+            }
+            Text("● $uploadStatus", color = statusColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+
+        // Attempt count + last attempt time
+        if (attemptCount > 0) {
+            ProfRow("Percobaan", "$attemptCount kali")
+            ProfRow("Terakhir", lastAttempt)
+        }
+
+        // Error message (if any)
+        if (uploadError.isNotEmpty()) {
+            Spacer(Modifier.height(TTSpacing.xs))
+            Surface(
+                color = DLavieGlass.AuroraCoral.copy(alpha = 0.10f),
+                border = BorderStroke(1.dp, DLavieGlass.AuroraCoral.copy(alpha = 0.40f)),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = uploadError,
+                    color = DLavieGlass.AuroraCoral,
+                    fontSize = 10.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
+        }
+
+        // Help text
+        if (!loggedIn) {
+            Spacer(Modifier.height(TTSpacing.xs))
+            Text(
+                "⚠ Login dulu supaya token ter-upload ke server.",
+                color = AmberWarn,
+                fontSize = 11.sp
+            )
+        } else if (fcmToken.isEmpty()) {
+            Spacer(Modifier.height(TTSpacing.xs))
+            Text(
+                "⏳ Menunggu Firebase generate token... Tunggu 10-30 detik.",
+                color = DLavieGlass.AuroraCyan,
+                fontSize = 11.sp
+            )
+        } else if (uploadStatus == "success") {
+            Spacer(Modifier.height(TTSpacing.xs))
+            Text(
+                "✅ Token ter-upload! Push notification siap diterima.",
+                color = DLavieGlass.AuroraMint,
+                fontSize = 11.sp
+            )
+        }
     }
 }
