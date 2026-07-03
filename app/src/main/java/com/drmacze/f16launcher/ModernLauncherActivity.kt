@@ -131,6 +131,7 @@ import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.PersonRemove
+import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -360,13 +361,12 @@ fun DLavieModernApp(initialPostId: String? = null) {
         }
     }
 
-    // ── Fetch maintenance HANYA untuk non-staff (Bug 3) ──
-    // Staff bypass: tidak perlu fetch app_config.maintenance sama sekali.
+    // ── Fetch maintenance untuk SEMUA user (termasuk staff) ──
+    // Staff tetap lihat maintenance screen, tapi bisa bypass (tap "Masuk" untuk partial,
+    // atau langsung masuk untuk full dengan tombol bypass khusus staff).
     LaunchedEffect(Unit) {
-        if (!isStaff) {
-            withContext(Dispatchers.IO) {
-                runCatching { maintenanceState = fetchMaintenanceInfo(api) }
-            }
+        withContext(Dispatchers.IO) {
+            runCatching { maintenanceState = fetchMaintenanceInfo(api) }
         }
         maintenanceChecked = true
     }
@@ -476,24 +476,30 @@ fun DLavieModernApp(initialPostId: String? = null) {
                         }
                     }
 
-                    // ── Non-staff + scope=full → full-screen maintenance, NO enter button (Bug 1) ──
-                    // User TIDAK BISA masuk launcher sampai Dev Dashboard menonaktifkan maintenance.
+                    // ── scope=full → full-screen maintenance ──
+                    // Non-staff: NO button (blocked total)
+                    // Staff: show "Masuk sebagai Admin" bypass button
                     maintenanceChecked && maintenanceState?.enabled == true
                             && maintenanceState?.scope == "full" -> {
-                        FullScreenMaintenance(maintenanceState!!) {
-                            // onEnter — tidak pernah dipanggil karena scope=full tidak punya button.
-                            // Tetap disediakan sebagai no-op supaya signature konsisten.
-                        }
+                        FullScreenMaintenance(
+                            maintenance = maintenanceState!!,
+                            isStaff = isStaff,
+                            onEnter = {
+                                // Staff only: bypass full maintenance
+                                partialBypassed = true
+                            }
+                        )
                     }
 
-                    // ── Non-staff + scope=partial → full-screen maintenance WITH "Masuk Launcher" (Bug 1) ──
-                    // Setelah tap, partialBypassed=true → user masuk launcher tapi Beranda & Update blur (Bug 2).
+                    // ── scope=partial → full-screen maintenance WITH "Masuk Launcher" ──
                     maintenanceChecked && maintenanceState?.enabled == true
                             && maintenanceState?.scope == "partial"
                             && !partialBypassed -> {
-                        FullScreenMaintenance(maintenanceState!!) {
-                            partialBypassed = true
-                        }
+                        FullScreenMaintenance(
+                            maintenance = maintenanceState!!,
+                            isStaff = isStaff,
+                            onEnter = { partialBypassed = true }
+                        )
                     }
 
                     // ── PIN lock (non-staff, post-maintenance-check) ──
@@ -535,11 +541,13 @@ private fun PinLockPlaceholder(context: android.content.Context) {
 
 // ─── Full-screen maintenance (Bug 1: scope = "full" | "partial") ──────────────
 // scope=full    → TIDAK ADA button "Masuk". User tidak bisa masuk launcher.
-// scope=partial → ADA button "Masuk Launcher" (always enabled). Tap → onEnter → blur Beranda & Update.
+// scope=partial → ADA button "Masuk Launcher" (always enabled). Tap → onEnter.
+// scope=full → Non-staff: NO button. Staff: "Masuk sebagai Admin" bypass button.
 @Composable
 fun FullScreenMaintenance(
     maintenance: MaintenanceInfo,
-    onEnter: () -> Unit  // dipanggil saat user tap "Masuk Launcher" (hanya untuk scope=partial)
+    isStaff: Boolean = false,
+    onEnter: () -> Unit
 ) {
     Box(
         Modifier.fillMaxSize().background(Carbon),
@@ -581,36 +589,58 @@ fun FullScreenMaintenance(
 
             Spacer(Modifier.height(20.dp))
 
-            // ── Bug 1: HANYA tampilkan button jika scope=partial ──
-            // scope=full → TIDAK ADA button "Masuk" sama sekali.
-            if (maintenance.scope == "partial") {
-                Button(
-                    onClick = onEnter,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = CandyCyan,
-                        contentColor = Carbon
+            when {
+                // scope=partial → always show "Masuk Launcher" button
+                maintenance.scope == "partial" -> {
+                    Button(
+                        onClick = onEnter,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = CandyCyan,
+                            contentColor = Carbon
+                        )
+                    ) {
+                        Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Masuk Launcher", fontWeight = FontWeight.Black)
+                    }
+                    Text(
+                        "Beberapa fitur dibatasi. Komunitas & Profil tetap tersedia.",
+                        color = SubText, fontSize = 11.sp, textAlign = TextAlign.Center
                     )
-                ) {
-                    Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Masuk Launcher", fontWeight = FontWeight.Black)
                 }
-                Text(
-                    "Beberapa fitur dibatasi. Komunitas & Profil tetap tersedia.",
-                    color = SubText, fontSize = 11.sp, textAlign = TextAlign.Center
-                )
-            } else {
-                // scope=full — tidak ada button. User tidak bisa masuk launcher.
-                Text(
-                    "Launcher tidak dapat diakses saat maintenance penuh.",
-                    color = SubText, fontSize = 12.sp, textAlign = TextAlign.Center
-                )
-                Text(
-                    "Silakan coba lagi nanti.",
-                    color = SubText, fontSize = 12.sp, textAlign = TextAlign.Center
-                )
+                // scope=full + staff → show bypass button
+                isStaff -> {
+                    Button(
+                        onClick = onEnter,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White.copy(0.2f),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(Icons.Rounded.AdminPanelSettings, null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Masuk sebagai Admin", fontWeight = FontWeight.Bold)
+                    }
+                    Text(
+                        "Anda adalah admin — bypass maintenance mode.",
+                        color = SubText, fontSize = 11.sp, textAlign = TextAlign.Center
+                    )
+                }
+                // scope=full + non-staff → NO button, blocked
+                else -> {
+                    Text(
+                        "Launcher tidak dapat diakses saat maintenance penuh.",
+                        color = SubText, fontSize = 12.sp, textAlign = TextAlign.Center
+                    )
+                    Text(
+                        "Silakan coba lagi nanti.",
+                        color = SubText, fontSize = 12.sp, textAlign = TextAlign.Center
+                    )
+                }
             }
 
             Spacer(Modifier.height(16.dp))
