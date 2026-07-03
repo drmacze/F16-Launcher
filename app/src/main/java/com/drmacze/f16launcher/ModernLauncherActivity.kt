@@ -28,6 +28,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.mutableStateListOf
@@ -889,11 +891,25 @@ fun MainShell(
                                 runCatching {
                                     api.recordGameSession(startedAt, durationMin)
                                     api.checkAndAwardBadges()
+                                }.onFailure { t ->
+                                    // Task 2 fix: log warning supaya bisa debug dari logcat.
+                                    // Filter: `adb logcat -s DLavieApi DLavieTelemetry`.
+                                    android.util.Log.w(
+                                        "DLavieApi",
+                                        "recordGameSession failed in ON_RESUME: ${t.javaClass.simpleName}: ${t.message}"
+                                    )
                                 }
                             }
                         }
+                    } else {
+                        // Session terlalu pendek (< 1 menit) — skip, log untuk debugging.
+                        android.util.Log.i(
+                            "DLavieApi",
+                            "ON_RESUME: session too short ($durationMin min) — skip recordGameSession"
+                        )
                     }
                 }
+                // else: no active game session (user hanya switch tab) — no-op, expected.
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -935,9 +951,12 @@ fun MainShell(
                 AnimatedContent(
                     targetState    = showGameDetail,
                     label          = "detail_anim",
+                    // Task 4 UI polish: fade + slight scale (0.98 → 1.0), 300ms (was 380ms fade-only).
                     transitionSpec = {
-                        fadeIn(tween(380, easing = FastOutSlowInEasing)) togetherWith
-                        fadeOut(tween(280, easing = FastOutSlowInEasing))
+                        (fadeIn(tween(300, easing = FastOutSlowInEasing)) +
+                         scaleIn(initialScale = 0.98f, animationSpec = tween(300, easing = FastOutSlowInEasing))) togetherWith
+                        (fadeOut(tween(220, easing = FastOutSlowInEasing)) +
+                         scaleOut(targetScale = 0.98f, animationSpec = tween(220, easing = FastOutSlowInEasing)))
                     }
                 ) { showDetail ->
                     CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
@@ -964,16 +983,20 @@ fun MainShell(
                             AnimatedContent(
                                 targetState    = page,
                                 label          = "page_anim",
+                                // Task 4 UI polish: fade + slight scale (0.98 → 1.0), 300ms (was 380ms).
+                                // Slide is kept subtle (it/12) for direction cue without being heavy.
                                 transitionSpec = {
-                                    (fadeIn(tween(380, easing = FastOutSlowInEasing)) +
+                                    (fadeIn(tween(300, easing = FastOutSlowInEasing)) +
+                                     scaleIn(initialScale = 0.98f, animationSpec = tween(300, easing = FastOutSlowInEasing)) +
                                      androidx.compose.animation.slideInHorizontally(
                                          initialOffsetX = { it / 12 },
-                                         animationSpec = tween(380, easing = FastOutSlowInEasing)
+                                         animationSpec = tween(300, easing = FastOutSlowInEasing)
                                      )) togetherWith
-                                    (fadeOut(tween(220)) +
+                                    (fadeOut(tween(200)) +
+                                     scaleOut(targetScale = 0.98f, animationSpec = tween(200, easing = FastOutSlowInEasing)) +
                                      androidx.compose.animation.slideOutHorizontally(
                                          targetOffsetX = { -it / 24 },
-                                         animationSpec = tween(280, easing = FastOutSlowInEasing)
+                                         animationSpec = tween(240, easing = FastOutSlowInEasing)
                                      ))
                                 },
                                 modifier       = Modifier.fillMaxSize().padding(bottom = 100.dp)
@@ -7388,6 +7411,16 @@ fun launchGame(context: android.content.Context) {
     GameSessionTracker.start()
     // Fire-and-forget telemetry — game_launch event.
     Telemetry.track(context, Telemetry.EVT_GAME_LAUNCH, mapOf("game_package" to GAME_PKG))
+    // Task 5: log game_launch activity (if logged in) — fire-and-forget on background thread.
+    try {
+        val appCtx = context.applicationContext
+        Thread {
+            runCatching {
+                val api = CommunityApi(appCtx)
+                if (api.loggedIn()) api.logActivity("game_launch", null)
+            }
+        }.start()
+    } catch (_: Throwable) { }
     val intent = context.packageManager.getLaunchIntentForPackage(GAME_PKG)
     if (intent != null) context.startActivity(intent)
     else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(FIFA_APK_URL)))

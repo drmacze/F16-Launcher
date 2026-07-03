@@ -795,7 +795,7 @@ private fun GuidedHomeScreen(session: AuthSession, openData: () -> Unit, openUpd
             GuidedMiniChip("Update", if (bootstrap.updateAvailable) "v${bootstrap.latestVersionCode}" else LOCAL_VERSION_NAME, "🔄", if (bootstrap.updateAvailable) GuideCyan else GuideGreen, Modifier.weight(1f))
         }
         GuidedQuickSteps(marker, bootstrap, openData, openUpdate) { guidedLaunchGame(context) }
-        GuidedPrimaryCta(if (marker.startsWith("v26")) "Mainkan Game" else "Install Full Data", if (marker.startsWith("v26")) "Data siap. Buka FIFA 16." else "Base data belum lengkap.", if (marker.startsWith("v26")) "▶" else "⬇", if (marker.startsWith("v26")) { guidedLaunchGame(context) } else openData)
+        GuidedPrimaryCta(if (marker.startsWith("v26")) "Mainkan Game" else "Install Full Data", if (marker.startsWith("v26")) "Data siap. Buka FIFA 16." else "Base data belum lengkap.", if (marker.startsWith("v26")) "▶" else "⬇", if (marker.startsWith("v26")) { { guidedLaunchGame(context) } } else openData)
         if (bootstrap.notices.isNotEmpty()) GuidedNoticeCard(bootstrap.notices)
         if (bootstrap.error.isNotBlank()) GuidedErrorCard(bootstrap.error)
     }
@@ -821,7 +821,7 @@ private fun GuidedDataScreen(openUpdate: () -> Unit) {
                 GuidedInfoBox("APK FIFA", if (guidedIsGameInstalled(context)) "Terpasang" else "Belum", Modifier.weight(1f))
                 GuidedInfoBox("Marker", guidedShortMarker(marker), Modifier.weight(1f))
             }
-            GuidedActionButton(if (marker.startsWith("v26")) "Ke Update" else "Buka Installer Data", if (marker.startsWith("v26")) GuideCyan else GuideGreen, if (marker.startsWith("v26")) openUpdate else { guidedOpenClassicInstaller(context) }, true)
+            GuidedActionButton(if (marker.startsWith("v26")) "Ke Update" else "Buka Installer Data", if (marker.startsWith("v26")) GuideCyan else GuideGreen, if (marker.startsWith("v26")) openUpdate else { { guidedOpenClassicInstaller(context) } }, true)
         }
         GuidedShizukuCard()
     }

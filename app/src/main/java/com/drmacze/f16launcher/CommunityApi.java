@@ -2,6 +2,7 @@ package com.drmacze.f16launcher;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -20,6 +21,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class CommunityApi {
+
+    private static final String TAG = "DLavieApi";
     public static final String SUPABASE_URL = "https://lvmucsxbmadtsgrxuwmo.supabase.co";
     public static final String SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2bXVjc3hibWFkdHNncnh1d21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODUyODksImV4cCI6MjA5ODU2MTI4OX0.y-1sE6uYTn4Wbter6g6NozY6uojzD5x9YVeYif-5nJs";
 
@@ -72,6 +75,15 @@ public class CommunityApi {
         JSONObject res = new JSONObject(request("POST", "/auth/v1/signup", body, false, false));
         storeSessionIfPresent(res);
         if (loggedIn()) ensureMyProfile(username, displayName, avatarUrl);
+        // Task 5: log activity (register) — fire-and-forget, swallow errors.
+        try {
+            JSONObject meta = new JSONObject()
+                .put("username", username.trim())
+                .put("country", country());
+            logActivity("register", meta);
+            // Award badges (server-side RPC — checks login_count badge etc.)
+            checkAndAwardBadges();
+        } catch (Throwable ignored) { }
         return res;
     }
 
@@ -94,6 +106,11 @@ public class CommunityApi {
                 throw new IllegalStateException("Login berhasil, tapi profile community belum ada. Isi username + display name lalu tekan Login lagi.");
             }
         }
+        // Task 5: log activity (login) + award badges — fire-and-forget.
+        try {
+            logActivity("login", null);
+            checkAndAwardBadges();
+        } catch (Throwable ignored) { }
         return res;
     }
 
@@ -199,6 +216,11 @@ public class CommunityApi {
     public void followUser(String userId) throws Exception {
         JSONObject body = new JSONObject().put("follower_id", userId()).put("following_id", userId);
         request("POST", "/rest/v1/community_follows?on_conflict=follower_id,following_id", body, true, "resolution=merge-duplicates,return=minimal");
+        // Task 5: log activity + award badges — fire-and-forget.
+        try {
+            logActivity("follow", new JSONObject().put("user_id", userId));
+            checkAndAwardBadges();
+        } catch (Throwable ignored) { }
     }
 
     /** Unfollow a user. Login required. */
@@ -274,7 +296,15 @@ public class CommunityApi {
 
         JSONArray arr = new JSONArray(request("POST", "/rest/v1/feed_posts",
             payload, true, "return=representation"));
-        return arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
+        JSONObject created = arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
+        // Task 5: log activity + award badges (only for published posts, not drafts)
+        if (!isDraft) {
+            try {
+                logActivity("create_post", new JSONObject().put("post_id", created.optString("id", "")));
+                checkAndAwardBadges();
+            } catch (Throwable ignored) { }
+        }
+        return created;
     }
 
     /**
@@ -422,7 +452,13 @@ public class CommunityApi {
             .put("body", body.trim());
         JSONArray arr = new JSONArray(request("POST", "/rest/v1/feed_comments",
             payload, true, "return=representation"));
-        return arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
+        JSONObject created = arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
+        // Task 5: log activity + award badges — fire-and-forget.
+        try {
+            logActivity("create_comment", new JSONObject().put("post_id", postId));
+            checkAndAwardBadges();
+        } catch (Throwable ignored) { }
+        return created;
     }
 
     /** Delete (physical) a comment. Owner only (RLS enforced). */
@@ -654,21 +690,11 @@ public class CommunityApi {
         return new JSONObject();
     }
 
-    /**
-     * Insert a telemetry event into app_events table.
-     * Fire-and-forget — caller wraps in try/catch + Dispatchers.IO.
-     */
-    public void logEvent(String eventType, JSONObject eventData, String appVersion, String country, JSONObject deviceInfo) throws Exception {
-        if (!loggedIn()) return;
-        JSONObject body = new JSONObject();
-        body.put("user_id", userId());
-        body.put("event_type", eventType);
-        if (eventData != null) body.put("event_data", eventData); else body.put("event_data", new JSONObject());
-        if (appVersion != null && !appVersion.isEmpty()) body.put("app_version", appVersion);
-        if (country != null && !country.isEmpty()) body.put("country", country);
-        if (deviceInfo != null) body.put("device_info", deviceInfo);
-        request("POST", "/rest/v1/app_events", body, true, "return=minimal");
-    }
+    // Note (v3.0.0 cleanup): the legacy `logEvent(...)` method was removed.
+    // It used the wrong column name (`event_data` instead of `metadata`) and was
+    // never called from any caller. All telemetry now goes through `Telemetry.kt`,
+    // which writes to `app_events` with the correct schema (user_id, event_type,
+    // app_version, country, device_info jsonb, metadata jsonb).
 
     /**
      * Fetch recent sent notification campaigns ordered by sent_at desc.
@@ -752,6 +778,11 @@ public class CommunityApi {
         if (review != null && !review.trim().isEmpty()) body.put("review", review.trim());
         request("POST", "/rest/v1/game_ratings?on_conflict=user_id", body, true,
             "resolution=merge-duplicates,return=minimal");
+        // Task 5: log activity + award badges — fire-and-forget.
+        try {
+            logActivity("rate_game", new JSONObject().put("rating", rating));
+            checkAndAwardBadges();
+        } catch (Throwable ignored) { }
     }
 
     /**
@@ -1036,6 +1067,11 @@ public class CommunityApi {
      * Inserts a row into game_sessions (started_at, ended_at, duration_minutes) and
      * also logs an activity into user_activities (activity_type="play_game").
      *
+     * Task 2 + Task 5 fixes:
+     *  - Logs `game_session` activity with duration_minutes metadata.
+     *  - On failure, logs warning via Log.w (TAG=DLavieApi) so "game_sessions KOSONG"
+     *    becomes diagnosable from logcat (RLS rejection, network, etc.).
+     *
      * Both writes use Prefer: return=minimal (fire-and-forget).
      * Login required.
      *
@@ -1044,7 +1080,10 @@ public class CommunityApi {
      */
     public void recordGameSession(long startedAt, int durationMinutes) throws Exception {
         if (!loggedIn()) throw new IllegalStateException("Belum login.");
-        if (durationMinutes <= 0) return;
+        if (durationMinutes <= 0) {
+            Log.w(TAG, "recordGameSession: skip (durationMinutes=" + durationMinutes + " <= 0)");
+            return;
+        }
         java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat(
             "yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US);
         JSONObject body = new JSONObject()
@@ -1052,15 +1091,25 @@ public class CommunityApi {
             .put("started_at", sdf.format(new java.util.Date(startedAt)))
             .put("ended_at", sdf.format(new java.util.Date()))
             .put("duration_minutes", durationMinutes);
-        request("POST", "/rest/v1/game_sessions", body, true, "return=minimal");
+        try {
+            request("POST", "/rest/v1/game_sessions", body, true, "return=minimal");
+            Log.i(TAG, "recordGameSession: OK (user=" + userId() + ", dur=" + durationMinutes + "min)");
+        } catch (Throwable e) {
+            // Task 2 fix: log warning supaya bisa debug dari logcat.
+            // Filter: `adb logcat -s DLavieApi` untuk lihat error recordGameSession.
+            Log.w(TAG, "recordGameSession FAILED: " + e.getMessage(), e);
+            throw e;
+        }
 
-        // Also log a user_activities row so the activity feed (Dev Dashboard) picks it up.
+        // Task 5: log a user_activities row so the activity feed (Dev Dashboard) picks it up.
         try {
             JSONObject activity = new JSONObject()
                 .put("user_id", userId())
                 .put("activity_type", "play_game")
                 .put("metadata", new JSONObject().put("duration_minutes", durationMinutes));
             request("POST", "/rest/v1/user_activities", activity, true, "return=minimal");
+            // Also fire generic logActivity for the activity feed aggregator.
+            logActivity("game_session", new JSONObject().put("duration_minutes", durationMinutes));
         } catch (Throwable ignored) { }
     }
 
@@ -1068,106 +1117,47 @@ public class CommunityApi {
      * Check all badge requirements and award any newly-earned badges to the current
      * user. Idempotent — already-earned badges are skipped.
      *
-     * Badge requirement types supported (per SQL v12 schema):
-     *   - login_count        → user is logged in (always awards on first call)
-     *   - play_time_minutes  → latest single session duration >= reqValue
-     *   - total_play_hours   → cumulative play time (hours) >= reqValue
-     *   - daily_post_streak  → user_streaks.current_streak >= reqValue
-     *   - post_count         → count of published posts >= reqValue
-     *   - follow_count       → count of community_follows (as follower) >= reqValue
-     *   - has_rated          → at least 1 row in game_ratings
-     *   - comment_count      → count of feed_comments by user >= reqValue
+     * Task 3 fix (v3.0.0): replaced client-side loop with single server-side RPC call.
+     * POST /rest/v1/rpc/check_and_award_badges { p_user_id }
+     *   → returns jsonb array of newly-awarded badge codes (e.g. ["first_login","rate_1"])
      *
-     * Each newly-awarded badge is inserted into user_badges. Errors on individual
-     * inserts are swallowed (so a single failure doesn't abort the whole sweep).
+     * Benefits:
+     *   - Single round-trip (was N+1 queries for catalog + per-badge check).
+     *   - All requirement logic lives in SQL (security definer) — atomic + consistent.
+     *   - RLS for `user_badges` insert uses `auth.uid() = user_id` (SQL v14) → works
+     *     because RPC runs as `security definer` (bypasses RLS for the insert itself,
+     *     but still respects p_user_id ownership).
+     *
+     * Returns the raw response (jsonb array or object). Callers may ignore it — the
+     * awarding side-effect is what matters.
+     *
+     * @return parsed response (JSONArray if function returns array, JSONObject otherwise)
      */
-    public void checkAndAwardBadges() throws Exception {
-        if (!loggedIn()) return;
-
-        // ── Load badge catalog + already-earned badge codes ──
-        JSONArray badges = new JSONArray(request("GET",
-            "/rest/v1/badges?select=code,name,requirement_type,requirement_value",
-            null, false, false));
-        JSONArray earned = new JSONArray(request("GET",
-            "/rest/v1/user_badges?user_id=eq." + enc(userId()) + "&select=badge_code",
-            null, true, false));
-        java.util.Set<String> earnedCodes = new java.util.HashSet<>();
-        for (int i = 0; i < earned.length(); i++) {
-            earnedCodes.add(earned.getJSONObject(i).optString("badge_code", ""));
-        }
-
-        for (int i = 0; i < badges.length(); i++) {
-            JSONObject badge = badges.getJSONObject(i);
-            String code = badge.optString("code", "");
-            if (code.isEmpty() || earnedCodes.contains(code)) continue;
-
-            String reqType = badge.optString("requirement_type", "");
-            int reqValue = badge.optInt("requirement_value", 0);
-            boolean shouldAward = false;
-
-            try {
-                if ("login_count".equals(reqType)) {
-                    // User is logged in → award login-based badges (e.g. first_login)
-                    shouldAward = true;
-                } else if ("play_time_minutes".equals(reqType)) {
-                    // Check latest session
-                    JSONArray sessions = new JSONArray(request("GET",
-                        "/rest/v1/game_sessions?user_id=eq." + enc(userId())
-                            + "&order=started_at.desc&limit=1&select=duration_minutes",
-                        null, true, false));
-                    if (sessions.length() > 0
-                        && sessions.getJSONObject(0).optInt("duration_minutes", 0) >= reqValue) {
-                        shouldAward = true;
-                    }
-                } else if ("total_play_hours".equals(reqType)) {
-                    JSONArray allSessions = new JSONArray(request("GET",
-                        "/rest/v1/game_sessions?user_id=eq." + enc(userId()) + "&select=duration_minutes",
-                        null, true, false));
-                    int totalMin = 0;
-                    for (int j = 0; j < allSessions.length(); j++) {
-                        totalMin += allSessions.getJSONObject(j).optInt("duration_minutes", 0);
-                    }
-                    if (totalMin / 60 >= reqValue) shouldAward = true;
-                } else if ("daily_post_streak".equals(reqType)) {
-                    JSONArray streaks = new JSONArray(request("GET",
-                        "/rest/v1/user_streaks?user_id=eq." + enc(userId()) + "&select=current_streak",
-                        null, true, false));
-                    if (streaks.length() > 0
-                        && streaks.getJSONObject(0).optInt("current_streak", 0) >= reqValue) {
-                        shouldAward = true;
-                    }
-                } else if ("post_count".equals(reqType)) {
-                    JSONArray posts = new JSONArray(request("GET",
-                        "/rest/v1/feed_posts?author_id=eq." + enc(userId())
-                            + "&is_draft=eq.false&select=id",
-                        null, true, false));
-                    if (posts.length() >= reqValue) shouldAward = true;
-                } else if ("follow_count".equals(reqType)) {
-                    JSONArray follows = new JSONArray(request("GET",
-                        "/rest/v1/community_follows?follower_id=eq." + enc(userId()) + "&select=follower_id",
-                        null, true, false));
-                    if (follows.length() >= reqValue) shouldAward = true;
-                } else if ("has_rated".equals(reqType)) {
-                    JSONArray ratings = new JSONArray(request("GET",
-                        "/rest/v1/game_ratings?user_id=eq." + enc(userId()) + "&select=rating",
-                        null, true, false));
-                    if (ratings.length() > 0) shouldAward = true;
-                } else if ("comment_count".equals(reqType)) {
-                    JSONArray comments = new JSONArray(request("GET",
-                        "/rest/v1/feed_comments?user_id=eq." + enc(userId()) + "&select=id",
-                        null, true, false));
-                    if (comments.length() >= reqValue) shouldAward = true;
+    public Object checkAndAwardBadges() throws Exception {
+        if (!loggedIn()) return new JSONArray();
+        JSONObject body = new JSONObject().put("p_user_id", userId());
+        try {
+            String resp = request("POST", "/rest/v1/rpc/check_and_award_badges", body, true, null);
+            // RPC response can be: array, object, or empty string.
+            if (resp == null || resp.trim().isEmpty()) return new JSONArray();
+            String trimmed = resp.trim();
+            if (trimmed.startsWith("[")) {
+                JSONArray awarded = new JSONArray(trimmed);
+                if (awarded.length() > 0) {
+                    Log.i(TAG, "checkAndAwardBadges: awarded " + awarded.length() + " badge(s) — " + awarded);
                 }
-            } catch (Throwable ignored) { }
-
-            if (shouldAward) {
-                try {
-                    JSONObject badgeBody = new JSONObject()
-                        .put("user_id", userId())
-                        .put("badge_code", code);
-                    request("POST", "/rest/v1/user_badges", badgeBody, true, "return=minimal");
-                } catch (Throwable ignored) { }
+                return awarded;
+            } else if (trimmed.startsWith("{")) {
+                return new JSONObject(trimmed);
+            } else {
+                // Unexpected shape — log + return empty
+                Log.w(TAG, "checkAndAwardBadges: unexpected response shape — " + trimmed.substring(0, Math.min(120, trimmed.length())));
+                return new JSONArray();
             }
+        } catch (Throwable e) {
+            // Log warning — badges not critical, swallow to avoid crashing caller.
+            Log.w(TAG, "checkAndAwardBadges FAILED: " + e.getMessage());
+            return new JSONArray();
         }
     }
 
@@ -1292,18 +1282,31 @@ public class CommunityApi {
         try {
             return doRequest(method, path, body, auth, prefer);
         } catch (IllegalStateException e) {
-            // Kalau JWT expired (401), coba refresh token lalu retry sekali
-            if (auth && e.getMessage() != null && e.getMessage().contains("401")) {
+            String msg = e.getMessage() == null ? "" : e.getMessage();
+            // Task 5 fix: 401 → refresh JWT → retry once. Other 4xx/5xx propagate.
+            if (auth && msg.contains("401")) {
+                Log.w(TAG, "request 401 on " + method + " " + path + " — refreshing JWT & retrying once");
                 try {
                     refreshToken();
                 } catch (Throwable refreshErr) {
-                    // Refresh gagal — throw original error
-                    throw e;
+                    // Refresh gagal — wrap dengan pesan yang user-friendly.
+                    Log.w(TAG, "refreshToken FAILED: " + refreshErr.getMessage());
+                    throw new IllegalStateException("Sesi login kedaluwarsa. Silakan login ulang.", refreshErr);
                 }
                 // Retry dengan token baru
                 return doRequest(method, path, body, auth, prefer);
             }
+            // Task 5 fix: jaringan error → pesan jelas (bukan JSON parse error).
+            if (msg.contains("Unable to resolve host") || msg.contains("Network is unreachable")
+                || msg.contains("Connection timed out") || msg.contains("ECONNREFUSED")) {
+                throw new IllegalStateException("Tidak dapat terhubung ke server. Periksa koneksi internet, lalu coba lagi.");
+            }
             throw e;
+        } catch (java.io.IOException io) {
+            // Network-level failure (no HTTP response at all — e.g. no internet, DNS, TLS).
+            Log.w(TAG, "request IOException on " + method + " " + path + " — " + io.getMessage());
+            throw new IllegalStateException("Gangguan jaringan: " + io.getMessage()
+                + ". Periksa koneksi internet, lalu coba lagi.", io);
         }
     }
 
