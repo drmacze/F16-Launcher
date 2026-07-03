@@ -863,12 +863,9 @@ fun MainShell(
                                 },
                                 modifier       = Modifier.fillMaxSize().padding(bottom = 100.dp)
                             ) { target ->
-                                // ── Bug 2: Partial maintenance → Beranda & Update blur total ──
-                                val isPartialMaintenance = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"
-
+                                // ── Partial maintenance: NO blur, just block action buttons ──
                                 when (target) {
-                                    Page.Home   -> Box {
-                                        HomeScreen(
+                                    Page.Home   -> HomeScreen(
                                             api             = api,
                                             maintenanceInfo = maintenanceInfo,
                                             onNav           = { page = it },
@@ -883,26 +880,7 @@ fun MainShell(
                                                 showGameDetail           = true
                                             }
                                         )
-                                        if (isPartialMaintenance) {
-                                            PartialMaintenanceOverlay(
-                                                title   = "Beranda Diblokir",
-                                                message = "Maintenance mode aktif. Hanya Komunitas & Profil yang tersedia.",
-                                                onNavChat = { page = Page.Chat },
-                                                onNavMe   = { page = Page.Me }
-                                            )
-                                        }
-                                    }
-                                    Page.Update -> Box {
-                                        UpdateScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
-                                        if (isPartialMaintenance) {
-                                            PartialMaintenanceOverlay(
-                                                title   = "Update Diblokir",
-                                                message = "Maintenance mode aktif.",
-                                                onNavChat = { page = Page.Chat },
-                                                onNavMe   = { page = Page.Me }
-                                            )
-                                        }
-                                    }
+                                    Page.Update -> UpdateScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
                                     Page.Chat   -> CommunityScreen(
                                         api             = api,
                                         pendingPostId   = pendingPostId.value,
