@@ -90,10 +90,15 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
+      - name: Rename APK
+        shell: bash
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/DLavie26-Launcher-debug.apk
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.versionName }}
+          tag_name: v${{ inputs.versionName }}
           name: DLavie 26 Launcher ${{ inputs.versionName }}
           body: |
             # DLavie 26 Launcher ${{ inputs.versionName }}
@@ -112,4 +117,4 @@ jobs:
             ---
             *Release otomatis dari Dev Dashboard — semua user akan dapat popup update saat membuka launcher.*
           prerelease: false
-          files: app/build/outputs/apk/debug/*.apk
+          files: app/build/outputs/apk/debug/DLavie26-Launcher-debug.apk
