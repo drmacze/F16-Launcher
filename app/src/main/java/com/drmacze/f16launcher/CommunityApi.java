@@ -252,16 +252,50 @@ public class CommunityApi {
 
     /** Create a new feed post with image. Login required. Returns the created row. */
     public JSONObject createFeedPost(String title, String body, String imageUrl, String type) throws Exception {
+        return createFeedPost(title, body, imageUrl, type, false);
+    }
+
+    /**
+     * Create a new feed post (or draft if isDraft=true) with image.
+     * Login required. Returns the created row.
+     *
+     * is_draft=true → post disimpan sebagai draft (tidak muncul di feed publik,
+     * hanya di tab Draft pada ProfileScreen). User bisa publish draft kapan saja
+     * via publishDraft(postId).
+     */
+    public JSONObject createFeedPost(String title, String body, String imageUrl, String type, boolean isDraft) throws Exception {
         JSONObject payload = new JSONObject()
             .put("author_id", userId())
             .put("title", title.trim())
             .put("body", body.trim())
-            .put("type", type != null ? type : "community");
+            .put("type", type != null ? type : "community")
+            .put("is_draft", isDraft);
         if (imageUrl != null && !imageUrl.trim().isEmpty()) payload.put("image_url", imageUrl.trim());
 
         JSONArray arr = new JSONArray(request("POST", "/rest/v1/feed_posts",
             payload, true, "return=representation"));
         return arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
+    }
+
+    /**
+     * Publish a previously-saved draft post (set is_draft=false).
+     * Login required. Returns the updated row.
+     */
+    public JSONObject publishDraft(String postId) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login.");
+        JSONObject body = new JSONObject().put("is_draft", false);
+        JSONArray arr = new JSONArray(request("PATCH",
+            "/rest/v1/feed_posts?id=eq." + enc(postId) + "&author_id=eq." + enc(userId()),
+            body, true, "return=representation"));
+        return arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
+    }
+
+    /** Delete a feed post (own only — RLS enforced). Login required. */
+    public void deleteFeedPost(String postId) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login.");
+        request("DELETE",
+            "/rest/v1/feed_posts?id=eq." + enc(postId) + "&author_id=eq." + enc(userId()),
+            null, true, false);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -583,10 +617,10 @@ public class CommunityApi {
     //  Profile lookup — for author info in feed cards
     // ──────────────────────────────────────────────────────────────────────
 
-    /** Get profile by ID (for author info in feed). Public read. */
+    /** Get profile by ID (for author info in feed + UserProfileScreen). Public read. */
     public JSONObject getProfileById(String profileId) throws Exception {
         JSONArray arr = new JSONArray(request("GET",
-            "/rest/v1/profiles?id=eq." + enc(profileId) + "&select=id,username,display_name,avatar_url,role",
+            "/rest/v1/profiles?id=eq." + enc(profileId) + "&select=id,username,display_name,avatar_url,role,unique_id,bio",
             null, false, false));
         return arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
     }
@@ -868,6 +902,386 @@ public class CommunityApi {
         while (m.find()) set.add(m.group(1));
         return new ArrayList<>(set);
     }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  PROFILE REMAKE — TapTap style stats (Following / Followers / Likes)
+    //  + Badges + Game Saya (play time) + Tabs (Post / Tersimpan / Draft)
+    // ════════════════════════════════════════════════════════════════════
+
+    /** Count users that the current user is following. Login required. */
+    public int getFollowingCount() throws Exception {
+        if (!loggedIn()) return 0;
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/community_follows?follower_id=eq." + enc(userId()) + "&select=follower_id",
+            null, true, false));
+        return arr.length();
+    }
+
+    /** Count users that follow the current user. Login required. */
+    public int getFollowerCount() throws Exception {
+        if (!loggedIn()) return 0;
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/community_follows?following_id=eq." + enc(userId()) + "&select=following_id",
+            null, true, false));
+        return arr.length();
+    }
+
+    /**
+     * Count total likes received across all of the current user's posts.
+     * Login required (RLS on feed_likes is public read, but we restrict to logged-in
+     * callers since this is a profile stat).
+     */
+    public int getMyLikesReceived() throws Exception {
+        if (!loggedIn()) return 0;
+        // Get all of my post IDs first
+        JSONArray posts = new JSONArray(request("GET",
+            "/rest/v1/feed_posts?author_id=eq." + enc(userId()) + "&is_draft=eq.false&select=id",
+            null, true, false));
+        if (posts.length() == 0) return 0;
+        StringBuilder inList = new StringBuilder();
+        for (int i = 0; i < posts.length(); i++) {
+            if (i > 0) inList.append(",");
+            inList.append(enc(posts.getJSONObject(i).optString("id", "")));
+        }
+        JSONArray likes = new JSONArray(request("GET",
+            "/rest/v1/feed_likes?post_id=in.(" + inList + ")&select=post_id",
+            null, false, false));
+        return likes.length();
+    }
+
+    /** Fetch current user's published posts (is_draft=false), newest first. Login required. */
+    public JSONArray getMyPosts() throws Exception {
+        if (!loggedIn()) return new JSONArray();
+        return new JSONArray(request("GET",
+            "/rest/v1/feed_posts?author_id=eq." + enc(userId()) + "&is_draft=eq.false&order=created_at.desc&select=*",
+            null, true, false));
+    }
+
+    /** Fetch current user's draft posts (is_draft=true), newest first. Login required. */
+    public JSONArray getMyDrafts() throws Exception {
+        if (!loggedIn()) return new JSONArray();
+        return new JSONArray(request("GET",
+            "/rest/v1/feed_posts?author_id=eq." + enc(userId()) + "&is_draft=eq.true&order=created_at.desc&select=*",
+            null, true, false));
+    }
+
+    /**
+     * Fetch current user's saved (bookmarked) posts, newest first.
+     * Returns rows with nested feed_posts(*) so we can render the post card directly.
+     * Login required (RLS on saved_posts is owner-only).
+     */
+    public JSONArray getSavedPosts() throws Exception {
+        if (!loggedIn()) return new JSONArray();
+        return new JSONArray(request("GET",
+            "/rest/v1/saved_posts?user_id=eq." + enc(userId())
+                + "&order=created_at.desc&select=post_id,created_at,feed_posts(*)",
+            null, true, false));
+    }
+
+    /** Fetch current user's earned badges (badge_code + earned_at). Login required. */
+    public JSONArray getMyBadges() throws Exception {
+        if (!loggedIn()) return new JSONArray();
+        return new JSONArray(request("GET",
+            "/rest/v1/user_badges?user_id=eq." + enc(userId()) + "&select=badge_code,earned_at",
+            null, true, false));
+    }
+
+    /** Fetch all badge definitions (code, name, description, icon, requirement_*). Public read. */
+    public JSONArray getAllBadges() throws Exception {
+        return new JSONArray(request("GET",
+            "/rest/v1/badges?order=code.asc&select=code,name,description,icon,requirement_type,requirement_value",
+            null, false, false));
+    }
+
+    /** Get the current user's unique_id (profiles.unique_id). Login required. Returns 0 if not set. */
+    public int getUniqueId() throws Exception {
+        if (!loggedIn()) return 0;
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/profiles?id=eq." + enc(userId()) + "&select=unique_id",
+            null, true, false));
+        return arr.length() > 0 ? arr.getJSONObject(0).optInt("unique_id", 0) : 0;
+    }
+
+    /**
+     * Get the current user's total play time (in minutes) by summing all
+     * game_sessions.duration_minutes rows. Login required.
+     */
+    public int getTotalPlayTime() throws Exception {
+        if (!loggedIn()) return 0;
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/game_sessions?user_id=eq." + enc(userId()) + "&select=duration_minutes",
+            null, true, false));
+        int total = 0;
+        for (int i = 0; i < arr.length(); i++) {
+            total += arr.getJSONObject(i).optInt("duration_minutes", 0);
+        }
+        return total;
+    }
+
+    /** Get the current user's bio (profiles.bio). Login required. */
+    public String getMyBio() throws Exception {
+        if (!loggedIn()) return "";
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/profiles?id=eq." + enc(userId()) + "&select=bio",
+            null, true, false));
+        return arr.length() > 0 ? arr.getJSONObject(0).optString("bio", "") : "";
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  PLAY TIME TRACKING — game_sessions + user_activities + auto-award badges
+    // ════════════════════════════════════════════════════════════════════
+
+    /**
+     * Record a completed game session.
+     * Inserts a row into game_sessions (started_at, ended_at, duration_minutes) and
+     * also logs an activity into user_activities (activity_type="play_game").
+     *
+     * Both writes use Prefer: return=minimal (fire-and-forget).
+     * Login required.
+     *
+     * @param startedAt        epoch millis when session began (set by GameSessionTracker)
+     * @param durationMinutes  session length in whole minutes (>=1)
+     */
+    public void recordGameSession(long startedAt, int durationMinutes) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login.");
+        if (durationMinutes <= 0) return;
+        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat(
+            "yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US);
+        JSONObject body = new JSONObject()
+            .put("user_id", userId())
+            .put("started_at", sdf.format(new java.util.Date(startedAt)))
+            .put("ended_at", sdf.format(new java.util.Date()))
+            .put("duration_minutes", durationMinutes);
+        request("POST", "/rest/v1/game_sessions", body, true, "return=minimal");
+
+        // Also log a user_activities row so the activity feed (Dev Dashboard) picks it up.
+        try {
+            JSONObject activity = new JSONObject()
+                .put("user_id", userId())
+                .put("activity_type", "play_game")
+                .put("metadata", new JSONObject().put("duration_minutes", durationMinutes));
+            request("POST", "/rest/v1/user_activities", activity, true, "return=minimal");
+        } catch (Throwable ignored) { }
+    }
+
+    /**
+     * Check all badge requirements and award any newly-earned badges to the current
+     * user. Idempotent — already-earned badges are skipped.
+     *
+     * Badge requirement types supported (per SQL v12 schema):
+     *   - login_count        → user is logged in (always awards on first call)
+     *   - play_time_minutes  → latest single session duration >= reqValue
+     *   - total_play_hours   → cumulative play time (hours) >= reqValue
+     *   - daily_post_streak  → user_streaks.current_streak >= reqValue
+     *   - post_count         → count of published posts >= reqValue
+     *   - follow_count       → count of community_follows (as follower) >= reqValue
+     *   - has_rated          → at least 1 row in game_ratings
+     *   - comment_count      → count of feed_comments by user >= reqValue
+     *
+     * Each newly-awarded badge is inserted into user_badges. Errors on individual
+     * inserts are swallowed (so a single failure doesn't abort the whole sweep).
+     */
+    public void checkAndAwardBadges() throws Exception {
+        if (!loggedIn()) return;
+
+        // ── Load badge catalog + already-earned badge codes ──
+        JSONArray badges = new JSONArray(request("GET",
+            "/rest/v1/badges?select=code,name,requirement_type,requirement_value",
+            null, false, false));
+        JSONArray earned = new JSONArray(request("GET",
+            "/rest/v1/user_badges?user_id=eq." + enc(userId()) + "&select=badge_code",
+            null, true, false));
+        java.util.Set<String> earnedCodes = new java.util.HashSet<>();
+        for (int i = 0; i < earned.length(); i++) {
+            earnedCodes.add(earned.getJSONObject(i).optString("badge_code", ""));
+        }
+
+        for (int i = 0; i < badges.length(); i++) {
+            JSONObject badge = badges.getJSONObject(i);
+            String code = badge.optString("code", "");
+            if (code.isEmpty() || earnedCodes.contains(code)) continue;
+
+            String reqType = badge.optString("requirement_type", "");
+            int reqValue = badge.optInt("requirement_value", 0);
+            boolean shouldAward = false;
+
+            try {
+                if ("login_count".equals(reqType)) {
+                    // User is logged in → award login-based badges (e.g. first_login)
+                    shouldAward = true;
+                } else if ("play_time_minutes".equals(reqType)) {
+                    // Check latest session
+                    JSONArray sessions = new JSONArray(request("GET",
+                        "/rest/v1/game_sessions?user_id=eq." + enc(userId())
+                            + "&order=started_at.desc&limit=1&select=duration_minutes",
+                        null, true, false));
+                    if (sessions.length() > 0
+                        && sessions.getJSONObject(0).optInt("duration_minutes", 0) >= reqValue) {
+                        shouldAward = true;
+                    }
+                } else if ("total_play_hours".equals(reqType)) {
+                    JSONArray allSessions = new JSONArray(request("GET",
+                        "/rest/v1/game_sessions?user_id=eq." + enc(userId()) + "&select=duration_minutes",
+                        null, true, false));
+                    int totalMin = 0;
+                    for (int j = 0; j < allSessions.length(); j++) {
+                        totalMin += allSessions.getJSONObject(j).optInt("duration_minutes", 0);
+                    }
+                    if (totalMin / 60 >= reqValue) shouldAward = true;
+                } else if ("daily_post_streak".equals(reqType)) {
+                    JSONArray streaks = new JSONArray(request("GET",
+                        "/rest/v1/user_streaks?user_id=eq." + enc(userId()) + "&select=current_streak",
+                        null, true, false));
+                    if (streaks.length() > 0
+                        && streaks.getJSONObject(0).optInt("current_streak", 0) >= reqValue) {
+                        shouldAward = true;
+                    }
+                } else if ("post_count".equals(reqType)) {
+                    JSONArray posts = new JSONArray(request("GET",
+                        "/rest/v1/feed_posts?author_id=eq." + enc(userId())
+                            + "&is_draft=eq.false&select=id",
+                        null, true, false));
+                    if (posts.length() >= reqValue) shouldAward = true;
+                } else if ("follow_count".equals(reqType)) {
+                    JSONArray follows = new JSONArray(request("GET",
+                        "/rest/v1/community_follows?follower_id=eq." + enc(userId()) + "&select=follower_id",
+                        null, true, false));
+                    if (follows.length() >= reqValue) shouldAward = true;
+                } else if ("has_rated".equals(reqType)) {
+                    JSONArray ratings = new JSONArray(request("GET",
+                        "/rest/v1/game_ratings?user_id=eq." + enc(userId()) + "&select=rating",
+                        null, true, false));
+                    if (ratings.length() > 0) shouldAward = true;
+                } else if ("comment_count".equals(reqType)) {
+                    JSONArray comments = new JSONArray(request("GET",
+                        "/rest/v1/feed_comments?user_id=eq." + enc(userId()) + "&select=id",
+                        null, true, false));
+                    if (comments.length() >= reqValue) shouldAward = true;
+                }
+            } catch (Throwable ignored) { }
+
+            if (shouldAward) {
+                try {
+                    JSONObject badgeBody = new JSONObject()
+                        .put("user_id", userId())
+                        .put("badge_code", code);
+                    request("POST", "/rest/v1/user_badges", badgeBody, true, "return=minimal");
+                } catch (Throwable ignored) { }
+            }
+        }
+    }
+
+    /**
+     * Insert a row into user_activities (used by Dev Dashboard activity feed).
+     * Fire-and-forget on failure. Login required.
+     *
+     * @param type     activity_type, e.g. "play_game", "post_created", "comment_added"
+     * @param metadata optional jsonb metadata (pass null to omit)
+     */
+    public void logActivity(String type, JSONObject metadata) throws Exception {
+        if (!loggedIn()) return;
+        JSONObject body = new JSONObject()
+            .put("user_id", userId())
+            .put("activity_type", type);
+        if (metadata != null) body.put("metadata", metadata);
+        request("POST", "/rest/v1/user_activities", body, true, "return=minimal");
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  USER SEARCH + VISIT PROFILE (Task 3 + Task 4)
+    // ════════════════════════════════════════════════════════════════════
+
+    /**
+     * Search profiles by username (case-insensitive ilike, * wildcard).
+     * Returns up to 10 results. Public read (RLS profiles public read).
+     */
+    public JSONArray searchUsers(String query) throws Exception {
+        if (query == null || query.trim().isEmpty()) return new JSONArray();
+        return new JSONArray(request("GET",
+            "/rest/v1/profiles?username=ilike.*" + enc(query.trim()) + "*&select=id,username,display_name,avatar_url,unique_id,role&limit=10",
+            null, false, false));
+    }
+
+    /**
+     * Fetch a profile by username (exact match). Returns empty object if not found.
+     * Public read.
+     */
+    public JSONObject getProfileByUsername(String username) throws Exception {
+        if (username == null || username.trim().isEmpty()) return new JSONObject();
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/profiles?username=eq." + enc(username.trim())
+                + "&select=id,username,display_name,avatar_url,unique_id,role,bio",
+            null, false, false));
+        return arr.length() > 0 ? arr.getJSONObject(0) : new JSONObject();
+    }
+
+    /** Count users that the given user is following. Public read. */
+    public int getFollowingCountForUser(String uid) throws Exception {
+        if (uid == null || uid.isEmpty()) return 0;
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/community_follows?follower_id=eq." + enc(uid) + "&select=follower_id",
+            null, false, false));
+        return arr.length();
+    }
+
+    /** Count users that follow the given user. Public read. */
+    public int getFollowerCountForUser(String uid) throws Exception {
+        if (uid == null || uid.isEmpty()) return 0;
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/community_follows?following_id=eq." + enc(uid) + "&select=following_id",
+            null, false, false));
+        return arr.length();
+    }
+
+    /** Count total likes received across all of the given user's posts. Public read. */
+    public int getLikesReceivedForUser(String uid) throws Exception {
+        if (uid == null || uid.isEmpty()) return 0;
+        JSONArray posts = new JSONArray(request("GET",
+            "/rest/v1/feed_posts?author_id=eq." + enc(uid) + "&is_draft=eq.false&select=id",
+            null, false, false));
+        if (posts.length() == 0) return 0;
+        StringBuilder inList = new StringBuilder();
+        for (int i = 0; i < posts.length(); i++) {
+            if (i > 0) inList.append(",");
+            inList.append(enc(posts.getJSONObject(i).optString("id", "")));
+        }
+        JSONArray likes = new JSONArray(request("GET",
+            "/rest/v1/feed_likes?post_id=in.(" + inList + ")&select=post_id",
+            null, false, false));
+        return likes.length();
+    }
+
+    /** Fetch a user's published posts (is_draft=false), newest first. Public read. */
+    public JSONArray getPostsByUser(String uid) throws Exception {
+        if (uid == null || uid.isEmpty()) return new JSONArray();
+        return new JSONArray(request("GET",
+            "/rest/v1/feed_posts?author_id=eq." + enc(uid)
+                + "&is_draft=eq.false&order=created_at.desc&select=*",
+            null, false, false));
+    }
+
+    /** Fetch a user's earned badges (badge_code + earned_at). Public read. */
+    public JSONArray getBadgesByUser(String uid) throws Exception {
+        if (uid == null || uid.isEmpty()) return new JSONArray();
+        return new JSONArray(request("GET",
+            "/rest/v1/user_badges?user_id=eq." + enc(uid) + "&select=badge_code,earned_at",
+            null, false, false));
+    }
+
+    /** Get a user's total play time (in minutes). Public read. */
+    public int getTotalPlayTimeByUser(String uid) throws Exception {
+        if (uid == null || uid.isEmpty()) return 0;
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/game_sessions?user_id=eq." + enc(uid) + "&select=duration_minutes",
+            null, false, false));
+        int total = 0;
+        for (int i = 0; i < arr.length(); i++) {
+            total += arr.getJSONObject(i).optInt("duration_minutes", 0);
+        }
+        return total;
+    }
+
+    // ════════════════════════════════════════════════════════════════════
 
     private String request(String method, String path, Object body, boolean auth, boolean preferReturn) throws Exception {
         return request(method, path, body, auth, preferReturn ? "return=representation" : null);

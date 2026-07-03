@@ -66,6 +66,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
@@ -121,6 +122,15 @@ import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Drafts
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.EmojiEvents
+import androidx.compose.material.icons.rounded.SportsEsports
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.PersonAdd
+import androidx.compose.material.icons.rounded.PersonRemove
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -148,6 +158,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -646,6 +657,11 @@ fun MainShell(
     var showSettings           by remember { mutableStateOf(false) }
     var profileExpandedSection by remember { mutableStateOf<String?>(null) }
 
+    // ── Visit Profile (Task 4): user ID being viewed in UserProfileScreen overlay.
+    // null = not visiting anyone; non-null = overlay shown on top of current page.
+    // Tapped from CommunityScreen search results or post author names.
+    var visitingUserId         by remember { mutableStateOf<String?>(null) }
+
     // ── Phase 2: Lifted download state (shared antara HomeScreen & GameDetailScreen) ──
     // dlProgress: -1f = idle, 0f..0.99f = downloading, 2f = done (waiting install)
     var dlProgress by remember { mutableStateOf(-1f) }
@@ -785,6 +801,35 @@ fun MainShell(
         if (activeBanner?.id == banner.id) activeBanner = null
     }
 
+    // ── Play-time tracking (Task 2): on resume, if a game session is in flight,
+    // compute duration and persist via api.recordGameSession + checkAndAwardBadges.
+    // The session is considered terminated when our activity returns to foreground
+    // (ON_RESUME), which means the user has navigated away from FIFA 16 back to us.
+    // ──────────────────────────────────────────────────────────────────────────
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                val startedAt = GameSessionTracker.consume()
+                if (startedAt > 0L) {
+                    val durationMin = ((System.currentTimeMillis() - startedAt) / 60_000L).toInt()
+                    if (durationMin > 0) {
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                runCatching {
+                                    api.recordGameSession(startedAt, durationMin)
+                                    api.checkAndAwardBadges()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        try { awaitCancellation() } finally { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     Box(Modifier.fillMaxSize()) {
         // ── Phase 4: Settings overlay ──
         AnimatedVisibility(
@@ -884,14 +929,16 @@ fun MainShell(
                                     Page.Chat   -> CommunityScreen(
                                         api             = api,
                                         pendingPostId   = pendingPostId.value,
-                                        onConsumePostId = { pendingPostId.value = null }
+                                        onConsumePostId = { pendingPostId.value = null },
+                                        onVisitProfile  = { uid -> visitingUserId = uid }
                                     )   // normal, no blur
                                     Page.Me     -> ProfileScreen(
                                         api                     = api,
                                         onLogout                = onLogout,
                                         onOpenSettings          = { showSettings = true },
                                         expandedSection         = profileExpandedSection,
-                                        onExpandedSectionChange = { profileExpandedSection = it }
+                                        onExpandedSectionChange = { profileExpandedSection = it },
+                                        onVisitProfile          = { uid -> visitingUserId = uid }
                                     )   // normal, no blur
                                 }
                             }
@@ -913,8 +960,22 @@ fun MainShell(
             )
         }
 
-        // ── FloatingNav tetap accessible dari Home (tidak tampil saat GameDetail/Settings aktif) ──
-        if (!showGameDetail && !showSettings) {
+        // ── Visit Profile overlay (Task 4): shown when user taps a username in
+        // CommunityScreen search results or in a feed post card. Displays the
+        // selected user's profile (avatar, name, unique ID, stats, badges, posts)
+        // + Follow/Unfollow button (Task 5). On back, returns to previous page.
+        // ──────────────────────────────────────────────────────────────────────────
+        visitingUserId?.let { uid ->
+            UserProfileScreen(
+                userId         = uid,
+                api            = api,
+                onBack         = { visitingUserId = null },
+                onVisitProfile = { otherUid -> visitingUserId = otherUid }
+            )
+        }
+
+        // ── FloatingNav tetap accessible dari Home (tidak tampil saat GameDetail/Settings/Visit aktif) ──
+        if (!showGameDetail && !showSettings && visitingUserId == null) {
             FloatingNav(
                 page     = page,
                 onPage   = { page = it },
@@ -925,8 +986,8 @@ fun MainShell(
         }
 
         // ── Notification banner overlay (slides down from the top) ──
-        // Sembunyikan saat GameDetail / Settings aktif supaya tidak menumpuk header.
-        if (!showGameDetail && !showSettings) {
+        // Sembunyikan saat GameDetail / Settings / Visit aktif supaya tidak menumpuk header.
+        if (!showGameDetail && !showSettings && visitingUserId == null) {
             activeBanner?.let { banner ->
                 Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
                     NotificationBanner(
@@ -3185,7 +3246,8 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
 fun CommunityScreen(
     api: CommunityApi,
     pendingPostId: String? = null,
-    onConsumePostId: () -> Unit = {}
+    onConsumePostId: () -> Unit = {},
+    onVisitProfile: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
@@ -3200,6 +3262,13 @@ fun CommunityScreen(
     var dateFilterMillis by remember { mutableStateOf<Long?>(null) }     // epoch millis (UTC midnight) | null
     var showFilterMenu   by remember { mutableStateOf(false) }
     var showDatePicker   by remember { mutableStateOf(false) }
+
+    // ── Task 3: User search state ──
+    // searchQuery: text typed into the search bar (>= 2 chars triggers api.searchUsers)
+    // searchResults: list of profiles matching the query (max 10)
+    var searchQuery   by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<UserSearchResult>>(emptyList()) }
+    var searching     by remember { mutableStateOf(false) }
 
     // Feed state
     var posts     by remember { mutableStateOf<List<FeedPostData>>(emptyList()) }
@@ -3488,6 +3557,110 @@ fun CommunityScreen(
                 }
             }
 
+            // ── Task 3: Username search bar ──
+            // Triggers api.searchUsers() when query length >= 2. Results render as a
+            // dropdown overlay (max 10 rows). Tapping a row → onVisitProfile(uid).
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { raw ->
+                    searchQuery = raw
+                    if (raw.trim().length >= 2) {
+                        searching = true
+                        scope.launch {
+                            try {
+                                val arr = withContext(Dispatchers.IO) { api.searchUsers(raw.trim()) }
+                                val list = (0 until arr.length()).mapNotNull { i ->
+                                    runCatching {
+                                        val o = arr.getJSONObject(i)
+                                        UserSearchResult(
+                                            id          = o.optString("id"),
+                                            username    = o.optString("username"),
+                                            displayName = o.optString("display_name"),
+                                            avatarUrl   = o.optString("avatar_url", "").let { s ->
+                                                val ss = s.trim()
+                                                if (ss.isBlank() || ss.equals("null", ignoreCase = true)) "" else ss
+                                            },
+                                            uniqueId    = o.optInt("unique_id", 0),
+                                            role        = o.optString("role", "user")
+                                        )
+                                    }.getOrNull()
+                                }.filter { it.id.isNotBlank() && it.id != api.userId() }
+                                searchResults = list
+                            } catch (_: Throwable) {
+                                searchResults = emptyList()
+                            } finally {
+                                searching = false
+                            }
+                        }
+                    } else {
+                        searchResults = emptyList()
+                        searching = false
+                    }
+                },
+                placeholder = { Text("Cari username komunitas…", fontSize = 13.sp, color = SubText) },
+                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = SubText, modifier = Modifier.size(18.dp)) },
+                trailingIcon = {
+                    if (searching) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = SubText, strokeWidth = 2.dp
+                        )
+                    } else if (searchQuery.isNotEmpty()) {
+                        Box(
+                            Modifier.size(20.dp).clip(CircleShape).clickable {
+                                searchQuery = ""
+                                searchResults = emptyList()
+                            },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Hapus",
+                                tint = SubText, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = TTShapes.input,
+                modifier = Modifier.fillMaxWidth()
+                    .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.xs),
+                textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = GlassStroke,
+                    unfocusedBorderColor = GlassStroke.copy(0.5f),
+                    cursorColor = Color.White,
+                    focusedLeadingIconColor = Color.White,
+                    unfocusedLeadingIconColor = SubText
+                )
+            )
+
+            // ── Search results dropdown (overlay-ish, in-flow) ──
+            if (searchResults.isNotEmpty()) {
+                Column(
+                    Modifier.fillMaxWidth()
+                        .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.xs)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(GlassBase)
+                        .border(1.dp, GlassStroke, RoundedCornerShape(14.dp))
+                ) {
+                    searchResults.forEachIndexed { idx, user ->
+                        if (idx > 0) {
+                            Box(
+                                Modifier.fillMaxWidth().height(1.dp)
+                                    .background(Color.White.copy(0.05f))
+                            )
+                        }
+                        UserSearchRow(
+                            user = user,
+                            onClick = {
+                                val uid = user.id
+                                searchQuery = ""
+                                searchResults = emptyList()
+                                onVisitProfile(uid)
+                            }
+                        )
+                    }
+                }
+            }
+
             // ── Feed (pull-to-refresh + lazy list) — takes remaining space below top bar ──
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 PullToRefreshBox(
@@ -3603,7 +3776,8 @@ fun CommunityScreen(
                                                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                                 )
                                             }.onFailure { toast("Tidak bisa membuka URL") }
-                                        }
+                                        },
+                                        onVisitProfile = { uid -> onVisitProfile(uid) }
                                     )
                                 }
                             }
@@ -3789,7 +3963,8 @@ private fun FeedPostCard(
     onSave: () -> Unit,
     onShare: () -> Unit,
     onReport: () -> Unit,
-    onOpenVideo: (String) -> Unit
+    onOpenVideo: (String) -> Unit,
+    onVisitProfile: ((String) -> Unit)? = null
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     // Like bounce: scale up briefly when liked toggles
@@ -3939,8 +4114,15 @@ private fun FeedPostCard(
 
                 // Author + timestamp + like + comment + menu
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Avatar (circular, initial letter with gradient)
-                    AuthorAvatar(author = author)
+                    // Avatar (circular, initial letter with gradient) — tap to visit profile
+                    Box(
+                        Modifier.clickable(enabled = onVisitProfile != null && author?.id?.isNotBlank() == true) {
+                            val aid = author?.id ?: return@clickable
+                            if (aid.isNotBlank()) onVisitProfile?.invoke(aid)
+                        }
+                    ) {
+                        AuthorAvatar(author = author)
+                    }
                     Spacer(Modifier.width(TTSpacing.sm))
                     Column(Modifier.weight(1f)) {
                         Text(
@@ -3949,7 +4131,11 @@ private fun FeedPostCard(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.clickable(enabled = onVisitProfile != null && author?.id?.isNotBlank() == true) {
+                                val aid = author?.id ?: return@clickable
+                                if (aid.isNotBlank()) onVisitProfile?.invoke(aid)
+                            }
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.Schedule, null, tint = SubText, modifier = Modifier.size(11.dp))
@@ -4146,6 +4332,10 @@ private fun CreatePostSheet(
     var posting by remember { mutableStateOf(false) }
     // ── Phase 2: gallery picker state ──
     var uploading by remember { mutableStateOf(false) }
+    // ── Task 6: "Simpan sebagai Draft" toggle ──
+    // true → api.createFeedPost(..., isDraft=true) → post muncul di tab Draft di Profile,
+    // tidak muncul di feed publik. User bisa publish kapan saja via tombol Publish di tab Draft.
+    var saveAsDraft by remember { mutableStateOf(false) }
 
     val types = listOf("community" to "Community", "developer" to "Developer",
         "update" to "Update", "tutorial" to "Tutorial", "bugfix" to "Bugfix")
@@ -4321,7 +4511,50 @@ private fun CreatePostSheet(
                 }
             }
 
-            // Post button
+            // ── Task 6: "Simpan sebagai Draft" toggle (Switch + label) ──
+            Surface(
+                color = Color.White.copy(0.04f),
+                shape = TTShapes.input,
+                border = BorderStroke(1.dp, GlassStroke.copy(0.5f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().clickable { saveAsDraft = !saveAsDraft }
+                        .padding(horizontal = TTSpacing.md, vertical = TTSpacing.sm),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        if (saveAsDraft) Icons.Rounded.Save else Icons.Rounded.Drafts,
+                        null, tint = if (saveAsDraft) NeonGreen else SubText,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(TTSpacing.sm))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Simpan sebagai Draft",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "Draft tidak tampil di feed. Bisa di-publish nanti dari tab Draft di Profil.",
+                            color = SubText, fontSize = 10.sp, lineHeight = 13.sp
+                        )
+                    }
+                    Switch(
+                        checked = saveAsDraft,
+                        onCheckedChange = { saveAsDraft = it },
+                        colors = androidx.compose.material3.SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = NeonGreen.copy(0.45f),
+                            uncheckedThumbColor = SoftText,
+                            uncheckedTrackColor = Surface2
+                        )
+                    )
+                }
+            }
+
+            // Post button (label tergantung saveAsDraft)
             Button(
                 onClick = {
                     if (title.trim().length < 3) { onError("Judul minimal 3 karakter."); return@Button }
@@ -4331,7 +4564,7 @@ private fun CreatePostSheet(
                     scope.launch {
                         try {
                             withContext(Dispatchers.IO) {
-                                api.createFeedPost(title, body, imageUrl, type)
+                                api.createFeedPost(title, body, imageUrl, type, saveAsDraft)
                             }
                             onPosted()
                         } catch (t: Throwable) {
@@ -4344,17 +4577,23 @@ private fun CreatePostSheet(
                 enabled = !posting && !uploading,
                 modifier = Modifier.fillMaxWidth(),
                 shape = TTShapes.button,
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (saveAsDraft) Surface3 else Color.White,
+                    contentColor = if (saveAsDraft) Color.White else Color.Black
+                )
             ) {
                 if (posting) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
-                        color = Color.Black,
+                        color = if (saveAsDraft) Color.White else Color.Black,
                         strokeWidth = 2.dp
                     )
                     Spacer(Modifier.width(8.dp))
                 }
-                Text("Posting", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    if (saveAsDraft) "Simpan Draft" else "Posting",
+                    fontSize = 14.sp, fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -4684,6 +4923,72 @@ private data class FeedPostData(
     val createdAt: String
 )
 
+/**
+ * User search result (Task 3): lightweight profile row returned by api.searchUsers().
+ * Used to render the dropdown list under the search bar in CommunityScreen.
+ * Tapping a row navigates to [UserProfileScreen] with the user's id.
+ */
+data class UserSearchResult(
+    val id: String,
+    val username: String,
+    val displayName: String,
+    val avatarUrl: String,
+    val uniqueId: Int,
+    val role: String
+)
+
+/**
+ * Earned badge row (Task 1 / Task 2): badge_code + ISO timestamp of when it was
+ * awarded. Used by ProfileScreen + UserProfileScreen to render the "Lencana" section.
+ */
+data class EarnedBadge(
+    val badgeCode: String,
+    val earnedAt: String
+)
+
+/**
+ * Parse a feed_posts JSON object into a [FeedPostData].
+ * Used by ProfileScreen (Post / Tersimpan / Draft tabs) and UserProfileScreen.
+ *
+ * Handles the "null" string quirk from org.json.optString (returns "null" string
+ * when the value is JSONObject.NULL) by normalizing to "".
+ */
+fun parseFeedPostData(o: JSONObject): FeedPostData {
+    return FeedPostData(
+        id        = o.optString("id"),
+        authorId  = o.optString("author_id"),
+        title     = o.optString("title"),
+        body      = o.optString("body"),
+        imageUrl  = o.optString("image_url", "").let { raw ->
+            val s = raw.trim()
+            if (s.isBlank() || s.equals("null", ignoreCase = true)) "" else s
+        },
+        type      = o.optString("type", "community"),
+        pinned    = o.optBoolean("pinned"),
+        official  = o.optBoolean("official"),
+        createdAt = o.optString("created_at", "")
+    )
+}
+
+/** Format a badge code (e.g. "first_login" → "First Login") for display. */
+fun formatBadgeName(code: String): String {
+    return code.split('_').joinToString(" ") { word ->
+        word.replaceFirstChar { it.uppercase() }
+    }
+}
+
+/** Map a badge code to a representative emoji icon (stored fallback). */
+fun badgeEmoji(code: String): String = when {
+    code.contains("login")            -> "🎉"
+    code.contains("gamer") || code.contains("play") -> "🎮"
+    code.contains("streak") || code.contains("daily") -> "🔥"
+    code.contains("post")             -> "✍️"
+    code.contains("social") || code.contains("follow") -> "🤝"
+    code.contains("rate")             -> "⭐"
+    code.contains("comment")          -> "💬"
+    else                              -> "🏆"
+}
+
 private data class AuthorInfo(
     val id: String,
     val username: String,
@@ -4782,35 +5087,60 @@ private data class CommentItem(
     val createdAt: String
 )
 
-// ─── Profile / Me screen (Phase 2: TapTap-style polish) ──────────────────────
+// ─── Profile / Me screen — TapTap-style remake (Task 1) ───────────────────────
+// Layout (top → bottom):
+//   A. Header — avatar (tap to change), display name, "ID: {unique_id}", stats row
+//      (Following | Followers | Likes), bio (optional)
+//   B. Two-column — Kiri: "Lencana" (badges, horizontal scroll), Kanan: "Game Saya"
+//      (FIFA 16 + play time, hanya kalau gameInstalled)
+//   C. Tab bar — Post | Tersimpan | Draft (underline indicator)
+//   D. Content per tab — Post: published posts; Tersimpan: saved posts; Draft:
+//      draft posts with Publish button per draft
+//   E. Bottom — Pengaturan entry, AccountSettingsCard (password/email/profile/pin),
+//      Keamanan info, Logout button (preserved dari versi sebelumnya)
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun ProfileScreen(
     api: CommunityApi,
     onLogout: () -> Unit,
     onOpenSettings: () -> Unit = {},
     expandedSection: String? = null,
-    onExpandedSectionChange: (String?) -> Unit = {}
+    onExpandedSectionChange: (String?) -> Unit = {},
+    onVisitProfile: (String) -> Unit = {}
 ) {
     val context       = LocalContext.current
     val scope         = rememberCoroutineScope()
-    // Load gameInstalled async to avoid blocking main thread
+    // ── gameInstalled async (existing behavior) ──
     var gameInstalled by remember { mutableStateOf(false) }
     // profileLoading: true saat initial load, false setelah gameInstalled ter-resolve.
-    // Dipakai untuk render TTGameCardSkeleton (TapTap-style) sebagai placeholder.
     var profileLoading by remember { mutableStateOf(true) }
-    // Phase 4: expandedSection di-lift ke MainShell supaya SettingsScreen bisa
-    // membuka Profile dengan section tertentu (password/email/profile) ter-expand.
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { runCatching { gameInstalled = isGameInstalled(context) } }
-        profileLoading = false
-    }
+
+    // ── Stats state (Task 1) ──
+    var followingCount by remember { mutableStateOf(0) }
+    var followerCount  by remember { mutableStateOf(0) }
+    var likesCount     by remember { mutableStateOf(0) }
+    var uniqueId       by remember { mutableStateOf(0) }
+    var totalPlayMin   by remember { mutableStateOf(0) }
+    var bio            by remember { mutableStateOf("") }
+
+    // ── Badges state ──
+    var myBadges by remember { mutableStateOf<List<EarnedBadge>>(emptyList()) }
+
+    // ── Posts / Drafts / Saved state ──
+    var myPosts      by remember { mutableStateOf<List<FeedPostData>>(emptyList()) }
+    var myDrafts     by remember { mutableStateOf<List<FeedPostData>>(emptyList()) }
+    var mySavedPosts by remember { mutableStateOf<List<FeedPostData>>(emptyList()) }
+    var postsLoading by remember { mutableStateOf(true) }
+    var publishingId by remember { mutableStateOf<String?>(null) }
+
+    // ── Tab state: 0 = Post, 1 = Tersimpan, 2 = Draft ──
+    var selectedTab by remember { mutableStateOf(0) }
+
     var confirmLogout by remember { mutableStateOf(false) }
     val initial = api.displayName().firstOrNull()?.uppercaseChar()?.toString() ?: "D"
     val role    = api.role()
 
-    // Task 3: Avatar image picker + upload state.
-    // avatarUrlState di-init dari prefs (api.avatarUrl()), dan di-update setelah
-    // upload sukses supaya AsyncImage langsung re-render dengan URL baru.
+    // ── Avatar image picker + upload state (preserved from v1.x) ──
     var avatarUrlState  by remember { mutableStateOf(api.avatarUrl()) }
     var avatarUploading by remember { mutableStateOf(false) }
 
@@ -4818,8 +5148,6 @@ fun ProfileScreen(
         android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
     }
 
-    // Avatar image picker — PickVisualMedia (gallery, image only).
-    // Saat user pilih foto → baca bytes → upload ke Supabase Storage → PATCH profile.
     val avatarPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -4833,9 +5161,7 @@ fun ProfileScreen(
                         inputStream?.close()
                         if (bytes == null || bytes.isEmpty())
                             throw IllegalStateException("Gagal membaca gambar dari gallery.")
-                        // Upload ke Supabase Storage bucket 'community-images'
                         val uploadedUrl = api.uploadAvatar(bytes)
-                        // PATCH profiles.avatar_url + update local prefs
                         api.updateAvatar(uploadedUrl)
                         uploadedUrl
                     }
@@ -4850,37 +5176,104 @@ fun ProfileScreen(
         }
     }
 
+    // ── Initial load: gameInstalled + stats + badges ──
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { runCatching { gameInstalled = isGameInstalled(context) } }
+        profileLoading = false
+
+        // Fetch stats + bio + badges + play time. Wrap each in runCatching so a
+        // single failure (e.g. column missing) doesn't abort the rest.
+        withContext(Dispatchers.IO) {
+            runCatching { followingCount = api.getFollowingCount() }
+            runCatching { followerCount  = api.getFollowerCount() }
+            runCatching { likesCount     = api.getMyLikesReceived() }
+            runCatching { uniqueId       = api.getUniqueId() }
+            runCatching { totalPlayMin   = api.getTotalPlayTime() }
+            runCatching { bio            = api.getMyBio() }
+
+            // Try awarding login-based badge on profile open (e.g. first_login).
+            runCatching { api.checkAndAwardBadges() }
+
+            runCatching {
+                val arr = api.getMyBadges()
+                val list = (0 until arr.length()).mapNotNull { i ->
+                    runCatching {
+                        val o = arr.getJSONObject(i)
+                        EarnedBadge(
+                            badgeCode = o.optString("badge_code"),
+                            earnedAt  = o.optString("earned_at")
+                        )
+                    }.getOrNull()
+                }.filter { it.badgeCode.isNotBlank() }
+                myBadges = list
+            }
+        }
+    }
+
+    // ── Load posts / drafts / saved based on selected tab ──
+    fun loadTab() {
+        postsLoading = true
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    when (selectedTab) {
+                        0 -> {
+                            val arr = api.getMyPosts()
+                            myPosts = (0 until arr.length()).mapNotNull { i ->
+                                runCatching { parseFeedPostData(arr.getJSONObject(i)) }.getOrNull()
+                            }
+                        }
+                        1 -> {
+                            val arr = api.getSavedPosts()
+                            mySavedPosts = (0 until arr.length()).mapNotNull { i ->
+                                runCatching {
+                                    val o = arr.getJSONObject(i)
+                                    val fp = o.optJSONObject("feed_posts")
+                                    if (fp != null) parseFeedPostData(fp) else null
+                                }.getOrNull()
+                            }
+                        }
+                        2 -> {
+                            val arr = api.getMyDrafts()
+                            myDrafts = (0 until arr.length()).mapNotNull { i ->
+                                runCatching { parseFeedPostData(arr.getJSONObject(i)) }.getOrNull()
+                            }
+                        }
+                    }
+                }
+            }
+            postsLoading = false
+        }
+    }
+    LaunchedEffect(selectedTab) { loadTab() }
+
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.xl),
         verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
     ) {
 
-        // ── Hero Avatar Card (atau shimmer skeleton saat loading) ──
-        // Phase 2 polish: gradient border + glow + rotating gradient ring + tap-to-edit
+        // ════════════════════════════════════════════════════════════════════
+        // A. Profile Header (avatar + display name + unique ID + stats + bio)
+        // ════════════════════════════════════════════════════════════════════
         if (profileLoading) {
-            // TapTap-style shimmer skeleton sebagai placeholder
             TTGameCardSkeleton()
         } else {
-        PremiumGlassCard(gradientBorder = true) {
-            val infiniteTransition = rememberInfiniteTransition(label = "profile_glow")
-            val avatarGlow by infiniteTransition.animateFloat(
-                initialValue = 0.25f, targetValue = 0.55f,
-                animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-                label = "avatar_glow_val"
-            )
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(TTSpacing.lg)
-            ) {
-                // Avatar with gradient ring + glow — Task 3: tap to pick new photo from gallery.
-                // Kalau ada avatar_url → tampilkan AsyncImage (Coil). Kalau belum → initial letter.
-                // Camera icon overlay di pojok kanan bawah sebagai affordance.
-                Box(
-                    Modifier
-                        .size(72.dp)
-                        .clickable {
+            PremiumGlassCard(gradientBorder = true) {
+                val infiniteTransition = rememberInfiniteTransition(label = "profile_glow")
+                val avatarGlow by infiniteTransition.animateFloat(
+                    initialValue = 0.25f, targetValue = 0.55f,
+                    animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                    label = "avatar_glow_val"
+                )
+                Column(
+                    Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+                ) {
+                    // Avatar (tap to change) with rotating gradient ring + glow
+                    Box(
+                        Modifier.size(88.dp).clickable {
                             if (!api.loggedIn()) {
                                 toast("Login dulu untuk ganti foto profil.")
                                 return@clickable
@@ -4890,138 +5283,323 @@ fun ProfileScreen(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
                         },
-                    contentAlignment = Alignment.Center
-                ) {
-                    // Outer glow
-                    Box(
-                        Modifier
-                            .matchParentSize()
-                            .clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(CandyCyan.copy(avatarGlow * 0.6f), Color.Transparent),
-                                    radius = 80f
-                                )
-                            )
-                            .blur(12.dp)
-                    )
-                    // Rotating gradient ring
-                    val ringRotation by infiniteTransition.animateFloat(
-                        initialValue = 0f, targetValue = 360f,
-                        animationSpec = infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Restart),
-                        label = "ring_rotation"
-                    )
-                    Canvas(
-                        Modifier
-                            .size(72.dp)
-                            .graphicsLayer { rotationZ = ringRotation }
+                        contentAlignment = Alignment.Center
                     ) {
-                        val stroke = 3.dp.toPx()
-                        drawCircle(
-                            brush = Brush.sweepGradient(
-                                listOf(
-                                    CandyCyan, PremiumViolet, CandyCyan.copy(0.3f), CandyCyan
-                                )
-                            ),
-                            radius = (size.minDimension / 2f) - (stroke / 2f),
-                            style = Stroke(width = stroke)
-                        )
-                    }
-                    // Inner avatar — kalau ada avatar_url → tampilkan foto (Coil AsyncImage).
-                    // Kalau belum → fallback ke v3.0 monochrome (black bg + white initial).
-                    if (avatarUrlState.isNotEmpty()) {
-                        AsyncImage(
-                            model = avatarUrlState,
-                            contentDescription = "Avatar",
-                            modifier = Modifier.size(60.dp).clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        DLavieLogoCover(
-                            size = 60.dp,
-                            text = initial,
-                            fontSize = 24.sp,
-                            shape = CircleShape
-                        )
-                    }
-                    // Upload progress overlay
-                    if (avatarUploading) {
                         Box(
-                            Modifier
-                                .matchParentSize()
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(0.55f)),
+                            Modifier.matchParentSize().clip(CircleShape)
+                                .background(
+                                    Brush.radialGradient(
+                                        listOf(CandyCyan.copy(avatarGlow * 0.6f), Color.Transparent),
+                                        radius = 90f
+                                    )
+                                )
+                                .blur(12.dp)
+                        )
+                        val ringRotation by infiniteTransition.animateFloat(
+                            initialValue = 0f, targetValue = 360f,
+                            animationSpec = infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Restart),
+                            label = "ring_rotation"
+                        )
+                        Canvas(
+                            Modifier.size(88.dp).graphicsLayer { rotationZ = ringRotation }
+                        ) {
+                            val stroke = 3.dp.toPx()
+                            drawCircle(
+                                brush = Brush.sweepGradient(
+                                    listOf(CandyCyan, PremiumViolet, CandyCyan.copy(0.3f), CandyCyan)
+                                ),
+                                radius = (size.minDimension / 2f) - (stroke / 2f),
+                                style = Stroke(width = stroke)
+                            )
+                        }
+                        if (avatarUrlState.isNotEmpty()) {
+                            AsyncImage(
+                                model = avatarUrlState,
+                                contentDescription = "Avatar",
+                                modifier = Modifier.size(72.dp).clip(CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            DLavieLogoCover(
+                                size = 72.dp, text = initial,
+                                fontSize = 28.sp, shape = CircleShape
+                            )
+                        }
+                        if (avatarUploading) {
+                            Box(
+                                Modifier.matchParentSize().clip(CircleShape)
+                                    .background(Color.Black.copy(0.55f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    color = Color.White, strokeWidth = 2.dp
+                                )
+                            }
+                        }
+                        Box(
+                            Modifier.align(Alignment.BottomEnd).size(26.dp)
+                                .background(Color.White, CircleShape)
+                                .border(1.dp, Carbon, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                color = Color.White, strokeWidth = 2.dp
+                            Icon(Icons.Rounded.CameraAlt, null, tint = Carbon, modifier = Modifier.size(14.dp))
+                        }
+                    }
+
+                    // Display name
+                    Text(
+                        api.displayName().ifEmpty { "DLavie Player" },
+                        fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color.White,
+                        textAlign = TextAlign.Center
+                    )
+
+                    // Unique ID (small gray)
+                    if (uniqueId > 0) {
+                        Text(
+                            "ID: $uniqueId",
+                            color = SubText, fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    // Username + role pill row
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(TTSpacing.xs)
+                    ) {
+                        Text(
+                            "@${api.username().ifEmpty { "unknown" }}",
+                            color = SoftText, fontSize = 12.sp
+                        )
+                        ModernPill(role.uppercase(), roleBadgeColor(role))
+                    }
+
+                    // Bio (optional)
+                    if (bio.isNotBlank()) {
+                        Text(
+                            bio,
+                            color = SoftText, fontSize = 12.sp, lineHeight = 16.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = TTSpacing.md)
+                        )
+                    }
+
+                    Spacer(Modifier.height(TTSpacing.xs))
+
+                    // ── Stats row: Following | Followers | Likes (3 column) ──
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+                    ) {
+                        ProfileStatColumn(
+                            label = "Mengikuti",
+                            value = followingCount,
+                            modifier = Modifier.weight(1f)
+                        )
+                        ProfileStatColumn(
+                            label = "Pengikut",
+                            value = followerCount,
+                            modifier = Modifier.weight(1f)
+                        )
+                        ProfileStatColumn(
+                            label = "Likes",
+                            value = likesCount,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // B. Two-Column: Lencana (Badges) | Game Saya
+        // ════════════════════════════════════════════════════════════════════
+        if (!profileLoading) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+            ) {
+                // ── KIRI: Lencana ──
+                GlassCard(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.EmojiEvents, null, tint = AmberWarn, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(TTSpacing.xs))
+                        Text("Lencana", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Black)
+                    }
+                    Spacer(Modifier.height(TTSpacing.sm))
+                    if (myBadges.isEmpty()) {
+                        Text(
+                            "Dapatkan Lencana",
+                            color = SubText, fontSize = 11.sp, fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            "Mainkan game & aktif di komunitas untuk membuka lencana.",
+                            color = SubText, fontSize = 9.sp, lineHeight = 12.sp
+                        )
+                    } else {
+                        // Horizontal scrollable row of badges
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+                        ) {
+                            myBadges.take(8).forEach { badge ->
+                                BadgeChip(
+                                    emoji = badgeEmoji(badge.badgeCode),
+                                    label = formatBadgeName(badge.badgeCode)
+                                )
+                            }
+                        }
+                        if (myBadges.size > 8) {
+                            Spacer(Modifier.height(TTSpacing.xs))
+                            Text(
+                                "+${myBadges.size - 8} lainnya",
+                                color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium
                             )
                         }
                     }
-                    // Camera/edit icon overlay di pojok kanan bawah (affordance: tap to change)
-                    Box(
-                        Modifier
-                            .align(Alignment.BottomEnd)
-                            .size(24.dp)
-                            .background(Color.White, CircleShape)
-                            .border(1.dp, Carbon, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Rounded.CameraAlt, null,
-                            tint = Carbon, modifier = Modifier.size(14.dp)
+                }
+
+                // ── KANAN: Game Saya ──
+                GlassCard(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.SportsEsports, null, tint = NeonGreen, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(TTSpacing.xs))
+                        Text("Game Saya", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Black)
+                    }
+                    Spacer(Modifier.height(TTSpacing.sm))
+                    if (gameInstalled) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.size(28.dp).background(NeonGreen.copy(0.12f), TTShapes.small),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Rounded.SportsSoccer, null, tint = NeonGreen, modifier = Modifier.size(16.dp))
+                            }
+                            Spacer(Modifier.width(TTSpacing.xs))
+                            Column {
+                                Text("FIFA 16 Mobile", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Text(
+                                    "Main ${if (totalPlayMin >= 60) "${totalPlayMin / 60}j " else ""}${totalPlayMin % 60}m",
+                                    color = SoftText, fontSize = 10.sp
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            "Belum ada game",
+                            color = SubText, fontSize = 11.sp, fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            "Install FIFA 16 untuk mulai main.",
+                            color = SubText, fontSize = 9.sp, lineHeight = 12.sp
                         )
                     }
                 }
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        api.displayName().ifEmpty { "DLavie Player" },
-                        fontSize = 19.sp, fontWeight = FontWeight.Black, color = Color.White
-                    )
-                    Text(
-                        "@${api.username().ifEmpty { "unknown" }}",
-                        color = SoftText, fontSize = 12.sp
-                    )
-                    Spacer(Modifier.height(TTSpacing.sm))
-                    ModernPill(role.uppercase(), roleBadgeColor(role))
-                    Spacer(Modifier.height(TTSpacing.xs))
-                    // Task 3: hint diubah — tap avatar untuk ganti foto profil
-                    Text(
-                        "Tap avatar untuk ganti foto ↓",
-                        color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium
-                    )
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // C. Tab Bar (Post | Tersimpan | Draft) with underline indicator
+        // ════════════════════════════════════════════════════════════════════
+        if (!profileLoading) {
+            Row(
+                Modifier.fillMaxWidth().clip(TTShapes.input)
+                    .background(Surface2)
+                    .padding(TTSpacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(TTSpacing.xs)
+            ) {
+                ProfileTabButton(
+                    label = "Post",
+                    count = myPosts.size,
+                    selected = selectedTab == 0,
+                    modifier = Modifier.weight(1f)
+                ) { selectedTab = 0 }
+                ProfileTabButton(
+                    label = "Tersimpan",
+                    count = mySavedPosts.size,
+                    selected = selectedTab == 1,
+                    modifier = Modifier.weight(1f)
+                ) { selectedTab = 1 }
+                ProfileTabButton(
+                    label = "Draft",
+                    count = myDrafts.size,
+                    selected = selectedTab == 2,
+                    modifier = Modifier.weight(1f)
+                ) { selectedTab = 2 }
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // D. Content per tab
+        // ════════════════════════════════════════════════════════════════════
+        if (!profileLoading) {
+            when {
+                postsLoading -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.md)) {
+                        repeat(2) { TTGameCardSkeleton() }
+                    }
+                }
+                selectedTab == 0 && myPosts.isEmpty() -> ProfileEmptyPosts(
+                    text = "Belum ada post. Buat post pertamamu di Komunitas!"
+                )
+                selectedTab == 1 && mySavedPosts.isEmpty() -> ProfileEmptyPosts(
+                    text = "Belum ada post tersimpan. Tap ikon bookmark di post mana pun untuk menyimpan."
+                )
+                selectedTab == 2 && myDrafts.isEmpty() -> ProfileEmptyPosts(
+                    text = "Belum ada draft. Aktifkan toggle 'Simpan sebagai Draft' saat membuat post."
+                )
+                else -> {
+                    val list = when (selectedTab) {
+                        0 -> myPosts
+                        1 -> mySavedPosts
+                        else -> myDrafts
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.md)) {
+                        list.forEach { post ->
+                            ProfilePostCard(
+                                post = post,
+                                isDraft = selectedTab == 2,
+                                publishing = publishingId == post.id,
+                                onPublish = {
+                                    publishingId = post.id
+                                    scope.launch {
+                                        try {
+                                            withContext(Dispatchers.IO) { api.publishDraft(post.id) }
+                                            toast("Draft di-publish!")
+                                            publishingId = null
+                                            loadTab()
+                                        } catch (t: Throwable) {
+                                            toast("Gagal publish: ${t.message}")
+                                            publishingId = null
+                                        }
+                                    }
+                                },
+                                onDelete = {
+                                    scope.launch {
+                                        try {
+                                            withContext(Dispatchers.IO) { api.deleteFeedPost(post.id) }
+                                            toast("Post dihapus.")
+                                            loadTab()
+                                        } catch (t: Throwable) {
+                                            toast("Gagal hapus: ${t.message}")
+                                        }
+                                    }
+                                },
+                                onVisitProfile = if (selectedTab == 1 && post.authorId != api.userId()) {
+                                    { uid -> onVisitProfile(uid) }
+                                } else null
+                            )
+                        }
+                    }
                 }
             }
         }
-        } // end if (profileLoading) else { ... }
 
-        // ── Phase 2: Stats row (extracted dari hero card, pakai TTShapes.cardLarge) ──
-        // Tiga status tile: Game installed, Sesi, Server. Press scale + tappable.
-        if (!profileLoading) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
-                ProfileStatTile(
-                    label = "Game",
-                    value = if (gameInstalled) "Terinstall" else "Belum ada",
-                    ok = gameInstalled,
-                    modifier = Modifier.weight(1f)
-                )
-                ProfileStatTile(
-                    label = "Sesi",
-                    value = "Aktif",
-                    ok = true,
-                    modifier = Modifier.weight(1f)
-                )
-                ProfileStatTile(
-                    label = "Server",
-                    value = "Online",
-                    ok = true,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        // ── Game action (TapTap-style TTTappableCard) ──
+        // ════════════════════════════════════════════════════════════════════
+        // E. Bottom: Pengaturan entry + AccountSettings + Keamanan + Logout
+        // (preserved from v1.x — unchanged behavior)
+        // ════════════════════════════════════════════════════════════════════
         if (!profileLoading) {
             TTTappableCard(
                 onClick = { if (gameInstalled) launchGame(context) },
@@ -5032,8 +5610,7 @@ fun ProfileScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
-                        Modifier.size(36.dp)
-                            .background(NeonGreen.copy(0.12f), TTShapes.small),
+                        Modifier.size(36.dp).background(NeonGreen.copy(0.12f), TTShapes.small),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(Icons.Rounded.SportsSoccer, null, tint = NeonGreen, modifier = Modifier.size(20.dp))
@@ -5053,7 +5630,6 @@ fun ProfileScreen(
             }
         }
 
-        // ── Phase 4: Pengaturan entry (opens SettingsScreen overlay) ──
         if (!profileLoading) {
             TTTappableCard(
                 onClick = { onOpenSettings() },
@@ -5087,7 +5663,7 @@ fun ProfileScreen(
             ProfRow("Server",      "DLavie Cloud")
         }
 
-        // ── Akun & Keamanan (Account Settings — TTTappableCard per section) ──
+        // ── Akun & Keamanan (Account Settings — password/email/profile/pin) ──
         AccountSettingsCard(
             api = api,
             context = context,
@@ -5115,7 +5691,7 @@ fun ProfileScreen(
             }
         }
 
-        // ── Logout (Phase 2: pakai TTShapes.button + design system baru) ──
+        // ── Logout (preserved from v1.x) ──
         AnimatedContent(targetState = confirmLogout, label = "logout") { confirm ->
             if (!confirm) {
                 OutlinedButton(
@@ -5162,6 +5738,750 @@ fun ProfileScreen(
         }
 
         Spacer(Modifier.height(TTSpacing.sm))
+    }
+}
+
+// ─── Helper composables for the new ProfileScreen ──────────────────────────────
+
+/** Single column stat tile (label + count) used in the profile header stats row. */
+@Composable
+private fun ProfileStatColumn(
+    label: String,
+    value: Int,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.clip(TTShapes.small).background(Surface2.copy(0.6f))
+            .padding(vertical = TTSpacing.sm, horizontal = TTSpacing.xs),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            value.toString(),
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Black
+        )
+        Text(
+            label,
+            color = SubText,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+/** Pill-shaped badge chip (emoji + label) for the Lencana horizontal scroll. */
+@Composable
+private fun BadgeChip(emoji: String, label: String) {
+    Surface(
+        color = Surface2,
+        border = BorderStroke(1.dp, GlassStroke),
+        shape = TTShapes.small
+    ) {
+        Column(
+            Modifier.padding(horizontal = TTSpacing.sm, vertical = TTSpacing.xs)
+                .width(72.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(emoji, fontSize = 20.sp)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                label,
+                color = Color.White,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                lineHeight = 11.sp
+            )
+        }
+    }
+}
+
+/** Tab button with underline indicator + count badge. Used by ProfileScreen. */
+@Composable
+private fun ProfileTabButton(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val bg by animateColorAsState(
+        if (selected) Color.White.copy(0.10f) else Color.Transparent,
+        tween(220), label = "tab_bg_$label"
+    )
+    val tint by animateColorAsState(
+        if (selected) Color.White else SubText,
+        tween(220), label = "tab_tint_$label"
+    )
+    Column(
+        modifier = modifier
+            .clip(TTShapes.small)
+            .background(bg)
+            .clickable { onClick() }
+            .padding(vertical = TTSpacing.sm),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                label,
+                color = tint,
+                fontSize = 12.sp,
+                fontWeight = if (selected) FontWeight.Black else FontWeight.SemiBold
+            )
+            if (count > 0) {
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    count.toString(),
+                    color = SubText,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        Spacer(Modifier.height(3.dp))
+        Box(
+            Modifier
+                .width(if (selected) 22.dp else 0.dp)
+                .height(2.dp)
+                .background(Color.White, RoundedCornerShape(2.dp))
+        )
+    }
+}
+
+/** Empty-state for profile tabs. */
+@Composable
+private fun ProfileEmptyPosts(text: String) {
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = TTSpacing.xxl),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(Icons.Rounded.Article, null, tint = SubText, modifier = Modifier.size(40.dp))
+        Spacer(Modifier.height(TTSpacing.sm))
+        Text(
+            text,
+            color = SoftText,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = TTSpacing.lg)
+        )
+    }
+}
+
+/**
+ * Compact post card for ProfileScreen tabs (Post / Tersimpan / Draft).
+ *
+ * Renders: image (if any), title, body preview, timestamp, type tag.
+ * For drafts: shows a "Publish" + "Hapus" button row at the bottom.
+ * For saved posts: shows a small "tap to view author" hint (author name tappable).
+ *
+ * Lighter than FeedPostCard (no like/comment/save buttons — those are feed-only).
+ */
+@Composable
+private fun ProfilePostCard(
+    post: FeedPostData,
+    isDraft: Boolean = false,
+    publishing: Boolean = false,
+    onPublish: () -> Unit = {},
+    onDelete: () -> Unit = {},
+    onVisitProfile: (() -> Unit)? = null
+) {
+    GlassCard {
+        Column(Modifier.fillMaxWidth()) {
+            // Image (if any) — 16:9 banner
+            if (post.imageUrl.isNotBlank() && !post.imageUrl.equals("null", ignoreCase = true)) {
+                AsyncImage(
+                    model = post.imageUrl,
+                    contentDescription = post.title,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            Column(Modifier.padding(horizontal = TTSpacing.md, vertical = TTSpacing.sm)) {
+                // Draft badge
+                if (isDraft) {
+                    Surface(color = AmberWarn.copy(0.15f), shape = TTShapes.chip) {
+                        Row(
+                            Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.Drafts, null, tint = AmberWarn, modifier = Modifier.size(10.dp))
+                            Spacer(Modifier.width(3.dp))
+                            Text("DRAFT", color = AmberWarn, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                    Spacer(Modifier.height(TTSpacing.xs))
+                }
+
+                // Title
+                Text(
+                    post.title,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // Body preview
+                if (post.body.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        post.body,
+                        color = SoftText,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(Modifier.height(TTSpacing.sm))
+
+                // Footer: timestamp + type + visit-profile (for saved posts)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Schedule, null, tint = SubText, modifier = Modifier.size(11.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text(relativeTime(post.createdAt), color = SubText, fontSize = 10.sp)
+                    if (post.type.isNotBlank() && post.type != "community") {
+                        Text(" · ${post.type}", color = SubText, fontSize = 10.sp)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (onVisitProfile != null) {
+                        Text(
+                            "Lihat penulis →",
+                            color = CandyCyan,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clickable { onVisitProfile() }
+                        )
+                    }
+                }
+
+                // Draft action buttons (Publish + Hapus)
+                if (isDraft) {
+                    Spacer(Modifier.height(TTSpacing.sm))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+                    ) {
+                        Button(
+                            onClick = onPublish,
+                            enabled = !publishing,
+                            modifier = Modifier.weight(1f).height(40.dp),
+                            shape = TTShapes.button,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = NeonGreen,
+                                contentColor = Color(0xFF00150B)
+                            )
+                        ) {
+                            if (publishing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    color = Color(0xFF00150B), strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("Memproses…", fontSize = 12.sp, fontWeight = FontWeight.Black)
+                            } else {
+                                Icon(Icons.Rounded.Send, null, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Publish", fontSize = 12.sp, fontWeight = FontWeight.Black)
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = onDelete,
+                            enabled = !publishing,
+                            modifier = Modifier.weight(1f).height(40.dp),
+                            shape = TTShapes.button,
+                            border = BorderStroke(1.dp, DangerRed.copy(0.45f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = DangerRed)
+                        ) {
+                            Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Hapus", fontSize = 12.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** User search result row (used by CommunityScreen search dropdown). */
+@Composable
+private fun UserSearchRow(
+    user: UserSearchResult,
+    onClick: () -> Unit
+) {
+    val initial = (user.displayName.ifBlank { user.username }).firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+    Row(
+        Modifier.fillMaxWidth().clickable { onClick() }
+            .padding(horizontal = TTSpacing.md, vertical = TTSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Avatar (circular, foto kalau ada, initial kalau tidak)
+        Box(
+            Modifier.size(36.dp).clip(CircleShape)
+                .background(Brush.linearGradient(listOf(CandyCyan, CandyBlue))),
+            contentAlignment = Alignment.Center
+        ) {
+            if (user.avatarUrl.isNotBlank()) {
+                AsyncImage(
+                    model = user.avatarUrl,
+                    contentDescription = user.displayName,
+                    modifier = Modifier.fillMaxSize().clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Text(initial, color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Black)
+            }
+        }
+        Spacer(Modifier.width(TTSpacing.sm))
+        Column(Modifier.weight(1f)) {
+            Text(
+                user.displayName.ifBlank { user.username },
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("@${user.username}", color = SoftText, fontSize = 11.sp, maxLines = 1)
+                if (user.uniqueId > 0) {
+                    Text(" · ID: ${user.uniqueId}", color = SubText, fontSize = 10.sp)
+                }
+            }
+        }
+        ModernPill(user.role.uppercase(), roleBadgeColor(user.role))
+        Spacer(Modifier.width(TTSpacing.xs))
+        Icon(Icons.Rounded.ChevronRight, null, tint = SubText, modifier = Modifier.size(18.dp))
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  USER PROFILE SCREEN (Task 4 + Task 5)
+//
+//  Shown as a full-screen overlay when user taps a username in:
+//    - CommunityScreen search results
+//    - FeedPostCard author name/avatar
+//    - ProfileScreen → Tersimpan → "Lihat penulis →" hint
+//
+//  Layout mirrors ProfileScreen's header (avatar, name, unique ID, stats, bio,
+//  badges) but WITHOUT:
+//    - Account settings (password/email/profile/pin) — those are owner-only
+//    - Logout button
+//    - Tab bar (we only show their published posts — no access to their drafts
+//      or saved posts, both are owner-only)
+//
+//  WITH:
+//    - Follow / Unfollow button (Task 5) — optimistic update
+//    - Back arrow at top
+// ════════════════════════════════════════════════════════════════════════════
+@Composable
+fun UserProfileScreen(
+    userId: String,
+    api: CommunityApi,
+    onBack: () -> Unit,
+    onVisitProfile: (String) -> Unit = {}
+) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+    val haptic  = LocalHapticFeedback.current
+
+    // ── Profile state ──
+    var profile by remember { mutableStateOf<JSONObject?>(null) }
+    var followingCount by remember { mutableStateOf(0) }
+    var followerCount  by remember { mutableStateOf(0) }
+    var likesCount     by remember { mutableStateOf(0) }
+    var totalPlayMin   by remember { mutableStateOf(0) }
+    var userBadges     by remember { mutableStateOf<List<EarnedBadge>>(emptyList()) }
+    var userPosts      by remember { mutableStateOf<List<FeedPostData>>(emptyList()) }
+    var loading        by remember { mutableStateOf(true) }
+    var isFollowing    by remember { mutableStateOf(false) }
+    var followBusy     by remember { mutableStateOf(false) }
+
+    // Author info for the viewed user (kept in state for future FeedPostCard use).
+    var authorCache by remember { mutableStateOf<Map<String, AuthorInfo>>(emptyMap()) }
+
+    fun toast(msg: String) {
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    // ── Initial load ──
+    LaunchedEffect(userId) {
+        loading = true
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val p = api.getProfileById(userId)
+                profile = p
+            }
+            runCatching { followingCount = api.getFollowingCountForUser(userId) }
+            runCatching { followerCount  = api.getFollowerCountForUser(userId) }
+            runCatching { likesCount     = api.getLikesReceivedForUser(userId) }
+            runCatching { totalPlayMin   = api.getTotalPlayTimeByUser(userId) }
+            runCatching {
+                val arr = api.getBadgesByUser(userId)
+                userBadges = (0 until arr.length()).mapNotNull { i ->
+                    runCatching {
+                        val o = arr.getJSONObject(i)
+                        EarnedBadge(o.optString("badge_code"), o.optString("earned_at"))
+                    }.getOrNull()
+                }.filter { it.badgeCode.isNotBlank() }
+            }
+            runCatching {
+                val arr = api.getPostsByUser(userId)
+                userPosts = (0 until arr.length()).mapNotNull { i ->
+                    runCatching { parseFeedPostData(arr.getJSONObject(i)) }.getOrNull()
+                }
+            }
+            // Fetch follow status (only meaningful if current user is logged in)
+            if (api.loggedIn() && userId != api.userId()) {
+                runCatching { isFollowing = api.isFollowing(userId) }
+            }
+        }
+        loading = false
+    }
+
+    // Resolve author cache for the viewed user (used to render post cards via
+    // FeedPostCard — but since the profile is already loaded, we synthesize it).
+    LaunchedEffect(profile) {
+        val p = profile ?: return@LaunchedEffect
+        val info = AuthorInfo(
+            id          = p.optString("id"),
+            username    = p.optString("username", ""),
+            displayName = p.optString("display_name", ""),
+            avatarUrl   = p.optString("avatar_url", "").let { raw ->
+                val s = raw.trim()
+                if (s.isBlank() || s.equals("null", ignoreCase = true)) "" else s
+            },
+            role        = p.optString("role", "user")
+        )
+        authorCache = authorCache + (info.id to info)
+    }
+
+    Box(Modifier.fillMaxSize().background(Carbon)) {
+        HalftoneBackground(modifier = Modifier.fillMaxSize(), alpha = 0.3f)
+
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
+        ) {
+            // ── Top bar: back arrow + "Profil" title ──
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape)
+                        .background(Surface2).clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onBack()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.ArrowBack, contentDescription = "Kembali",
+                        tint = Color.White, modifier = Modifier.size(20.dp))
+                }
+                Spacer(Modifier.width(TTSpacing.md))
+                Text("Profil User", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+            }
+
+            if (loading) {
+                repeat(3) { TTGameCardSkeleton() }
+            } else if (profile == null) {
+                // Profile not found / error
+                Column(
+                    Modifier.fillMaxWidth().padding(top = TTSpacing.xxxl),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(Icons.Rounded.Person, null, tint = SubText, modifier = Modifier.size(48.dp))
+                    Spacer(Modifier.height(TTSpacing.md))
+                    Text("Profil tidak ditemukan", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(TTSpacing.xs))
+                    Text("User mungkin sudah dihapus atau terjadi kesalahan jaringan.",
+                        color = SoftText, fontSize = 12.sp, textAlign = TextAlign.Center)
+                }
+            } else {
+                val p = profile!!
+                val displayName = p.optString("display_name", p.optString("username", "User"))
+                val username = p.optString("username", "")
+                val avatarUrl = p.optString("avatar_url", "").let { raw ->
+                    val s = raw.trim()
+                    if (s.isBlank() || s.equals("null", ignoreCase = true)) "" else s
+                }
+                val uniqueId = p.optInt("unique_id", 0)
+                val role = p.optString("role", "user")
+                val bio = p.optString("bio", "").let { raw ->
+                    val s = raw.trim()
+                    if (s.isBlank() || s.equals("null", ignoreCase = true)) "" else s
+                }
+                val initial = displayName.firstOrNull()?.uppercaseChar()?.toString() ?: "U"
+
+                // ── Profile header (mirror of ProfileScreen header, no edit affordance) ──
+                PremiumGlassCard(gradientBorder = true) {
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+                    ) {
+                        // Avatar (static — no tap to change)
+                        Box(
+                            Modifier.size(88.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                Modifier.matchParentSize().clip(CircleShape)
+                                    .background(
+                                        Brush.radialGradient(
+                                            listOf(CandyCyan.copy(0.4f), Color.Transparent),
+                                            radius = 90f
+                                        )
+                                    )
+                                    .blur(12.dp)
+                            )
+                            if (avatarUrl.isNotEmpty()) {
+                                AsyncImage(
+                                    model = avatarUrl,
+                                    contentDescription = displayName,
+                                    modifier = Modifier.size(72.dp).clip(CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Box(
+                                    Modifier.size(72.dp).clip(CircleShape)
+                                        .background(Brush.linearGradient(listOf(CandyCyan, CandyBlue))),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(initial, color = Color.Black, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
+
+                        // Display name
+                        Text(
+                            displayName.ifEmpty { "DLavie Player" },
+                            fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
+
+                        // Unique ID
+                        if (uniqueId > 0) {
+                            Text("ID: $uniqueId", color = SubText, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        }
+
+                        // Username + role pill
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(TTSpacing.xs)
+                        ) {
+                            if (username.isNotEmpty()) {
+                                Text("@$username", color = SoftText, fontSize = 12.sp)
+                            }
+                            ModernPill(role.uppercase(), roleBadgeColor(role))
+                        }
+
+                        // Bio
+                        if (bio.isNotBlank()) {
+                            Text(
+                                bio,
+                                color = SoftText, fontSize = 12.sp, lineHeight = 16.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = TTSpacing.md)
+                            )
+                        }
+
+                        Spacer(Modifier.height(TTSpacing.xs))
+
+                        // ── Follow / Unfollow button (Task 5) ──
+                        // Hidden if user is viewing their own profile.
+                        if (api.loggedIn() && userId != api.userId()) {
+                            val btnColors = if (isFollowing) {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = Surface2,
+                                    contentColor = SoftText
+                                )
+                            } else {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = Color.White,
+                                    contentColor = Color.Black
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    if (followBusy) return@Button
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    // Optimistic update
+                                    val prev = isFollowing
+                                    isFollowing = !prev
+                                    followerCount += if (prev) -1 else 1
+                                    followBusy = true
+                                    scope.launch {
+                                        try {
+                                            withContext(Dispatchers.IO) {
+                                                if (prev) api.unfollowUser(userId)
+                                                else api.followUser(userId)
+                                            }
+                                            toast(if (prev) "Berhenti mengikuti" else "Mengikuti $displayName")
+                                        } catch (t: Throwable) {
+                                            // Revert
+                                            isFollowing = prev
+                                            followerCount += if (prev) 1 else -1
+                                            toast("Gagal: ${t.message}")
+                                        } finally {
+                                            followBusy = false
+                                        }
+                                    }
+                                },
+                                enabled = !followBusy,
+                                modifier = Modifier.fillMaxWidth().height(46.dp),
+                                shape = TTShapes.button,
+                                colors = btnColors
+                            ) {
+                                if (followBusy) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        color = if (isFollowing) SoftText else Color.Black,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                } else {
+                                    Icon(
+                                        if (isFollowing) Icons.Rounded.PersonRemove else Icons.Rounded.PersonAdd,
+                                        null, modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                }
+                                Text(
+                                    if (isFollowing) "Mengikuti" else "Ikuti",
+                                    fontSize = 13.sp, fontWeight = FontWeight.Black
+                                )
+                            }
+                        } else if (!api.loggedIn()) {
+                            // Not logged in — show disabled "Login untuk ikuti"
+                            OutlinedButton(
+                                onClick = { toast("Login dulu untuk mengikuti user ini.") },
+                                modifier = Modifier.fillMaxWidth().height(46.dp),
+                                shape = TTShapes.button,
+                                border = BorderStroke(1.dp, GlassStroke),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = SoftText)
+                            ) {
+                                Icon(Icons.Rounded.PersonAdd, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Login untuk Ikuti", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(Modifier.height(TTSpacing.xs))
+
+                        // ── Stats row ──
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+                        ) {
+                            ProfileStatColumn("Mengikuti", followingCount, Modifier.weight(1f))
+                            ProfileStatColumn("Pengikut", followerCount, Modifier.weight(1f))
+                            ProfileStatColumn("Likes", likesCount, Modifier.weight(1f))
+                        }
+                    }
+                }
+
+                // ── Two-column: Lencana + Play time (compact) ──
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+                ) {
+                    GlassCard(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.EmojiEvents, null, tint = AmberWarn, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(TTSpacing.xs))
+                            Text("Lencana", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Black)
+                        }
+                        Spacer(Modifier.height(TTSpacing.sm))
+                        if (userBadges.isEmpty()) {
+                            Text("Belum ada lencana", color = SubText, fontSize = 11.sp)
+                        } else {
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+                            ) {
+                                userBadges.take(8).forEach { badge ->
+                                    BadgeChip(
+                                        emoji = badgeEmoji(badge.badgeCode),
+                                        label = formatBadgeName(badge.badgeCode)
+                                    )
+                                }
+                            }
+                            if (userBadges.size > 8) {
+                                Spacer(Modifier.height(TTSpacing.xs))
+                                Text("+${userBadges.size - 8} lainnya",
+                                    color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+                    GlassCard(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.SportsEsports, null, tint = NeonGreen, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(TTSpacing.xs))
+                            Text("Play Time", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Black)
+                        }
+                        Spacer(Modifier.height(TTSpacing.sm))
+                        if (totalPlayMin > 0) {
+                            Text(
+                                if (totalPlayMin >= 60) "${totalPlayMin / 60}j ${totalPlayMin % 60}m" else "${totalPlayMin}m",
+                                color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black
+                            )
+                            Text("Total waktu bermain", color = SubText, fontSize = 10.sp)
+                        } else {
+                            Text("Belum main", color = SubText, fontSize = 11.sp)
+                            Text("User belum track sesi game.", color = SubText, fontSize = 9.sp, lineHeight = 12.sp)
+                        }
+                    }
+                }
+
+                // ── Posts section header ──
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Article, null, tint = CandyCyan, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(TTSpacing.xs))
+                    Text("Post (${userPosts.size})",
+                        color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                }
+
+                // ── Posts list (compact cards) ──
+                if (userPosts.isEmpty()) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(vertical = TTSpacing.xxl),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Rounded.Article, null, tint = SubText, modifier = Modifier.size(40.dp))
+                        Spacer(Modifier.height(TTSpacing.sm))
+                        Text("Belum ada post dari user ini.",
+                            color = SoftText, fontSize = 12.sp, textAlign = TextAlign.Center)
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.md)) {
+                        userPosts.forEach { post ->
+                            ProfilePostCard(
+                                post = post,
+                                isDraft = false,
+                                publishing = false,
+                                onPublish = {},
+                                onDelete = {},
+                                onVisitProfile = null
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(TTSpacing.xxl))
+            }
+        }
     }
 }
 
@@ -5963,7 +7283,39 @@ fun roleBadgeColor(role: String): Color = when (role.lowercase()) {
     else        -> CandyCyan
 }
 
+/**
+ * Global in-memory tracker for the current game session start time.
+ *
+ * Flow:
+ *   1. User taps "Mainkan" → [launchGame] sets [startTimeMs] = System.currentTimeMillis()
+ *      and then opens FIFA 16 (which moves our activity to the background).
+ *   2. User returns to the launcher → activity ON_RESUME fires → MainShell's lifecycle
+ *      observer reads [startTimeMs], computes duration in minutes, calls
+ *      [CommunityApi.recordGameSession] + [CommunityApi.checkAndAwardBadges],
+ *      and resets [startTimeMs] to 0L.
+ *
+ * Lives in-memory only (no persistence) — if the process is killed mid-session we
+ * lose the start time, which is fine: an unterminated session shouldn't be billed
+ * as play time anyway.
+ */
+object GameSessionTracker {
+    @Volatile
+    var startTimeMs: Long = 0L
+
+    fun start() { startTimeMs = System.currentTimeMillis() }
+
+    fun consume(): Long {
+        val v = startTimeMs
+        startTimeMs = 0L
+        return v
+    }
+}
+
 fun launchGame(context: android.content.Context) {
+    // ── Play-time tracking (Task 2): record session start time before launching.
+    // MainShell's ON_RESUME lifecycle observer will compute duration and persist it
+    // when the user returns to the launcher.
+    GameSessionTracker.start()
     // Fire-and-forget telemetry — game_launch event.
     Telemetry.track(context, Telemetry.EVT_GAME_LAUNCH, mapOf("game_package" to GAME_PKG))
     val intent = context.packageManager.getLaunchIntentForPackage(GAME_PKG)
