@@ -4,102 +4,86 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * App Update Checker — cek versi terbaru launcher dari GitHub Releases.
+ * App Update Checker v2 — cek versi terbaru dari Supabase app_releases table.
+ *
+ * Sistem Draft/Publish:
+ *  - Draft release: hanya admin/developer yang dapat popup update (untuk testing)
+ *  - Published release: semua user dapat popup update
  *
  * Flow:
- *  1. fetchLatestRelease() — GET /repos/drmacze/F16-Launcher/releases/latest
- *  2. Bandingkan versionCode dari tag_name dengan BuildConfig.VERSION_CODE
- *  3. Kalau ada versi baru → tampilkan UpdatePopup
- *  4. User tap "Update" → download APK → trigger install
+ *  1. fetchLatestRelease(api) — query Supabase app_releases table
+ *     - Regular user: WHERE is_published = true AND version_code > current
+ *     - Staff (admin/developer): WHERE version_code > current (draft atau published)
+ *  2. Kalau ada versi baru → tampilkan UpdatePopup
+ *  3. User tap "Update" → download APK dari GitHub release URL → trigger install
  *
  * Anti-bentrok:
- *  - applicationId sama (com.drmacze.f16launcher) → install sebagai update, bukan paralel
- *  - versionCode di build.gradle harus increment setiap release
- *  - Signature: debug key (saat ini) — APK baru harus di-sign dengan key yang sama
- *  - User tinggal tap "Install" di dialog sistem Android
+ *  - Fixed signing key (sama untuk semua build)
+ *  - applicationId sama → install sebagai update
  */
 object AppUpdateChecker {
 
-    private const val GITHUB_API = "https://api.github.com/repos/drmacze/F16-Launcher/releases/latest"
-
     data class UpdateInfo(
-        val versionName: String,        // e.g. "v1.5.0-auto-update"
-        val versionCode: Int,           // parsed from tag_name or release body
-        val releaseNotes: String,       // body dari release
-        val apkUrl: String,             // browser_download_url dari asset APK
-        val apkSize: Long,              // size dalam bytes
-        val htmlUrl: String,            // URL halaman release
-        val isUpdateAvailable: Boolean  // true kalau versionCode > BuildConfig.VERSION_CODE
+        val versionName: String,
+        val versionCode: Int,
+        val releaseNotes: String,
+        val apkUrl: String,
+        val isPublished: Boolean,
+        val isUpdateAvailable: Boolean
     )
 
     /**
-     * Fetch latest release dari GitHub API.
-     * Returns UpdateInfo atau null kalau gagal.
+     * Cek update dari Supabase app_releases table.
+     * - Regular user: hanya dapat published releases
+     * - Staff (admin/developer): dapat draft + published releases
      *
-     * Parser:
-     *  - tag_name: "v1.5.0-auto-update" → extract versionCode dari body atau hardcode
-     *  - Cari asset yang namanya mengandung ".apk" (bukan "diagnostics")
-     *  - Body release berisi "versionCode: XX" — parse dari sana
+     * @param api CommunityApi instance (untuk auth + role check)
+     * @return UpdateInfo atau null kalau tidak ada update
      */
-    suspend fun checkForUpdate(): UpdateInfo? {
+    suspend fun checkForUpdate(api: CommunityApi): UpdateInfo? {
         return try {
-            val url = URL(GITHUB_API)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 15_000
-                readTimeout = 20_000
-                setRequestProperty("Accept", "application/vnd.github+json")
-                setRequestProperty("User-Agent", "DLavie-Launcher")
-            }
-
-            val code = conn.responseCode
-            if (code !in 200..299) return null
-
-            val text = conn.inputStream.bufferedReader().use { it.readText() }
-            conn.disconnect()
-
-            val json = JSONObject(text)
-            val tagName = json.optString("tag_name", "")
-            val body = json.optString("body", "")
-            val htmlUrl = json.optString("html_url", "")
-
-            // Parse versionCode dari body release (format: "versionCode: XX")
-            // Kalau tidak ada, coba parse dari tag_name
-            val versionCode = parseVersionCode(body) ?: parseVersionCodeFromTag(tagName) ?: 0
-
-            // Cari asset APK (bukan diagnostics)
-            val assets = json.optJSONArray("assets") ?: return null
-            var apkUrl = ""
-            var apkSize = 0L
-            for (i in 0 until assets.length()) {
-                val asset = assets.getJSONObject(i)
-                val name = asset.optString("name", "")
-                if (name.endsWith(".apk") && !name.contains("diagnostics", ignoreCase = true)) {
-                    apkUrl = asset.optString("browser_download_url", "")
-                    apkSize = asset.optLong("size", 0L)
-                    break
-                }
-            }
-
-            if (apkUrl.isEmpty()) return null
+            val isStaff = api.role().equals("admin", ignoreCase = true) ||
+                         api.role().equals("developer", ignoreCase = true) ||
+                         api.role().equals("owner", ignoreCase = true) ||
+                         api.role().equals("moderator", ignoreCase = true)
 
             val currentCode = BuildConfig.VERSION_CODE
-            val isUpdate = versionCode > currentCode
+
+            // Query Supabase app_releases
+            // Staff: semua releases dengan version_code > current
+            // Regular user: hanya published releases dengan version_code > current
+            val filter = if (isStaff) {
+                "version_code=gt.$currentCode"
+            } else {
+                "version_code=gt.$currentCode&is_published=eq.true"
+            }
+
+            val response = api.requestPublic(
+                "GET",
+                "/rest/v1/app_releases?$filter&order=version_code.desc&limit=1&select=version_code,version_name,tag_name,apk_download_url,changelog,is_published"
+            )
+
+            val arr = JSONArray(response)
+            if (arr.length() == 0) return null
+
+            val release = arr.getJSONObject(0)
+            val versionCode = release.optInt("version_code", 0)
+            if (versionCode <= currentCode) return null
 
             UpdateInfo(
-                versionName = tagName,
+                versionName = release.optString("version_name", "unknown"),
                 versionCode = versionCode,
-                releaseNotes = body,
-                apkUrl = apkUrl,
-                apkSize = apkSize,
-                htmlUrl = htmlUrl,
-                isUpdateAvailable = isUpdate
+                releaseNotes = release.optString("changelog", ""),
+                apkUrl = release.optString("apk_download_url", ""),
+                isPublished = release.optBoolean("is_published", false),
+                isUpdateAvailable = true
             )
         } catch (_: Throwable) {
             null
@@ -107,36 +91,7 @@ object AppUpdateChecker {
     }
 
     /**
-     * Parse "versionCode: XX" dari release body.
-     */
-    private fun parseVersionCode(body: String): Int? {
-        return try {
-            val regex = Regex("versionCode:\\s*(\\d+)", RegexOption.IGNORE_CASE)
-            val match = regex.find(body) ?: return null
-            match.groupValues[1].toIntOrNull()
-        } catch (_: Throwable) { null }
-    }
-
-    /**
-     * Parse versionCode dari tag_name seperti "v1.5.0-auto-update".
-     * Format: vX.Y.Z-suffix → (X * 10000 + Y * 100 + Z)
-     * Contoh: v1.5.0 → 10500, v1.4.0 → 10400
-     * Hanya fallback kalau body tidak ada versionCode.
-     */
-    private fun parseVersionCodeFromTag(tag: String): Int? {
-        return try {
-            val regex = Regex("v(\\d+)\\.(\\d+)\\.(\\d+)")
-            val match = regex.find(tag) ?: return null
-            val major = match.groupValues[1].toInt()
-            val minor = match.groupValues[2].toInt()
-            val patch = match.groupValues[3].toInt()
-            major * 10000 + minor * 100 + patch
-        } catch (_: Throwable) { null }
-    }
-
-    /**
-     * Download APK launcher ke cache dir.
-     * Returns File atau null kalau gagal.
+     * Download APK ke cache dir dengan progress callback.
      */
     suspend fun downloadApk(context: Context, apkUrl: String, onProgress: ((Float) -> Unit)? = null): File? {
         return try {
@@ -173,13 +128,7 @@ object AppUpdateChecker {
     }
 
     /**
-     * Trigger install APK.
-     * Pakai ACTION_VIEW intent dengan FileProvider — user konfirmasi install.
-     *
-     * Anti-bentrok:
-     *  - APK di-sign dengan key yang sama → install sebagai update
-     *  - applicationId sama → replace existing app
-     *  - Data user (preferences, session) tetap preserved
+     * Trigger install APK via ACTION_VIEW + FileProvider.
      */
     fun installApk(context: Context, apkFile: File) {
         try {
@@ -194,9 +143,8 @@ object AppUpdateChecker {
             }
             context.startActivity(intent)
         } catch (_: Throwable) {
-            // Fallback: open browser ke release page
             try {
-                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/drmacze/F16-Launcher/releases/latest"))
+                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/drmacze/F16-Launcher/releases"))
                 browserIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 context.startActivity(browserIntent)
             } catch (_: Throwable) { }

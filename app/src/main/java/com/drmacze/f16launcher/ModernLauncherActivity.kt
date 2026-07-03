@@ -362,7 +362,7 @@ fun DLavieModernApp(initialPostId: String? = null) {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             runCatching {
-                val info = AppUpdateChecker.checkForUpdate()
+                val info = AppUpdateChecker.checkForUpdate(api)
                 if (info != null && info.isUpdateAvailable) {
                     updateInfo = info
                     showUpdatePopup = true
@@ -5565,6 +5565,22 @@ fun AppUpdatePopup(
                 Icon(Icons.Rounded.SystemUpdate, null, tint = Color.White, modifier = Modifier.size(24.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Update Tersedia!", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                if (!info.isPublished) {
+                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        color = AmberWarn.copy(0.15f),
+                        border = BorderStroke(1.dp, AmberWarn.copy(0.4f)),
+                        shape = RoundedCornerShape(999.dp)
+                    ) {
+                        Text(
+                            "DRAFT",
+                            color = AmberWarn,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
             }
         },
         text = {
@@ -5573,6 +5589,13 @@ fun AppUpdatePopup(
                     "Versi baru ${info.versionName} sudah tersedia.",
                     color = SoftText, fontSize = 13.sp
                 )
+                if (!info.isPublished) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "⚠ Versi draft — belum dirilis ke publik. Hanya untuk testing.",
+                        color = AmberWarn, fontSize = 10.sp
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
 
                 // Release notes (truncate kalau terlalu panjang)

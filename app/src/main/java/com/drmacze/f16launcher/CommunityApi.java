@@ -807,6 +807,18 @@ public class CommunityApi {
         }
     }
 
+    /**
+     * Public request (pakai anon key, tidak butuh auth).
+     * Untuk query yang RLS-nya allow public read (e.g. app_releases yang published).
+     * Tapi kalau user login, pakai user token supaya RLS staff policy juga berlaku.
+     */
+    public String requestPublic(String method, String path) throws Exception {
+        // Kalau user login, pakai auth=true supaya DAPAT draft releases (staff)
+        // Kalau tidak login, pakai auth=false (anon key, hanya published)
+        boolean auth = loggedIn();
+        return request(method, path, null, auth, false);
+    }
+
     private String doRequest(String method, String path, Object body, boolean auth, String prefer) throws Exception {
         URL url = new URL(SUPABASE_URL + path);
         HttpURLConnection c = (HttpURLConnection) url.openConnection();
