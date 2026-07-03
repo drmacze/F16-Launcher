@@ -88,10 +88,10 @@ class DLavieFirebaseMessagingService : FirebaseMessagingService() {
 
         // Log to Telemetry (existing system)
         try {
-            val telemetry = Telemetry(applicationContext)
-            telemetry.logAppEvent(
-                event = "fcm_notification_received",
-                properties = mapOf(
+            Telemetry.track(
+                context = applicationContext,
+                eventType = "fcm_notification_received",
+                metadata = mapOf(
                     "title" to title,
                     "category" to category,
                     "message_id" to (remoteMessage.messageId ?: "")
