@@ -1625,10 +1625,10 @@ fun HomeScreen(
                     RoundedCornerShape(28.dp)
                 )
         ) {
-            // Aurora background (cyan + violet glow + halftone overlay)
+            // Aurora background (cyan + violet glow + DLavie logo particle pattern)
             AuroraBackground(
                 modifier = Modifier.fillMaxSize(),
-                showHalftone = true,
+                showLogoParticles = true,
                 glowIntensity = 1.2f
             )
 
@@ -1706,63 +1706,11 @@ fun HomeScreen(
             }
         }
 
-        // ── Banner Carousel (TapTap-style auto-scroll, 3 banners) ────────────────
-        // HorizontalPager dengan auto-scroll 4 detik + page indicator dots.
-        // Banner 1: FIFA 16 Mobile — gradient cyan-blue
-        // Banner 2: DLavie 26 v1.2.0 — gradient violet-cyan
-        // Banner 3: Komunitas — gradient green-blue
-        val banners = remember {
-            listOf(
-                BannerItem(
-                    title = "FIFA 16 Mobile",
-                    subtitle = "Play everywhere — offline, ter-update, lebih baik.",
-                    gradientColors = listOf(CandyCyan, CandyBlue),
-                    icon = Icons.Rounded.SportsSoccer
-                ),
-                BannerItem(
-                    title = "DLavie 26",
-                    subtitle = "Latest mod v1.2.0 — TapTap-level UI/UX.",
-                    gradientColors = listOf(CandyBlue, CandyCyan),
-                    icon = Icons.Rounded.SystemUpdate
-                ),
-                BannerItem(
-                    title = "Komunitas",
-                    subtitle = "Join discussion — chat dengan sesama player.",
-                    gradientColors = listOf(NeonGreen, CandyBlue),
-                    icon = Icons.Rounded.Forum
-                )
-            )
-        }
-        TTBannerCarousel(
-            banners = banners,
-            modifier = Modifier.fillMaxWidth(),
-            onBannerClick = { /* tap banner — no-op for now (future: deep-link) */ }
-        )
+        // ── Beranda CLEAN (v5.0): Hanya game library DLavie 26 FIFA 16 ──────────
+        // Banner carousel, Berita/Feed, Trusted by DLavie, Status bar (3 chips)
+        // dipindahkan ke tab Community/Update. Beranda fokus ONLY ke game card.
 
-        // ── "Beri Rating DLavie 26" button (conditional: belum rate & login) ────
-        AnimatedVisibility(
-            visible = myRating == 0 && api.loggedIn(),
-            enter = fadeIn(tween(300)) + expandVertically(),
-            exit = fadeOut(tween(200)) + shrinkVertically()
-        ) {
-            OutlinedButton(
-                onClick = {
-                    // Phase 4: medium haptic when opening the rating popup.
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    ratingSubmitError = ""; showRatingPopup = true
-                },
-                modifier = Modifier.fillMaxWidth().height(46.dp),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, AmberWarn.copy(0.55f)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = AmberWarn)
-            ) {
-                Icon(Icons.Rounded.Star, null, tint = AmberWarn, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Beri Rating DLavie 26", color = AmberWarn, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Spacer(Modifier.width(6.dp))
-                Text("· bantu kami naik ranking", color = SoftText, fontSize = 11.sp, fontWeight = FontWeight.Normal)
-            }
-        }
+        Spacer(Modifier.height(DLSpacing.md))
 
         // ── Game Card: "DLavie 26: Football Game" (TapTap-style TTGameCard) ──
         // Phase 2 fix: saat setupState==LOADING, tampilkan TTGameCardSkeleton
@@ -1771,8 +1719,12 @@ fun HomeScreen(
         // Inline download progress + error ditampilkan di bawah card (TTGameCard
         // tidak punya slot untuk itu, jadi kita wrap dalam Column).
         val rating10 = String.format("%.1f", avgRating * 2.0)
-        // v3.0 monochrome cover gradient (dark → matches DLavie logo cover)
-        val coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222), Color(0xFF1A1A1A))
+        // v5.0 aurora cover gradient (deep space + cyan glow)
+        val coverGradient = listOf(
+            DLavieGlass.SpaceBlack,
+            DLavieGlass.SpaceCharcoal,
+            DLavieGlass.SpaceSurface
+        )
         val ttButtonLabel: String = when {
             maintenanceBlocked -> "Diblokir"
             gameInstalled      -> "Mainkan"
@@ -1818,8 +1770,8 @@ fun HomeScreen(
                     LinearProgressIndicator(
                         progress = { dlProgress },
                         modifier = Modifier.fillMaxWidth(),
-                        color = NeonGreen,
-                        trackColor = NeonGreen.copy(0.15f)
+                        color = DLavieGlass.AuroraCyan,
+                        trackColor = DLavieGlass.AuroraCyan.copy(0.15f)
                     )
                     Text(
                         "Mengunduh APK… ${(dlProgress * 100).toInt()}%",
@@ -1844,14 +1796,8 @@ fun HomeScreen(
         }
         } // end if (setupState == LOADING) else { ... }
 
-        // ── Section "Trusted by DLavie" (TapTap-style header dengan verified icon) ──
-        TTSectionHeader(title = "Trusted by DLavie", icon = Icons.Rounded.Verified)
-        Text(
-            "Game resmi yang diverifikasi oleh DLavie — aman, ter-update, dan didukung komunitas.",
-            color = SoftText, fontSize = 11.sp, lineHeight = 15.sp
-        )
-
         // ── Main action card (state-aware) ────────────────────────────────────
+        // This is the install/play CTA — kept because it handles NEED_GAME / NEED_DATA / READY states.
         AnimatedContent(
             targetState    = setupState,
             label          = "setup_state",
@@ -2109,51 +2055,9 @@ fun HomeScreen(
             }
         }
 
-        // ── Status bar (3 chips) ───────────────────────────────────────────────
-        AnimatedVisibility(visible = setupState != SetupState.LOADING) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ModernStatusChip(
-                    label  = "Game",
-                    value  = if (gameInstalled) "Terinstall" else "Belum ada",
-                    ok     = gameInstalled,
-                    modifier = Modifier.weight(1f)
-                ) { if (!gameInstalled && !maintenanceBlocked) if (dlProgress < 0f) startDownload() }
-
-                ModernStatusChip(
-                    label  = "Data",
-                    value  = if (dataReady) "Siap" else "Belum siap",
-                    ok     = dataReady,
-                    modifier = Modifier.weight(1f)
-                ) { onNav(Page.Update) }
-
-                ModernStatusChip(
-                    label  = "Update",
-                    value  = when {
-                        updateInfo == null        -> "Memeriksa"
-                        updateInfo!!.upToDate     -> "Terbaru"
-                        else                      -> "Tersedia"
-                    },
-                    ok     = updateInfo?.upToDate != false,
-                    modifier = Modifier.weight(1f)
-                ) { onNav(Page.Update) }
-            }
-        }
-
-        // ── Berita / Feed (Phase 2: TapTap-style TTTappableCard dengan press animation) ───
-        // Setiap feed item dibungkus TTTappableCard — press scale spring bounce.
-        // Header pakai TTSectionHeader (TapTap design system) untuk konsistensi.
-        AnimatedVisibility(visible = feed.isNotEmpty(), enter = fadeIn(tween(400)), exit = fadeOut()) {
-            Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
-                TTSectionHeader(title = "Berita Terbaru", icon = Icons.Rounded.Notifications)
-                feed.take(4).forEach { item ->
-                    TTTappableCard(
-                        onClick = { /* future: open feed detail in browser/webview */ }
-                    ) {
-                        FeedRow(item)
-                    }
-                }
-            }
-        }
+        // ── Beranda CLEAN: Status bar (3 chips) & Berita/Feed REMOVED ──────────
+        // These cluttered the home screen. Status info is now in the Update tab,
+        // and Feed/Berita is in the Community tab. Beranda stays minimal.
 
         // Bottom spacer
         Spacer(Modifier.height(8.dp))

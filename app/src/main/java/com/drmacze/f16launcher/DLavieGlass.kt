@@ -108,7 +108,7 @@ import kotlin.random.Random
 @Composable
 fun AuroraBackground(
     modifier: Modifier = Modifier,
-    showHalftone: Boolean = true,
+    showLogoParticles: Boolean = true,
     glowIntensity: Float = 1.0f
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "aurora")
@@ -196,13 +196,15 @@ fun AuroraBackground(
             )
         }
 
-        // Halftone dot pattern overlay (DLavie brand motif)
-        if (showHalftone) {
-            HalftoneOverlay(
+        // DLavie logo particle pattern overlay (replaces halftone dots — brand motif)
+        if (showLogoParticles) {
+            DLavieLogoParticleBackground(
                 modifier = Modifier.fillMaxSize(),
-                dotColor = Color.White.copy(alpha = 0.04f),
-                dotSpacing = 28.dp,
-                dotRadius = 1.2.dp
+                logoColor = DLavieGlass.AuroraCyan,
+                logoSize = 32.dp,
+                spacing = 88.dp,
+                opacity = 0.08f,
+                animateDrift = true
             )
         }
 
@@ -245,6 +247,88 @@ fun HalftoneOverlay(
                 x += spacingPx
             }
             y += spacingPx
+        }
+    }
+}
+
+// ─── DLavie Logo Particle Background ────────────────────────────────────────
+// Scattered DLavie "D" logos as particle pattern across the screen.
+// Each logo is small, low-opacity, with slight random rotation + size variation.
+// This is the brand motif — every screen uses this as background.
+
+@Composable
+fun DLavieLogoParticleBackground(
+    modifier: Modifier = Modifier,
+    logoColor: Color = DLavieGlass.AuroraCyan,
+    logoSize: Dp = 36.dp,
+    spacing: Dp = 80.dp,
+    opacity: Float = 0.06f,
+    animateDrift: Boolean = true
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "dl_particles")
+    val driftX by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(30000, easing = androidx.compose.animation.core.LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "drift_x"
+    )
+
+    Canvas(modifier) {
+        val spacingPx = spacing.toPx()
+        val logoSizePx = logoSize.toPx()
+        val w = size.width
+        val h = size.height
+        val driftOffset = if (animateDrift) driftX * spacingPx * 0.5f else 0f
+
+        var y = -spacingPx
+        var rowIdx = 0
+        while (y < h + spacingPx) {
+            val xOffset = if (rowIdx % 2 == 0) 0f else spacingPx / 2f
+            var x = -spacingPx + xOffset - driftOffset
+            while (x < w + spacingPx) {
+                // Draw a small "D" shape with low opacity
+                val cx = x + logoSizePx / 2f
+                val cy = y + logoSizePx / 2f
+                val left = cx - logoSizePx / 2f
+                val top = cy - logoSizePx / 2f
+                val right = cx + logoSizePx / 2f
+                val bottom = cy + logoSizePx / 2f
+
+                // D shape (proportional to logo size)
+                val dPath = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(left + 0.25f * logoSizePx, top + 0.15f * logoSizePx)
+                    lineTo(left + 0.25f * logoSizePx, top + 0.85f * logoSizePx)
+                    lineTo(left + 0.55f * logoSizePx, top + 0.85f * logoSizePx)
+                    cubicTo(
+                        left + 0.78f * logoSizePx, top + 0.85f * logoSizePx,
+                        left + 0.90f * logoSizePx, top + 0.65f * logoSizePx,
+                        left + 0.90f * logoSizePx, top + 0.50f * logoSizePx
+                    )
+                    cubicTo(
+                        left + 0.90f * logoSizePx, top + 0.35f * logoSizePx,
+                        left + 0.78f * logoSizePx, top + 0.15f * logoSizePx,
+                        left + 0.55f * logoSizePx, top + 0.15f * logoSizePx
+                    )
+                    close()
+                }
+
+                drawPath(
+                    path = dPath,
+                    color = logoColor.copy(alpha = opacity),
+                    style = Stroke(
+                        width = 1.5f,
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                        join = androidx.compose.ui.graphics.StrokeJoin.Round
+                    )
+                )
+
+                x += spacingPx
+            }
+            y += spacingPx
+            rowIdx++
         }
     }
 }
