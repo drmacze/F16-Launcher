@@ -49,21 +49,11 @@ object AppUpdateChecker {
      */
     suspend fun checkForUpdate(api: CommunityApi): UpdateInfo? {
         return try {
-            val isStaff = api.role().equals("admin", ignoreCase = true) ||
-                         api.role().equals("developer", ignoreCase = true) ||
-                         api.role().equals("owner", ignoreCase = true) ||
-                         api.role().equals("moderator", ignoreCase = true)
-
             val currentCode = BuildConfig.VERSION_CODE
 
-            // Query Supabase app_releases
-            // Staff: semua releases dengan version_code > current
-            // Regular user: hanya published releases dengan version_code > current
-            val filter = if (isStaff) {
-                "version_code=gt.$currentCode"
-            } else {
-                "version_code=gt.$currentCode&is_published=eq.true"
-            }
+            // HANYA cek PUBLISHED releases — draft tidak show popup ke siapapun
+            // (termasuk admin/developer — mereka test via Dev Dashboard)
+            val filter = "version_code=gt.$currentCode&is_published=eq.true"
 
             val response = api.requestPublic(
                 "GET",
