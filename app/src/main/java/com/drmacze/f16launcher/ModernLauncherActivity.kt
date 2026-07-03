@@ -1741,6 +1741,7 @@ fun HomeScreen(
                 rating         = "$rating10 · $ratingCount ratings",
                 coverGradient  = coverGradient,
                 coverText      = "DL",
+                coverImageRes  = R.drawable.dlavie_game_logo,
                 buttonLabel    = ttButtonLabel,
                 buttonEnabled  = ttButtonEnabled,
                 onButtonClick  = ttButtonClick,

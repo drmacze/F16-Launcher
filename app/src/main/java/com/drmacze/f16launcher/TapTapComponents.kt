@@ -386,7 +386,8 @@ fun TTGameCard(
     onButtonClick: () -> Unit,
     onClick: () -> Unit = {},
     onLongClick: (() -> Unit)? = null,
-    sharedContentKey: String? = null
+    sharedContentKey: String? = null,
+    coverImageRes: Int? = null
 ) {
     val haptic = LocalHapticFeedback.current
     TTTappableCard(onClick = onClick, onLongClick = onLongClick) {
@@ -394,8 +395,10 @@ fun TTGameCard(
             Modifier.padding(TTSpacing.lg),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Cover image (rounded square gradient dengan text) — shared element
-            // target when sharedContentKey is set & the shell provides scopes.
+            // Cover image (rounded square) — shared element target when
+            // sharedContentKey is set & the shell provides scopes.
+            // If coverImageRes is provided, show the image. Otherwise, fall back
+            // to gradient + coverText (legacy behavior).
             val coverModifier = if (sharedContentKey != null) {
                 Modifier.size(56.dp).clip(RoundedCornerShape(14.dp))
                     .background(Brush.linearGradient(coverGradient))
@@ -408,7 +411,17 @@ fun TTGameCard(
                 coverModifier,
                 contentAlignment = Alignment.Center
             ) {
-                Text(coverText, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                if (coverImageRes != null) {
+                    // Use Coil AsyncImage to load the drawable resource
+                    coil.compose.AsyncImage(
+                        model = coverImageRes,
+                        contentDescription = "Game logo",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Text(coverText, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                }
             }
             Spacer(Modifier.width(TTSpacing.lg))
             Column(Modifier.weight(1f)) {
