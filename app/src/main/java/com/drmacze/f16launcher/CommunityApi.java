@@ -20,7 +20,7 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class CommunityApi extends SupabaseClient {
+public class CommunityApi {
 
     // P4A: CommunityApi now extends SupabaseClient (shared infrastructure).
     // SUPABASE_URL, SUPABASE_KEY, prefs, request(), loggedIn(), userId(),
