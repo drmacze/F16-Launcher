@@ -7678,46 +7678,10 @@ fun jsonPosts(arr: JSONArray): List<PostItem> = List(arr.length()) { i ->
  */
 fun uploadFcmTokenToSupabase(api: CommunityApi, fcmToken: String) {
     try {
-        val userId = api.userId()
-        if (userId.isEmpty()) return
-        val accessToken = api.token()
-        if (accessToken.isEmpty()) return
-        val deviceInfo = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE})"
-
-        // Build upsert payload
-        val payload = org.json.JSONObject().apply {
-            put("user_id", userId)
-            put("fcm_token", fcmToken)
-            put("device_info", deviceInfo)
-            put("is_active", true)
-            put("updated_at", java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US)
-                .format(java.util.Date()))
-        }
-
-        // POST with Prefer: resolution=merge-duplicates for upsert
-        val url = java.net.URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/user_fcm_tokens")
-        val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 15000
-            readTimeout = 15000
-            doOutput = true
-            setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
-            setRequestProperty("Authorization", "Bearer $accessToken")
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Prefer", "resolution=merge-duplicates,return=minimal")
-            setRequestProperty("X-Client-Info", "dlavie-launcher/fcm-token-sync")
-        }
-
-        conn.outputStream.use { it.write(payload.toString().toByteArray()) }
-        val code = conn.responseCode
-        if (code in 200..299) {
-            android.util.Log.d("DLavieFCM", "FCM token uploaded to Supabase for user $userId")
-        } else {
-            android.util.Log.w("DLavieFCM", "FCM token upload failed: HTTP $code")
-        }
-        conn.disconnect()
+        val result = api.registerFcmToken(fcmToken)
+        android.util.Log.d("DLavieFCM", "FCM token uploaded: $result")
     } catch (e: Exception) {
-        android.util.Log.w("DLavieFCM", "FCM token upload error", e)
+        android.util.Log.w("DLavieFCM", "FCM token upload error: ${e.message}", e)
     }
 }
 
@@ -7761,42 +7725,11 @@ fun FcmDiagnosticCard(api: CommunityApi, context: android.content.Context) {
 
                 withContext(Dispatchers.IO) {
                     try {
-                        // Direct upload via REST API
-                        val userId = api.userId()
-                        val accessToken = api.token()
-                        val deviceInfo = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
-
-                        val payload = org.json.JSONObject().apply {
-                            put("user_id", userId)
-                            put("fcm_token", fcmToken)
-                            put("device_info", deviceInfo)
-                            put("is_active", true)
-                        }
-
-                        val url = java.net.URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/user_fcm_tokens")
-                        val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                            requestMethod = "POST"
-                            connectTimeout = 15000
-                            readTimeout = 15000
-                            doOutput = true
-                            setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
-                            setRequestProperty("Authorization", "Bearer $accessToken")
-                            setRequestProperty("Content-Type", "application/json")
-                            setRequestProperty("Prefer", "resolution=merge-duplicates,return=minimal")
-                        }
-                        conn.outputStream.use { it.write(payload.toString().toByteArray()) }
-                        val code = conn.responseCode
-                        conn.disconnect()
-
-                        if (code in 200..299) {
-                            uploadStatus = "success"
-                            uploadError = ""
-                        } else {
-                            val errStream = conn.errorStream
-                            val errBody = errStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
-                            uploadStatus = "failed"
-                            uploadError = "HTTP $code: $errBody"
-                        }
+                        // Use CommunityApi.registerFcmToken() — same infrastructure as other API calls
+                        // (handles 401 refresh, network errors, etc. — no more "Socket is closed")
+                        api.registerFcmToken(fcmToken)
+                        uploadStatus = "success"
+                        uploadError = ""
                     } catch (e: Exception) {
                         uploadStatus = "failed"
                         uploadError = e.message ?: e.toString()

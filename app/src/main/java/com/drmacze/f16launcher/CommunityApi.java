@@ -1347,6 +1347,36 @@ public class CommunityApi {
         return text;
     }
 
+    /**
+     * Register FCM token to user_fcm_tokens table (idempotent upsert).
+     * Called by DLavieFirebaseMessagingService.onNewToken() and
+     * FcmDiagnosticCard in ModernLauncherActivity.
+     *
+     * Uses the same doRequest() infrastructure as other API calls —
+     * handles network errors, JWT refresh, etc. consistently.
+     *
+     * @param fcmToken FCM registration token from FirebaseMessaging.getInstance().token
+     * @return true if upload succeeded, throws on failure
+     */
+    public boolean registerFcmToken(String fcmToken) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login");
+        if (fcmToken == null || fcmToken.isEmpty()) throw new IllegalStateException("FCM token kosong");
+
+        JSONObject payload = new JSONObject();
+        payload.put("user_id", userId());
+        payload.put("fcm_token", fcmToken);
+        payload.put("device_info", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
+            + " (Android " + android.os.Build.VERSION.RELEASE + ")");
+        payload.put("is_active", true);
+
+        // Use doRequest() — handles 401 refresh, network errors, etc.
+        // Prefer: resolution=merge-duplicates for upsert on fcm_token unique constraint
+        String result = request("POST", "/rest/v1/user_fcm_tokens", payload, true,
+            "resolution=merge-duplicates,return=minimal");
+        Log.i(TAG, "FCM token registered for user " + userId());
+        return true;
+    }
+
     private static String cleanError(String text, int code) {
         try {
             JSONObject o = new JSONObject(text == null ? "{}" : text);
