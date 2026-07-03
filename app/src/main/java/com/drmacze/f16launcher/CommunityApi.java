@@ -28,6 +28,8 @@ public class CommunityApi {
 
     private static final String TAG = "DLavieApi";
 
+    private final SharedPreferences prefs;
+
     public CommunityApi(Context ctx) { prefs = ctx.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE); }
 
     public boolean loggedIn() {
