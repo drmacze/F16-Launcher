@@ -72,6 +72,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import android.webkit.WebView
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -255,6 +257,125 @@ fun HalftoneOverlay(
 // Scattered DLavie "D" logos as particle pattern across the screen.
 // Each logo is small, low-opacity, with slight random rotation + size variation.
 // This is the brand motif — every screen uses this as background.
+
+// ─── YouTube Video Background ───────────────────────────────────────────────
+// Auto-play looping muted YouTube video as background (for Hero Banner).
+// Uses WebView with YouTube iframe embed. Adds a dark gradient scrim so text
+// placed on top remains readable.
+
+@Composable
+fun YouTubeVideoBackground(
+    videoId: String,
+    modifier: Modifier = Modifier,
+    scrimAlpha: Float = 0.55f,
+    loop: Boolean = true,
+    muted: Boolean = true
+) {
+    val context = LocalContext.current
+
+    Box(modifier) {
+        // WebView with YouTube iframe embed
+        AndroidView(
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    settings.javaScriptEnabled = true
+                    settings.mediaPlaybackRequiresUserGesture = false
+                    settings.loadWithOverviewMode = true
+                    settings.useWideViewPort = true
+                    settings.cacheMode = android.webkit.WebSettings.LOAD_CACHE_ELSE_NETWORK
+                    settings.domStorageEnabled = true
+                    isHorizontalScrollBarEnabled = false
+                    isVerticalScrollBarEnabled = false
+                    isClickable = false
+                    isFocusable = false
+                    webViewClient = android.webkit.WebViewClient()
+
+                    val autoplayFlag = if (muted) "autoplay=1&mute=1" else "autoplay=1"
+                    val loopFlag = if (loop) "&loop=1&playlist=$videoId" else ""
+                    val extras = "&controls=0&showinfo=0&modestbranding=1&rel=0&playsinline=1&iv_load_policy=3&disablekb=1&fs=0&cc_load_policy=0"
+
+                    val html = """
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <meta charset="utf-8">
+                            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                            <style>
+                                * { margin: 0; padding: 0; box-sizing: border-box; }
+                                html, body {
+                                    width: 100%;
+                                    height: 100%;
+                                    background: #000;
+                                    overflow: hidden;
+                                }
+                                .video-container {
+                                    position: fixed;
+                                    top: 50%;
+                                    left: 50%;
+                                    transform: translate(-50%, -50%);
+                                    width: 100%;
+                                    height: 100%;
+                                    pointer-events: none;
+                                }
+                                .video-container iframe {
+                                    position: absolute;
+                                    top: 50%;
+                                    left: 50%;
+                                    transform: translate(-50%, -50%);
+                                    width: 100%;
+                                    height: 100%;
+                                    border: 0;
+                                    pointer-events: none;
+                                }
+                                /* Stretch to cover — for portrait phones, YouTube video is 16:9
+                                   so we over-scale to fill height */
+                                @media (orientation: portrait) {
+                                    .video-container iframe {
+                                        width: 178vh;  /* 16/9 * 100vh */
+                                        height: 100vh;
+                                    }
+                                }
+                                @media (orientation: landscape) {
+                                    .video-container iframe {
+                                        width: 100vw;
+                                        height: 56.25vw;  /* 9/16 * 100vw */
+                                    }
+                                }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="video-container">
+                                <iframe
+                                    src="https://www.youtube.com/embed/$videoId?$autoplayFlag$loopFlag$extras"
+                                    allow="autoplay; encrypted-media; fullscreen"
+                                    allowfullscreen
+                                    frameborder="0">
+                                </iframe>
+                            </div>
+                        </body>
+                        </html>
+                    """.trimIndent()
+
+                    loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "utf-8", null)
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Dark gradient scrim (transparent top → black bottom) so text is readable
+        Canvas(Modifier.fillMaxSize()) {
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.Black.copy(alpha = scrimAlpha * 0.6f),
+                        Color.Black.copy(alpha = scrimAlpha * 0.4f),
+                        Color.Black.copy(alpha = scrimAlpha * 0.85f)
+                    )
+                )
+            )
+        }
+    }
+}
 
 @Composable
 fun DLavieLogoParticleBackground(

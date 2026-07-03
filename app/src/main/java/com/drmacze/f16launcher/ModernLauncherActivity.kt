@@ -1615,8 +1615,8 @@ fun HomeScreen(
             }
         }
 
-        // ── Hero Banner (FIFA 16 Mobile — v5.0 Aurora Glass) ──────────────────
-        // Deep space background + aurora glow + halftone overlay + DLavie logo
+        // ── Hero Banner (FIFA 16 Mobile — v5.1 Video Background) ───────────────
+        // YouTube video auto-play (muted, looping) + dark scrim + brand text
         Box(
             Modifier.fillMaxWidth().height(220.dp)
                 .clip(RoundedCornerShape(28.dp))
@@ -1625,37 +1625,32 @@ fun HomeScreen(
                     RoundedCornerShape(28.dp)
                 )
         ) {
-            // Aurora background (cyan + violet glow + DLavie logo particle pattern)
-            AuroraBackground(
+            // YouTube video background (auto-play, muted, looping)
+            YouTubeVideoBackground(
+                videoId = "w2bCcMfAqHI",
                 modifier = Modifier.fillMaxSize(),
-                showLogoParticles = true,
-                glowIntensity = 1.2f
+                scrimAlpha = 0.55f
             )
 
             Column(
                 Modifier.fillMaxSize().padding(20.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // Top row: DLavie logo + brand text + rating badge
+                // Top row: brand text + rating badge (logos removed — user request)
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Top
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            DLavieLogo(size = 28.dp, strokeWidth = 2.dp)
-                            Column {
-                                Text(
-                                    "DLAVIE",
-                                    color = DLavieGlass.TextPrimary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Black,
-                                    letterSpacing = 2.sp
-                                )
-                                ShinyTitle("FIFA 16 Mobile")
-                            }
-                        }
+                        Text(
+                            "DLAVIE",
+                            color = DLavieGlass.TextPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 2.sp
+                        )
+                        ShinyTitle("FIFA 16 Mobile")
                         Spacer(Modifier.height(8.dp))
                         TypewriterText(
                             texts = listOf(
@@ -1676,18 +1671,12 @@ fun HomeScreen(
                     }
                 }
 
-                // Bottom row: DL logo cover + small "verified" pill
+                // Bottom row: verified pill only (circular DL logo removed — user request)
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // DLavie logo cover (kept for brand mark)
-                    DLavieLogoCover(
-                        size = 60.dp,
-                        fontSize = 22.sp,
-                        shape = CircleShape
-                    )
                     Surface(
                         color = DLavieGlass.AuroraMint.copy(0.16f),
                         border = BorderStroke(1.dp, DLavieGlass.AuroraMint.copy(0.45f)),
