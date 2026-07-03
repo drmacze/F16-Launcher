@@ -98,6 +98,7 @@ object AppUpdateChecker {
 
     /**
      * Download APK ke cache dir dengan progress callback.
+     * Handles GitHub redirect (301/302) automatically.
      */
     suspend fun downloadApk(context: Context, apkUrl: String, onProgress: ((Float) -> Unit)? = null): File? {
         return try {
@@ -105,12 +106,38 @@ object AppUpdateChecker {
             val apkFile = File(cacheDir, "dlavie-update.apk")
             if (apkFile.exists()) apkFile.delete()
 
-            val url = URL(apkUrl)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 30_000
-                readTimeout = 120_000
-                setRequestProperty("User-Agent", "DLavie-Launcher")
-                connect()
+            // Follow redirects manually (GitHub release URLs redirect to objects.githubusercontent.com)
+            var currentUrl = apkUrl
+            var redirectCount = 0
+            var conn: HttpURLConnection
+
+            while (true) {
+                val url = URL(currentUrl)
+                conn = (url.openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = false  // handle manually
+                    connectTimeout = 30_000
+                    readTimeout = 120_000
+                    setRequestProperty("User-Agent", "DLavie-Launcher")
+                    setRequestProperty("Accept", "application/octet-stream")
+                    connect()
+                }
+
+                val responseCode = conn.responseCode
+                if (responseCode in 300..399) {
+                    // Redirect — follow Location header
+                    val location = conn.getHeaderField("Location")
+                    conn.disconnect()
+                    if (location.isNullOrBlank() || redirectCount >= 5) return null
+                    currentUrl = location
+                    redirectCount++
+                    continue
+                }
+                break
+            }
+
+            if (conn.responseCode !in 200..299) {
+                conn.disconnect()
+                return null
             }
 
             val total = conn.contentLengthLong.toFloat().coerceAtLeast(1f)

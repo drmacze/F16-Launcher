@@ -437,17 +437,45 @@ fun DLavieModernApp(initialPostId: String? = null) {
                         progress = updateDownloadProgress,
                         onUpdate = {
                             if (!updateDownloading) {
+                                val currentInfo = updateInfo
+                                if (currentInfo == null || currentInfo.apkUrl.isBlank()) {
+                                    // Tidak ada URL download — buka browser ke halaman release
+                                    try {
+                                        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(currentInfo?.apkUrl ?: "https://github.com/drmacze/F16-Launcher/releases"))
+                                        browserIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                        context.startActivity(browserIntent)
+                                    } catch (_: Throwable) { }
+                                    showUpdatePopup = false
+                                    return@AppUpdatePopup
+                                }
                                 updateDownloading = true
                                 updateDownloadProgress = 0f
                                 updateScope.launch {
-                                    val apkFile = withContext(Dispatchers.IO) {
-                                        AppUpdateChecker.downloadApk(context, updateInfo!!.apkUrl) { progress ->
-                                            updateDownloadProgress = progress
+                                    try {
+                                        val apkFile = withContext(Dispatchers.IO) {
+                                            AppUpdateChecker.downloadApk(context, currentInfo.apkUrl) { progress ->
+                                                updateDownloadProgress = progress
+                                            }
                                         }
-                                    }
-                                    updateDownloading = false
-                                    if (apkFile != null && apkFile.exists()) {
-                                        AppUpdateChecker.installApk(context, apkFile)
+                                        updateDownloading = false
+                                        if (apkFile != null && apkFile.exists() && apkFile.length() > 0) {
+                                            AppUpdateChecker.installApk(context, apkFile)
+                                        } else {
+                                            // Download gagal — buka browser sebagai fallback
+                                            try {
+                                                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(currentInfo.apkUrl))
+                                                browserIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                                context.startActivity(browserIntent)
+                                            } catch (_: Throwable) { }
+                                        }
+                                    } catch (e: Throwable) {
+                                        updateDownloading = false
+                                        // Error — buka browser sebagai fallback
+                                        try {
+                                            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(currentInfo.apkUrl))
+                                            browserIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                            context.startActivity(browserIntent)
+                                        } catch (_: Throwable) { }
                                     }
                                 }
                             }
