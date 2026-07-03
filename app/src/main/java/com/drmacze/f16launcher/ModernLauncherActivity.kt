@@ -929,26 +929,44 @@ fun MainShell(
     // ── FCM Token sync (Task: push notifications) ──────────────────────────────
     // On app open: get FCM token, upload to user_fcm_tokens table (if logged in).
     // Token refresh is handled by DLavieFirebaseMessagingService.onNewToken().
+    //
+    // BUG FIX: Previously, this only ran once on app open BEFORE user logged in.
+    // Now we poll loggedIn state and upload token as soon as user becomes logged in.
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                com.google.firebase.messaging.FirebaseMessaging.getInstance().token
-                    .addOnCompleteListener { task ->
-                        if (!task.isSuccessful) {
-                            android.util.Log.w("DLavieFCM", "FCM token fetch failed", task.exception)
-                            return@addOnCompleteListener
-                        }
-                        val token = task.result
-                        android.util.Log.d("DLavieFCM", "FCM Token: ${token.take(20)}...${token.takeLast(10)}")
-                        // Persist locally
-                        context.getSharedPreferences("dlavie_fcm", Context.MODE_PRIVATE)
-                            .edit().putString("fcm_token", token).apply()
-                        // Upload to Supabase (best-effort)
-                        if (api.loggedIn()) {
-                            uploadFcmTokenToSupabase(api, token)
-                        }
-                    }
+        var hasUploadedToken = false
+        var lastLoggedIn = false
+        while (true) {
+            val loggedInNow = api.loggedIn()
+            // Detect login transition (false → true): upload token
+            if (loggedInNow && !lastLoggedIn) {
+                hasUploadedToken = false  // reset so we upload again
             }
+            lastLoggedIn = loggedInNow
+
+            if (loggedInNow && !hasUploadedToken) {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                            .addOnCompleteListener { task ->
+                                if (!task.isSuccessful) {
+                                    android.util.Log.w("DLavieFCM", "FCM token fetch failed", task.exception)
+                                    return@addOnCompleteListener
+                                }
+                                val token = task.result
+                                android.util.Log.d("DLavieFCM", "FCM Token: ${token.take(20)}...${token.takeLast(10)}")
+                                // Persist locally
+                                context.getSharedPreferences("dlavie_fcm", Context.MODE_PRIVATE)
+                                    .edit().putString("fcm_token", token).apply()
+                                // Upload to Supabase (best-effort)
+                                if (api.loggedIn()) {
+                                    uploadFcmTokenToSupabase(api, token)
+                                    hasUploadedToken = true
+                                }
+                            }
+                    }
+                }
+            }
+            delay(3_000L)  // poll every 3 seconds
         }
     }
 
