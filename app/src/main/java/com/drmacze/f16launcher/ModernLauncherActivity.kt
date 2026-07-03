@@ -4953,7 +4953,7 @@ data class EarnedBadge(
  * Handles the "null" string quirk from org.json.optString (returns "null" string
  * when the value is JSONObject.NULL) by normalizing to "".
  */
-fun parseFeedPostData(o: JSONObject): FeedPostData {
+private fun parseFeedPostData(o: JSONObject): FeedPostData {
     return FeedPostData(
         id        = o.optString("id"),
         authorId  = o.optString("author_id"),
@@ -5587,7 +5587,7 @@ fun ProfileScreen(
                                     }
                                 },
                                 onVisitProfile = if (selectedTab == 1 && post.authorId != api.userId()) {
-                                    { uid -> onVisitProfile(uid) }
+                                    { onVisitProfile(post.authorId) }
                                 } else null
                             )
                         }
