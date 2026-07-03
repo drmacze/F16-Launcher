@@ -223,6 +223,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -930,13 +931,16 @@ fun MainShell(
     // On app open: get FCM token, upload to user_fcm_tokens table (if logged in).
     // Token refresh is handled by DLavieFirebaseMessagingService.onNewToken().
     //
-    // BUG FIX: Previously, this only ran once on app open BEFORE user logged in.
-    // Now we poll loggedIn state and upload token as soon as user becomes logged in.
+    // BUG FIX v5.4.2: Previously, this only ran once on app open BEFORE user logged in.
+    // Now we aggressively poll every 5 seconds and re-upload on every login transition.
     LaunchedEffect(Unit) {
         var hasUploadedToken = false
         var lastLoggedIn = false
+        var attemptCount = 0
         while (true) {
+            attemptCount++
             val loggedInNow = api.loggedIn()
+            android.util.Log.d("DLavieFCM", "Poll #$attemptCount: loggedIn=$loggedInNow hasUploaded=$hasUploadedToken lastLoggedIn=$lastLoggedIn")
             // Detect login transition (false → true): upload token
             if (loggedInNow && !lastLoggedIn) {
                 hasUploadedToken = false  // reset so we upload again
@@ -945,28 +949,26 @@ fun MainShell(
 
             if (loggedInNow && !hasUploadedToken) {
                 withContext(Dispatchers.IO) {
-                    runCatching {
-                        com.google.firebase.messaging.FirebaseMessaging.getInstance().token
-                            .addOnCompleteListener { task ->
-                                if (!task.isSuccessful) {
-                                    android.util.Log.w("DLavieFCM", "FCM token fetch failed", task.exception)
-                                    return@addOnCompleteListener
-                                }
-                                val token = task.result
-                                android.util.Log.d("DLavieFCM", "FCM Token: ${token.take(20)}...${token.takeLast(10)}")
-                                // Persist locally
-                                context.getSharedPreferences("dlavie_fcm", Context.MODE_PRIVATE)
-                                    .edit().putString("fcm_token", token).apply()
-                                // Upload to Supabase (best-effort)
-                                if (api.loggedIn()) {
-                                    uploadFcmTokenToSupabase(api, token)
-                                    hasUploadedToken = true
-                                }
-                            }
+                    try {
+                        android.util.Log.d("DLavieFCM", "Fetching FCM token...")
+                        val tokenResult = com.google.firebase.messaging.FirebaseMessaging.getInstance().token.await()
+                        android.util.Log.d("DLavieFCM", "FCM Token fetched: ${tokenResult.take(20)}...${tokenResult.takeLast(10)} (len=${tokenResult.length})")
+                        // Persist locally
+                        context.getSharedPreferences("dlavie_fcm", Context.MODE_PRIVATE)
+                            .edit().putString("fcm_token", tokenResult).apply()
+                        // Upload to Supabase
+                        if (api.loggedIn()) {
+                            android.util.Log.d("DLavieFCM", "Uploading token to Supabase as user ${api.userId()}...")
+                            uploadFcmTokenToSupabase(api, tokenResult)
+                            hasUploadedToken = true
+                            android.util.Log.d("DLavieFCM", "Upload complete!")
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("DLavieFCM", "FCM token fetch/upload failed", e)
                     }
                 }
             }
-            delay(3_000L)  // poll every 3 seconds
+            delay(5_000L)  // poll every 5 seconds (more aggressive)
         }
     }
 
