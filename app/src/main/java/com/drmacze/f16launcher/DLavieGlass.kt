@@ -277,7 +277,9 @@ fun YouTubeVideoBackground(
     muted: Boolean = true
 ) {
     val context = LocalContext.current
-    var videoError by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val videoErrorState = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val videoError: Boolean get() = videoErrorState.value
+    val setVideoError: (Boolean) -> Unit = { v -> videoErrorState.value = v }
 
     Box(modifier) {
         if (!videoError) {
@@ -305,7 +307,7 @@ fun YouTubeVideoBackground(
                             ) {
                                 super.onReceivedError(view, request, error)
                                 // Mark video as failed → fallback to thumbnail
-                                videoError = true
+                                setVideoError(true)
                             }
                         }
 
@@ -317,7 +319,7 @@ fun YouTubeVideoBackground(
                                 if (msg.contains("152") || msg.contains("101") ||
                                     msg.contains("150") || msg.contains("not available") ||
                                     msg.contains("embed")) {
-                                    videoError = true
+                                    setVideoError(true)
                                 }
                                 return super.onConsoleMessage(consoleMessage)
                             }
