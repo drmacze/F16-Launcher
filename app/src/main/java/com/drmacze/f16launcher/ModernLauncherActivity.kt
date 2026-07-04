@@ -5868,10 +5868,12 @@ fun ProfileScreen(
             ProfRow("Server",      "DLavie Cloud")
         }
 
-        // ── FCM Diagnostic Card (v5.4.3) ──────────────────────────────────────
+        // ── FCM Diagnostic Card (v5.4.3) — ADMIN/DEVELOPER ONLY ────────────────
         // Shows real-time FCM token + upload status on screen (no laptop needed).
-        // User can see exactly what's happening with push notification setup.
-        FcmDiagnosticCard(api = api, context = context)
+        // Only visible to admin & developer roles — regular users don't see this.
+        if (role == "admin" || role == "developer") {
+            FcmDiagnosticCard(api = api, context = context)
+        }
 
         // ── Akun & Keamanan (Account Settings — password/email/profile/pin) ──
         AccountSettingsCard(
