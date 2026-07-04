@@ -41,7 +41,9 @@ jobs:
           echo "ANDROID_HOME=${ANDROID_HOME}"
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+          # Install SDK 36 (Android 16) + build-tools 36.0.0 for Android 16 support
+          # Fall back to SDK 35 if 36 not available (for backward compat)
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" || "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Attach full base installer card
         shell: python
