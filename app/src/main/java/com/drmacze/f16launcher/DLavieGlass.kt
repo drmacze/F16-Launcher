@@ -113,113 +113,96 @@ fun AuroraBackground(
     showLogoParticles: Boolean = true,
     glowIntensity: Float = 1.0f
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "aurora")
+    // v6.0: Pure monochrome halftone — no colors, just black + white dots
+    MonochromeHalftoneBackground(modifier, showLogoParticles)
+}
 
-    // Slow drift for cyan glow (top-left → top-right)
-    val cyanX by infiniteTransition.animateFloat(
-        initialValue = 0.2f,
-        targetValue = 0.8f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(18000, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "cyan_x"
-    )
-    val cyanY by infiniteTransition.animateFloat(
-        initialValue = 0.1f,
-        targetValue = 0.35f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(22000, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "cyan_y"
-    )
-
-    // Counter drift for violet glow (bottom-right → bottom-left)
-    val violetX by infiniteTransition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 0.3f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(20000, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "violet_x"
-    )
-    val violetY by infiniteTransition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 0.6f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(24000, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "violet_y"
-    )
-
+/**
+ * v6.0 Monochrome Halftone Background
+ *
+ * Pure black background with white halftone dots varying in size:
+ * - Larger dots in center (creates "spotlight" 3D depth effect)
+ * - Smaller dots at edges (vignette feel)
+ * - Optional DLavie "D" logo particle overlay (white, low opacity)
+ *
+ * This is the SIGNATURE visual element — retro-digital/holographic aesthetic.
+ */
+@Composable
+fun MonochromeHalftoneBackground(
+    modifier: Modifier = Modifier,
+    showLogoParticles: Boolean = true
+) {
     Box(
         modifier
             .fillMaxSize()
-            .background(DLavieGlass.SpaceBlack)
+            .background(PureBlack)
     ) {
-        // Cyan glow (top)
+        // Halftone dot grid — dots vary in size based on distance from center
+        // Creates a 3D "spotlight" depth effect (bigger in center, smaller at edges)
         Canvas(Modifier.fillMaxSize()) {
-            val cx = size.width * cyanX
-            val cy = size.height * cyanY
-            val radius = size.minDimension * 0.7f
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        DLavieGlass.AuroraCyan.copy(alpha = 0.30f * glowIntensity),
-                        DLavieGlass.AuroraCyan.copy(alpha = 0.0f),
-                    ),
-                    center = Offset(cx, cy),
-                    radius = radius
-                ),
-                center = Offset(cx, cy),
-                radius = radius
-            )
+            val w = size.width
+            val h = size.height
+            val cx = w / 2f
+            val cy = h / 2f
+            val maxDist = Math.sqrt((cx * cx + cy * cy).toDouble()).toFloat()
+            val spacing = 24.dp.toPx()
+            val maxDotRadius = 2.5f
+            val minDotRadius = 0.3f
+
+            var y = spacing / 2f
+            var rowIdx = 0
+            while (y < h) {
+                val xOffset = if (rowIdx % 2 == 0) 0f else spacing / 2f
+                var x = spacing / 2f + xOffset
+                while (x < w) {
+                    // Distance from center → normalized 0 (center) to 1 (corner)
+                    val dx = x - cx
+                    val dy = y - cy
+                    val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                    val normalizedDist = (dist / maxDist).coerceIn(0f, 1f)
+
+                    // Dot radius: bigger at center, smaller at edges
+                    // Inverse of distance: 1 - normalizedDist
+                    val dotRadius = minDotRadius + (1f - normalizedDist) * (maxDotRadius - minDotRadius)
+
+                    // Opacity: higher at center, lower at edges
+                    val opacity = 0.04f + (1f - normalizedDist) * 0.08f
+
+                    drawCircle(
+                        color = Color.White.copy(alpha = opacity),
+                        radius = dotRadius,
+                        center = Offset(x, y)
+                    )
+
+                    x += spacing
+                }
+                y += spacing
+                rowIdx++
+            }
         }
 
-        // Violet glow (bottom)
-        Canvas(Modifier.fillMaxSize()) {
-            val cx = size.width * violetX
-            val cy = size.height * violetY
-            val radius = size.minDimension * 0.65f
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        DLavieGlass.AuroraViolet.copy(alpha = 0.22f * glowIntensity),
-                        DLavieGlass.AuroraViolet.copy(alpha = 0.0f),
-                    ),
-                    center = Offset(cx, cy),
-                    radius = radius
-                ),
-                center = Offset(cx, cy),
-                radius = radius
-            )
-        }
-
-        // DLavie logo particle pattern overlay (replaces halftone dots — brand motif)
+        // DLavie logo "D" particle overlay (white, very subtle)
         if (showLogoParticles) {
             DLavieLogoParticleBackground(
                 modifier = Modifier.fillMaxSize(),
-                logoColor = DLavieGlass.AuroraCyan,
-                logoSize = 32.dp,
-                spacing = 88.dp,
-                opacity = 0.08f,
+                logoColor = Color.White,
+                logoSize = 36.dp,
+                spacing = 90.dp,
+                opacity = 0.04f,
                 animateDrift = true
             )
         }
 
-        // Subtle vignette (darker edges)
+        // Subtle vignette (darker edges — pure black fade)
         Canvas(Modifier.fillMaxSize()) {
             drawRect(
                 brush = Brush.radialGradient(
                     colors = listOf(
                         Color.Transparent,
-                        Color.Black.copy(alpha = 0.45f)
+                        Color.Black.copy(alpha = 0.6f)
                     ),
                     center = Offset(size.width / 2, size.height / 2),
-                    radius = size.maxDimension * 0.75f
+                    radius = size.maxDimension * 0.8f
                 )
             )
         }

@@ -1400,6 +1400,16 @@ fun HomeScreen(
     val scope   = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
 
+    // ── Onboarding slider state (v6.0 — show on first open) ──
+    var showOnboarding by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("dlavie_onboarding", android.content.Context.MODE_PRIVATE)
+        val hasSeen = prefs.getBoolean("has_seen_onboarding_v6", false)
+        if (!hasSeen) {
+            showOnboarding = true
+        }
+    }
+
     // ── Setup state detection ──
     var setupState   by remember { mutableStateOf(SetupState.LOADING) }
     var gameInstalled by remember { mutableStateOf(false) }
@@ -1673,11 +1683,10 @@ fun HomeScreen(
                     RoundedCornerShape(28.dp)
                 )
         ) {
-            // YouTube video background (auto-play, muted, looping)
-            YouTubeVideoBackground(
-                videoId = "w2bCcMfAqHI",
+            // v6.0: Pure monochrome halftone background (no video — clean, elegant)
+            MonochromeHalftoneBackground(
                 modifier = Modifier.fillMaxSize(),
-                scrimAlpha = 0.55f
+                showLogoParticles = true
             )
 
             Column(
@@ -2101,6 +2110,19 @@ fun HomeScreen(
         Spacer(Modifier.height(8.dp))
     }
     } // end PullToRefreshBox
+
+    // ── Onboarding slider (v6.0 — shows on first open, dismissible) ──────────
+    if (showOnboarding) {
+        OnboardingSlider(
+            onDismiss = {
+                showOnboarding = false
+                context.getSharedPreferences("dlavie_onboarding", android.content.Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("has_seen_onboarding_v6", true)
+                    .apply()
+            }
+        )
+    }
 
     // ── Rating popup (Play Store style, 5 stars + optional review) ──────────────
     if (showRatingPopup) {
