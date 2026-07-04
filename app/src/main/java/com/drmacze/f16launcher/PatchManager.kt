@@ -294,7 +294,7 @@ object PatchManager {
         return backupRoot.listFiles()
             ?.filter { it.isDirectory }
             ?.map { it.name }
-            ?.sortedByDescending { parseVersion(it) }
+            ?.sortedByDescending { parseVersion(it).joinToString(".") }
             ?: emptyList()
     }
 
