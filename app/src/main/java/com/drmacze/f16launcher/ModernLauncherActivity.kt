@@ -4163,7 +4163,7 @@ private fun FeedPostCard(
     // ── Phase 2: detect video URL in body (YouTube/TikTok) ──
     val videoEmbed = remember(post.body) { extractVideoEmbed(post.body) }
 
-    TTTappableCard(onClick = { /* future: open post detail */ }) {
+    TTTappableCard(onClick = onOpenComments) {
         Column(Modifier.fillMaxWidth()) {
             // ── Image banner (16:9) — HANYA kalau image_url valid (tidak kosong / bukan "null"). ──
             // Fix: jangan render kotak gambar kosong untuk post tanpa image.
