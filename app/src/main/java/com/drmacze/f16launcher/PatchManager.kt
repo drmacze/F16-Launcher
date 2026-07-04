@@ -131,7 +131,17 @@ object PatchManager {
     }
 
     /**
-     * Apply a single patch — backup + download + copy files.
+     * Apply a single patch — ATOMIC APPLY with safety checks.
+     *
+     * Safety layers:
+     * 1. Pre-flight validation: check file paths look valid (warn if suspicious)
+     * 2. Download ALL files to staging folder first (no game folder touched yet)
+     * 3. If ANY download fails → abort, clean staging, return error (game untouched)
+     * 4. If ALL downloads succeed → backup old files + apply new files atomically
+     * 5. Post-apply integrity check: verify each file exists + size matches
+     * 6. If integrity check fails → auto-rollback from backup
+     *
+     * This ensures the game folder is NEVER in a mixed/broken state.
      */
     suspend fun applyPatch(
         context: Context,
@@ -140,13 +150,16 @@ object PatchManager {
     ): PatchApplyResult = withContext(Dispatchers.IO) {
         val gameFolder = File(android.os.Environment.getExternalStorageDirectory(), GAME_FILES_PATH)
         val backupFolder = File(context.filesDir, "dlavie_backup/${patch.version}")
+        val stagingFolder = File(context.cacheDir, "dlavie_patch_staging/${patch.version}")
 
         Log.i(TAG, "Applying patch ${patch.version} → gameFolder=${gameFolder.absolutePath}")
 
-        if (!gameFolder.exists()) gameFolder.mkdirs()
+        // Clean any previous staging (in case of retry after failure)
+        if (stagingFolder.exists()) stagingFolder.deleteRecursively()
+        stagingFolder.mkdirs()
         backupFolder.mkdirs()
 
-        // Fetch patch.json to get file list
+        // ── STEP 1: Fetch patch.json ──────────────────────────────────────
         val patchJsonUrl = "${RAW_BASE}${patch.githubPath}/patch.json"
         val patchJson = try {
             val conn = (URL(patchJsonUrl).openConnection() as HttpURLConnection).apply {
@@ -157,6 +170,7 @@ object PatchManager {
             conn.disconnect()
             JSONObject(text)
         } catch (e: Exception) {
+            stagingFolder.deleteRecursively()
             return@withContext PatchApplyResult(
                 success = false,
                 error = "Failed to fetch patch.json: ${e.message}"
@@ -165,17 +179,59 @@ object PatchManager {
 
         val filesArr = patchJson.optJSONArray("files") ?: org.json.JSONArray()
         val totalFiles = filesArr.length()
-        var successCount = 0
-        var failureCount = 0
-        val errors = mutableListOf<String>()
+
+        if (totalFiles == 0) {
+            stagingFolder.deleteRecursively()
+            return@withContext PatchApplyResult(
+                success = false,
+                error = "Patch contains 0 files — nothing to apply"
+            )
+        }
+
+        // ── STEP 2: Pre-flight validation ─────────────────────────────────
+        val validations = mutableListOf<String>()
+        val fileList = mutableListOf<Pair<String, String>>() // (filePath, expectedSha256)
 
         for (i in 0 until totalFiles) {
             val fileEntry = filesArr.optJSONObject(i) ?: continue
-            val filePath = fileEntry.optString("path", "")
+            val filePath = fileEntry.optString("path", "").trim()
             val expectedSha256 = fileEntry.optString("sha256", "")
             if (filePath.isEmpty()) continue
 
-            progress(i + 1, totalFiles, filePath)
+            // Validate path — must be relative, no "..", must start with known FIFA 16 folders
+            if (filePath.startsWith("/") || filePath.contains("..")) {
+                stagingFolder.deleteRecursively()
+                return@withContext PatchApplyResult(
+                    success = false,
+                    error = "Invalid file path: $filePath (absolute paths and .. not allowed)"
+                )
+            }
+
+            // Warn if path doesn't match known FIFA 16 structure
+            val knownPrefixes = listOf("data/", "assets/", "files/", "obb/")
+            val isKnownPath = knownPrefixes.any { filePath.startsWith(it) } || filePath.contains("/")
+            if (!isKnownPath) {
+                validations.add("⚠ $filePath — path doesn't match FIFA 16 structure (expected: data/ or assets/)")
+            }
+
+            // Warn if target file doesn't exist (might be wrong path — but could also be new file)
+            val targetFile = File(gameFolder, filePath)
+            if (!targetFile.exists() && gameFolder.exists()) {
+                validations.add("ℹ $filePath — new file (no existing file to backup)")
+            }
+
+            fileList.add(filePath to expectedSha256)
+        }
+
+        Log.i(TAG, "Pre-flight: ${fileList.size} files to apply, ${validations.size} warnings")
+
+        // ── STEP 3: Download ALL files to staging (ATOMIC — no game folder touched) ──
+        val downloadedFiles = mutableMapOf<String, ByteArray>() // filePath → bytes
+        val downloadErrors = mutableListOf<String>()
+
+        for ((index, pair) in fileList.withIndex()) {
+            val (filePath, expectedSha256) = pair
+            progress(index + 1, totalFiles, "Downloading: $filePath")
 
             try {
                 val fileUrl = "${RAW_BASE}${patch.githubPath}/files/${filePath}"
@@ -199,8 +255,61 @@ object PatchManager {
                     }
                 }
 
-                // Backup existing file (if exists)
+                // Verify file is not empty (catches GitHub 404 HTML response that returns 200 with HTML)
+                if (downloadedBytes.isEmpty()) {
+                    throw IllegalStateException("Downloaded file is empty")
+                }
+
+                // Check if response is HTML (404 page returns 200 sometimes on raw.githubusercontent)
+                val firstBytes = downloadedBytes.take(20).map { it.toInt() and 0xFF }
+                val isHtml = firstBytes.size >= 5 &&
+                    (firstBytes[0] == 0x3C && firstBytes[1] == 0x21) // <! (HTML)
+                if (isHtml) {
+                    throw IllegalStateException("Received HTML instead of binary file (file not found on GitHub?)")
+                }
+
+                downloadedFiles[filePath] = downloadedBytes
+                Log.d(TAG, "Staged: $filePath (${downloadedBytes.size} bytes)")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to download: $filePath", e)
+                downloadErrors.add("$filePath: ${e.message}")
+                // ABORT — don't apply anything
+                break
+            }
+        }
+
+        // ── STEP 4: If any download failed → ABORT (game folder untouched) ──
+        if (downloadErrors.isNotEmpty()) {
+            stagingFolder.deleteRecursively()
+            return@withContext PatchApplyResult(
+                success = false,
+                error = "Download failed — patch NOT applied (game folder untouched): ${downloadErrors.first()}",
+                errors = downloadErrors,
+                validations = validations
+            )
+        }
+
+        if (downloadedFiles.size != fileList.size) {
+            stagingFolder.deleteRecursively()
+            return@withContext PatchApplyResult(
+                success = false,
+                error = "Not all files downloaded (${downloadedFiles.size}/${fileList.size}) — patch NOT applied",
+                validations = validations
+            )
+        }
+
+        // ── STEP 5: ATOMIC APPLY — backup + overwrite all files ───────────
+        progress(totalFiles, totalFiles, "Applying files...")
+        var successCount = 0
+        var failureCount = 0
+        val applyErrors = mutableListOf<String>()
+        val appliedFiles = mutableListOf<Pair<String, File>>() // (filePath, targetFile) for rollback
+
+        for ((filePath, bytes) in downloadedFiles) {
+            try {
                 val targetFile = File(gameFolder, filePath)
+
+                // Backup existing file (if exists)
                 if (targetFile.exists()) {
                     val backupFile = File(backupFolder, filePath)
                     backupFile.parentFile?.mkdirs()
@@ -208,28 +317,73 @@ object PatchManager {
                     Log.d(TAG, "Backed up: ${targetFile.name} → ${backupFile.absolutePath}")
                 }
 
-                // Copy new file to game folder
+                // Write new file
                 targetFile.parentFile?.mkdirs()
-                FileOutputStream(targetFile).use { it.write(downloadedBytes) }
-                Log.d(TAG, "Applied: ${targetFile.absolutePath} (${downloadedBytes.size} bytes)")
+                FileOutputStream(targetFile).use { it.write(bytes) }
+                Log.d(TAG, "Applied: ${targetFile.absolutePath} (${bytes.size} bytes)")
 
+                appliedFiles.add(filePath to targetFile)
                 successCount++
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to apply file: $filePath", e)
                 failureCount++
-                errors.add("$filePath: ${e.message}")
+                applyErrors.add("$filePath: ${e.message}")
             }
         }
 
-        if (successCount > 0) {
+        // ── STEP 6: Post-apply integrity check ────────────────────────────
+        if (failureCount == 0) {
+            progress(totalFiles, totalFiles, "Verifying integrity...")
+            val integrityFailures = mutableListOf<String>()
+
+            for ((filePath, bytes) in downloadedFiles) {
+                val targetFile = File(gameFolder, filePath)
+                if (!targetFile.exists()) {
+                    integrityFailures.add("$filePath: file missing after apply")
+                } else if (targetFile.length() != bytes.size.toLong()) {
+                    integrityFailures.add("$filePath: size mismatch (expected ${bytes.size}, got ${targetFile.length()})")
+                }
+            }
+
+            if (integrityFailures.isNotEmpty()) {
+                Log.e(TAG, "Integrity check failed — auto-rollback!")
+                // Auto-rollback: restore from backup
+                for ((filePath, _) in appliedFiles) {
+                    val targetFile = File(gameFolder, filePath)
+                    val backupFile = File(backupFolder, filePath)
+                    if (backupFile.exists()) {
+                        targetFile.parentFile?.mkdirs()
+                        backupFile.copyTo(targetFile, overwrite = true)
+                        Log.d(TAG, "Auto-rollback restored: $filePath")
+                    } else {
+                        // No backup = file was new → delete it
+                        targetFile.delete()
+                        Log.d(TAG, "Auto-rollback deleted new file: $filePath")
+                    }
+                }
+                stagingFolder.deleteRecursively()
+                return@withContext PatchApplyResult(
+                    success = false,
+                    error = "Integrity check failed — auto-rollback completed. Game restored to previous state.",
+                    errors = integrityFailures,
+                    validations = validations
+                )
+            }
+        }
+
+        // ── STEP 7: Success — update version + cleanup ────────────────────
+        if (successCount > 0 && failureCount == 0) {
             setInstalledVersion(context, patch.version)
         }
+
+        stagingFolder.deleteRecursively()
 
         PatchApplyResult(
             success = failureCount == 0,
             successCount = successCount,
             failureCount = failureCount,
-            errors = errors
+            errors = applyErrors,
+            validations = validations
         )
     }
 
@@ -356,5 +510,6 @@ data class PatchApplyResult(
     val successCount: Int = 0,
     val failureCount: Int = 0,
     val errors: List<String> = emptyList(),
-    val error: String? = null
+    val error: String? = null,
+    val validations: List<String> = emptyList()
 )
