@@ -1175,6 +1175,11 @@ fun MainShell(
             )
         }
 
+        // ── Floating ChatBot (v6.4) — always visible when logged in ──
+        if (!showGameDetail && !showSettings && visitingUserId == null && api.loggedIn()) {
+            FloatingChatBot(api = api)
+        }
+
         // ── Notification banner overlay (slides down from the top) ──
         // Sembunyikan saat GameDetail / Settings / Visit aktif supaya tidak menumpuk header.
         if (!showGameDetail && !showSettings && visitingUserId == null) {
