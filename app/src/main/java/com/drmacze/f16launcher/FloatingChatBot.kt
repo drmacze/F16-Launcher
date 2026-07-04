@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.*
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.*
@@ -284,7 +285,7 @@ private fun ReportForm(api: CommunityApi, onBack: () -> Unit, onClose: () -> Uni
                                 unfocusedTextColor = Color.White,
                                 cursorColor = Color.White
                             ),
-                            modifier = Modifier.fillMaxWidth().heightIn(min: 80.dp)
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp)
                         )
                     }
                     Spacer(Modifier.height(16.dp))
@@ -308,7 +309,7 @@ private fun ReportForm(api: CommunityApi, onBack: () -> Unit, onClose: () -> Uni
                                 unfocusedTextColor = Color.White,
                                 cursorColor = Color.White
                             ),
-                            modifier = Modifier.fillMaxWidth().heightIn(min: 60.dp)
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp)
                         )
                     }
                     Spacer(Modifier.height(16.dp))
