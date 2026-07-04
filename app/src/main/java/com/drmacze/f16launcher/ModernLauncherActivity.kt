@@ -113,6 +113,7 @@ import androidx.compose.material.icons.rounded.HowToReg
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.PushPin
@@ -960,6 +961,8 @@ fun MainShell(
                         if (api.loggedIn()) {
                             android.util.Log.d("DLavieFCM", "Uploading token to Supabase as user ${api.userId()}...")
                             uploadFcmTokenToSupabase(api, tokenResult)
+                            // Also upload android_version to profiles table (for Dev Dashboard Users tab)
+                            uploadAndroidVersion(api)
                             hasUploadedToken = true
                             android.util.Log.d("DLavieFCM", "Upload complete!")
                         } else {
@@ -5890,6 +5893,9 @@ fun ProfileScreen(
             ProfRow("Server",      "DLavie Cloud")
         }
 
+        // ── Language Settings Card (v6.2) ──────────────────────────────────────
+        LanguageSettingsCard(context = context)
+
         // ── FCM Diagnostic Card (v5.4.3) — ADMIN/DEVELOPER ONLY ────────────────
         // Shows real-time FCM token + upload status on screen (no laptop needed).
         // Only visible to admin & developer roles — regular users don't see this.
@@ -7837,5 +7843,149 @@ fun FcmDiagnosticCard(api: CommunityApi, context: android.content.Context) {
                 fontSize = 11.sp
             )
         }
+    }
+}
+
+/**
+ * Language Settings Card — shows current language + toggle to switch.
+ * Auto-detects device language on first launch.
+ * User can manually override with English/Indonesian toggle.
+ */
+@Composable
+fun LanguageSettingsCard(context: android.content.Context) {
+    var currentLang by remember { mutableStateOf(LanguageManager.getCurrentLanguage(context)) }
+    var autoDetect by remember { mutableStateOf(LanguageManager.isAutoDetectEnabled(context)) }
+    val haptic = LocalHapticFeedback.current
+
+    GlassCard {
+        TTSectionHeader(title = "Bahasa", icon = Icons.Rounded.Language)
+        Spacer(Modifier.height(TTSpacing.sm))
+
+        // Current language display
+        ProfRow("Bahasa Saat Ini", LanguageManager.getCurrentLanguageName(context))
+
+        if (autoDetect) {
+            ProfRow("Mode", "Auto-detect (mengikuti perangkat)")
+        }
+
+        Spacer(Modifier.height(TTSpacing.md))
+
+        // Auto-detect toggle
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Auto-detect", color = TextWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text("Ikuti bahasa perangkat", color = SubText, fontSize = 11.sp)
+            }
+            Switch(
+                checked = autoDetect,
+                onCheckedChange = { enabled ->
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    autoDetect = enabled
+                    if (enabled) {
+                        LanguageManager.enableAutoDetect(context)
+                        currentLang = LanguageManager.getCurrentLanguage(context)
+                    }
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = TextWhite,
+                    checkedTrackColor = TextWhite.copy(alpha = 0.3f),
+                    uncheckedThumbColor = SubText,
+                    uncheckedTrackColor = Surface3
+                )
+            )
+        }
+
+        // Manual language selection (only when auto-detect is off)
+        if (!autoDetect) {
+            Spacer(Modifier.height(TTSpacing.md))
+            Text("Pilih Bahasa", color = SoftText, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(TTSpacing.xs))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+            ) {
+                LanguageManager.getSupportedLanguages().forEach { lang ->
+                    val isSelected = currentLang == lang.code
+                    Surface(
+                        Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                LanguageManager.setLanguage(context, lang.code)
+                                currentLang = lang.code
+                            },
+                        color = if (isSelected) TextWhite.copy(alpha = 0.15f) else Surface1,
+                        border = BorderStroke(
+                            1.dp,
+                            if (isSelected) TextWhite.copy(alpha = 0.5f) else GlassStroke
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            Modifier.padding(vertical = 12.dp, horizontal = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                Icons.Rounded.Language,
+                                contentDescription = null,
+                                tint = if (isSelected) TextWhite else SubText,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                lang.nativeName,
+                                color = if (isSelected) TextWhite else SoftText,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(TTSpacing.xs))
+            Text(
+                "Restart aplikasi untuk menerapkan perubahan bahasa.",
+                color = SubText,
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
+/**
+ * Upload Android version to profiles table (for Dev Dashboard Users tab).
+ * Best-effort — silently fails if error.
+ */
+fun uploadAndroidVersion(api: CommunityApi) {
+    try {
+        val androidVersion = android.os.Build.VERSION.RELEASE ?: return
+        val userId = api.userId()
+        if (userId.isEmpty()) return
+
+        val payload = org.json.JSONObject().apply {
+            put("android_version", androidVersion)
+        }
+
+        val url = java.net.URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/profiles?id=eq.${userId}")
+        val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+            requestMethod = "PATCH"
+            connectTimeout = 15000
+            readTimeout = 15000
+            doOutput = true
+            setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+            setRequestProperty("Authorization", "Bearer ${api.token()}")
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Prefer", "return=minimal")
+        }
+        conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+        val code = conn.responseCode
+        conn.disconnect()
+        if (code in 200..299) {
+            android.util.Log.d("DLavieFCM", "Android version uploaded: $androidVersion")
+        }
+    } catch (e: Exception) {
+        android.util.Log.w("DLavieFCM", "Android version upload failed (ignored): ${e.message}")
     }
 }
