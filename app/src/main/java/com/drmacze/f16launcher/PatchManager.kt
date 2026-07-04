@@ -33,6 +33,8 @@ object PatchManager {
     private const val TAG = "DLaviePatch"
     private const val MANIFEST_URL = "https://raw.githubusercontent.com/drmacze/DLavie-Patches/main/manifest.json"
     private const val RAW_BASE = "https://raw.githubusercontent.com/drmacze/DLavie-Patches/main/"
+    private const val DEFAULT_SOURCE_REPO = "drmacze/F16"
+    private const val DEFAULT_SOURCE_BRANCH = "main"
     private const val GAME_FILES_PATH = "Android/data/com.ea.gp.fifaworld/files/"
     private const val PREFS_NAME = "dlavie_patch_prefs"
 
@@ -111,7 +113,9 @@ object PatchManager {
                         baseVersion = p.optString("base_version", "").ifEmpty { null },
                         status = status,
                         releasedAt = p.optString("released_at", ""),
-                        changelog = p.optString("changelog", "")
+                        changelog = p.optString("changelog", ""),
+                        sourceRepo = p.optString("source_repo", "").ifEmpty { null },
+                        sourceBranch = p.optString("source_branch", "").ifEmpty { null }
                     )
                 )
             }
@@ -226,6 +230,12 @@ object PatchManager {
         Log.i(TAG, "Pre-flight: ${fileList.size} files to apply, ${validations.size} warnings")
 
         // ── STEP 3: Download ALL files to staging (ATOMIC — no game folder touched) ──
+        // Cross-repo support: if patch has source_repo, download from that repo (e.g., drmacze/F16)
+        // Otherwise, download from DLavie-Patches repo (github_path/files/...)
+        val sourceRepo = patch.sourceRepo ?: DEFAULT_SOURCE_REPO
+        val sourceBranch = patch.sourceBranch ?: DEFAULT_SOURCE_BRANCH
+        val isCrossRepo = patch.sourceRepo != null || patch.githubPath.isEmpty()
+
         val downloadedFiles = mutableMapOf<String, ByteArray>() // filePath → bytes
         val downloadErrors = mutableListOf<String>()
 
@@ -234,7 +244,18 @@ object PatchManager {
             progress(index + 1, totalFiles, "Downloading: $filePath")
 
             try {
-                val fileUrl = "${RAW_BASE}${patch.githubPath}/files/${filePath}"
+                // Determine download URL:
+                // - Cross-repo: https://raw.githubusercontent.com/{sourceRepo}/{sourceBranch}/{sourcePath}
+                // - Same-repo: https://raw.githubusercontent.com/drmacze/DLavie-Patches/main/{githubPath}/files/{filePath}
+                val fileUrl = if (isCrossRepo) {
+                    // For cross-repo, source_path in patch.json tells which file to download from F16 repo
+                    // If source_path not specified, use filePath as source_path
+                    val sourcePath = filesArr.optJSONObject(index)?.optString("source_path", filePath) ?: filePath
+                    "https://raw.githubusercontent.com/$sourceRepo/$sourceBranch/$sourcePath"
+                } else {
+                    "${RAW_BASE}${patch.githubPath}/files/${filePath}"
+                }
+
                 Log.d(TAG, "Downloading: $fileUrl")
 
                 val conn = (URL(fileUrl).openConnection() as HttpURLConnection).apply {
@@ -502,7 +523,9 @@ data class PatchInfo(
     val baseVersion: String?,
     val status: String,
     val releasedAt: String,
-    val changelog: String
+    val changelog: String,
+    val sourceRepo: String? = null,
+    val sourceBranch: String? = null
 )
 
 data class PatchApplyResult(
