@@ -4316,18 +4316,29 @@ private fun FeedPostCard(
                     }
                     Spacer(Modifier.width(TTSpacing.sm))
                     Column(Modifier.weight(1f)) {
-                        Text(
-                            author?.displayName?.ifBlank { author.username } ?: "Anonim",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.clickable(enabled = onVisitProfile != null && author?.id?.isNotBlank() == true) {
-                                val aid = author?.id ?: return@clickable
-                                if (aid.isNotBlank()) onVisitProfile?.invoke(aid)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(
+                                author?.displayName?.ifBlank { author.username } ?: "Anonim",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.clickable(enabled = onVisitProfile != null && author?.id?.isNotBlank() == true) {
+                                    val aid = author?.id ?: return@clickable
+                                    if (aid.isNotBlank()) onVisitProfile?.invoke(aid)
+                                }
+                            )
+                            // Verified badge for admin/developer (Instagram-style blue check)
+                            if (author?.role == "admin" || author?.role == "developer") {
+                                Icon(
+                                    Icons.Rounded.Verified,
+                                    contentDescription = "Verified",
+                                    tint = TextWhite,
+                                    modifier = Modifier.size(13.dp)
+                                )
                             }
-                        )
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.Schedule, null, tint = SubText, modifier = Modifier.size(11.dp))
                             Spacer(Modifier.width(3.dp))
