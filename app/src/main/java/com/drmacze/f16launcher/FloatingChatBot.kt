@@ -779,6 +779,8 @@ private suspend fun uploadAndSendImage(api: CommunityApi, ticketId: String, uri:
                 conn.outputStream.use { it.write(payload.toString().toByteArray()) }
                 conn.responseCode
                 conn.disconnect()
+            } else {
+                Log.w("DLavieChat", "Image upload returned null — skipping message send")
             }
         } catch (e: Exception) {
             Log.e("DLavieChat", "uploadAndSendImage failed", e)
