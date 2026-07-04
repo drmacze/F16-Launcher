@@ -5059,50 +5059,56 @@ private fun CommentsBottomSheet(
                         textStyle = TextStyle(color = Color.White, fontSize = 13.sp, lineHeight = 18.sp)
                     )
                     Spacer(Modifier.width(8.dp))
-                    IconButton(
-                        onClick = {
-                            val text = commentText.trim()
-                            if (text.isEmpty() || sending) return@IconButton
-                            sending = true
-                            scope.launch {
-                                try {
-                                    withContext(Dispatchers.IO) { api.addComment(postId, text) }
-                                    // Optimistic: tambahkan ke list lokal (display name = current user)
-                                    val me = CommentItem(
-                                        id          = "local_${System.currentTimeMillis()}",
-                                        userId      = api.userId(),
-                                        username    = api.username().ifBlank { "you" },
-                                        displayName = api.displayName().ifBlank { "You" },
-                                        body        = text,
-                                        createdAt   = java.text.SimpleDateFormat(
-                                            "yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US
-                                        ).format(java.util.Date())
-                                    )
-                                    comments = comments + me
-                                    commentText = ""
-                                    onCommentAdded()
-                                } catch (t: Throwable) {
-                                    toast("Gagal: ${t.message}")
-                                } finally {
-                                    sending = false
+                    // Send button — use Surface+clickable instead of IconButton for reliability
+                    Surface(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .clickable(enabled = commentText.isNotBlank() && !sending) {
+                                val text = commentText.trim()
+                                if (text.isEmpty() || sending) return@clickable
+                                sending = true
+                                scope.launch {
+                                    try {
+                                        withContext(Dispatchers.IO) { api.addComment(postId, text) }
+                                        val me = CommentItem(
+                                            id          = "local_${System.currentTimeMillis()}",
+                                            userId      = api.userId(),
+                                            username    = api.username().ifBlank { "you" },
+                                            displayName = api.displayName().ifBlank { "You" },
+                                            body        = text,
+                                            createdAt   = java.text.SimpleDateFormat(
+                                                "yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US
+                                            ).format(java.util.Date())
+                                        )
+                                        comments = comments + me
+                                        commentText = ""
+                                        onCommentAdded()
+                                    } catch (t: Throwable) {
+                                        toast("Gagal: ${t.message}")
+                                    } finally {
+                                        sending = false
+                                    }
                                 }
-                            }
-                        },
-                        enabled = commentText.isNotBlank() && !sending
+                            },
+                        shape = CircleShape,
+                        color = if (commentText.isNotBlank() && !sending) Color.White else Color.White.copy(alpha = 0.15f)
                     ) {
-                        if (sending) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(
-                                Icons.Rounded.Send,
-                                contentDescription = "Kirim komentar",
-                                tint = if (commentText.isNotBlank()) Color.White else SubText,
-                                modifier = Modifier.size(22.dp)
-                            )
+                        Box(contentAlignment = Alignment.Center) {
+                            if (sending) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = Color.Black,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Rounded.Send,
+                                    contentDescription = "Kirim komentar",
+                                    tint = if (commentText.isNotBlank()) Color.Black else SubText,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                 }
