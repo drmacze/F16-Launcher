@@ -7582,9 +7582,26 @@ fun launchGame(context: android.content.Context) {
             }
         }.start()
     } catch (_: Throwable) { }
-    val intent = context.packageManager.getLaunchIntentForPackage(GAME_PKG)
-    if (intent != null) context.startActivity(intent)
-    else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(FIFA_APK_URL)))
+
+    // v6.3: Launch FIFA 16 via explicit component name.
+    // FIFA 16 APK no longer has LAUNCHER category (removed for launcher-only access),
+    // so getLaunchIntentForPackage returns null. We use explicit component intent instead.
+    val intent = android.content.Intent().apply {
+        setClassName(GAME_PKG, "com.byfen.downloadzipsdk.MainActivity")
+        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        // Fallback: try getLaunchIntentForPackage (for older FIFA 16 APKs that still have LAUNCHER)
+        val fallbackIntent = context.packageManager.getLaunchIntentForPackage(GAME_PKG)
+        if (fallbackIntent != null) {
+            context.startActivity(fallbackIntent)
+        } else {
+            // Last resort: open download page
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(FIFA_APK_URL)))
+        }
+    }
 }
 
 // ─── Push Notification polling helpers (Module 3) ────────────────────────────────
