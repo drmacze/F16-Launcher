@@ -552,6 +552,18 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
                                         )
                                         lastActivityTime = System.currentTimeMillis()
                                         inactivityWarningSent = false
+
+                                        // If assistant mode → call AI Edge Function
+                                        if (isAssistant) {
+                                            val aiResponse = callAIAssistant(text, messages.map { mapOf("role" to it.senderType, "text" to it.body) })
+                                            messages = messages + ChatMessage(
+                                                id = UUID.randomUUID().toString(),
+                                                senderType = "bot",
+                                                body = aiResponse,
+                                                timestamp = System.currentTimeMillis()
+                                            )
+                                        }
+
                                         sending = false
                                     }
                                 }
@@ -902,5 +914,49 @@ private fun closeTicket(api: CommunityApi, ticketId: String) {
         conn.disconnect()
     } catch (e: Exception) {
         Log.e("DLavieChat", "closeTicket failed", e)
+    }
+}
+
+/**
+ * Call DLavie Assistant AI via Supabase Edge Function.
+ * Falls back to rule-based responses if Edge Function fails.
+ */
+private suspend fun callAIAssistant(message: String, history: List<Map<String, String>>): String {
+    return withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject().apply {
+                put("message", message)
+                put("history", JSONArray().apply {
+                    history.forEach { msg ->
+                        put(JSONObject().apply {
+                            put("role", msg["role"] ?: "user")
+                            put("text", msg["text"] ?: "")
+                        })
+                    }
+                })
+            }
+            val conn = (URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/functions/v1/dlavie-assistant").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 30000
+                readTimeout = 60000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+            }
+            conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+            val code = conn.responseCode
+            if (code in 200..299) {
+                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+                val json = JSONObject(text)
+                json.optString("response", "Maaf, saya tidak bisa memproses permintaan Anda saat ini.")
+            } else {
+                conn.disconnect()
+                "Maaf, assistant sedang tidak tersedia. Coba lagi nanti atau gunakan Live Chat."
+            }
+        } catch (e: Exception) {
+            Log.e("DLavieChat", "callAIAssistant failed", e)
+            "Maaf, terjadi kesalahan. Silakan coba lagi atau hubungi developer via Live Chat."
+        }
     }
 }
