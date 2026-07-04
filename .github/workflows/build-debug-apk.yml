@@ -49,14 +49,18 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
+          # DLavieHubActivity.kt was removed in v6.1.1 cleanup — skip patch if file doesn't exist
           p = Path("app/src/main/java/com/drmacze/f16launcher/DLavieHubActivity.kt")
-          s = p.read_text()
-          hook = "        DLavieBaseInstallCard(isGameInstalled = installed)\n"
-          needle = '        HubDataRow("FIFA 16 Mobile", if (installed) "Installed" else "Not found", if (installed) "READY" else "MISSING", if (installed) HubGreen else HubRed, if (installed) HubMark.Check else HubMark.Alert)\n'
-          if hook not in s and needle in s:
-              s = s.replace(needle, hook + needle)
-              p.write_text(s)
-          print("DLavie full base installer card attached")
+          if not p.exists():
+              print("DLavieHubActivity.kt not found (removed in v6.1.1) — skipping base installer card patch")
+          else:
+              s = p.read_text()
+              hook = "        DLavieBaseInstallCard(isGameInstalled = installed)\n"
+              needle = '        HubDataRow("FIFA 16 Mobile", if (installed) "Installed" else "Not found", if (installed) "READY" else "MISSING", if (installed) HubGreen else HubRed, if (installed) HubMark.Check else HubMark.Alert)\n'
+              if hook not in s and needle in s:
+                  s = s.replace(needle, hook + needle)
+                  p.write_text(s)
+              print("DLavie full base installer card attached")
 
       - name: Patch guided launcher UX
         run: python .github/scripts/patch_guided_ux.py
