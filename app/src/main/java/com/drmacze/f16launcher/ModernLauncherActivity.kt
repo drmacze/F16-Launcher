@@ -8455,7 +8455,7 @@ private fun GameListItem(game: GameItem, onClick: () -> Unit) {
     }
 }
 
-private data class GameItem(
+data class GameItem(
     val title: String,
     val subtitle: String,
     val packageName: String,

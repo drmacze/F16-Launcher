@@ -103,6 +103,18 @@ private val PanelRed       = Color(0xFFFF5555)
 private val PanelYellow    = Color(0xFFFFFF88)
 private val PanelDim       = Color(0xCC000000)  // 80% black for background
 
+/** Step definition for GameActionPanel — built per render based on game state. */
+private data class StepDef(
+    val num: Int,
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector,
+    val done: Boolean,
+    val actionable: Boolean,
+    val actionText: String,
+    val isPrimary: Boolean = false
+)
+
 @Composable
 fun GameActionPanel(
     game: GameItem,
@@ -182,18 +194,7 @@ fun GameActionPanel(
         }
     }
 
-    // ── Step definitions ──
-    data class StepDef(
-        val num: Int,
-        val title: String,
-        val subtitle: String,
-        val icon: ImageVector,
-        val done: Boolean,
-        val actionable: Boolean,
-        val actionText: String,
-        val isPrimary: Boolean = false
-    )
-
+    // ── Step definitions (built per render based on current state) ──
     val steps = remember(apkInstalled, dataReady, installing, game) {
         val list = mutableListOf<StepDef>()
 
@@ -517,7 +518,7 @@ fun GameActionPanel(
 
 @Composable
 private fun StepRow(
-    step: GameActionPanel.StepDef,
+    step: StepDef,
     onAction: () -> Unit
 ) {
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
