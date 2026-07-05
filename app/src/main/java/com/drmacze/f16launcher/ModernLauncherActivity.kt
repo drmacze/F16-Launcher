@@ -1956,15 +1956,15 @@ fun HomeScreen(
             DLavieGlass.SpaceSurface
         )
         val ttButtonLabel: String = when {
-            maintenanceBlocked -> "Diblokir"
-            gameInstalled      -> "Mainkan"
-            else               -> t.getFifa
+            maintenanceBlocked -> t.blockedMaintenance
+            gameInstalled      -> t.play
+            else               -> t.gameHub  // v7.3.6: "Games" — navigate to GameHub, not download
         }
         val ttButtonEnabled: Boolean = !maintenanceBlocked
         val ttButtonClick: () -> Unit = when {
             maintenanceBlocked -> ({ })
             gameInstalled      -> ({ launchGame(context) })
-            else               -> ({ if (dlProgress < 0f) startDownload() })
+            else               -> ({ onNav(Page.GameHub) })  // v7.3.6: go to GameHub for install
         }
         // Phase 2: tap card body → navigate ke GameDetailScreen (pass state ke MainShell)
         // v6.8.1: tambah myRating supaya Rate button di detail screen tahu state-nya.
