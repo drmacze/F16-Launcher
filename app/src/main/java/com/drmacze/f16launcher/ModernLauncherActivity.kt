@@ -5556,7 +5556,8 @@ fun ProfileScreen(
 
             // ── Avatar (clean static, no rotation/glow) ──
             Box(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = (-40).dp)
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp)
+                    .offset(y = (-40).dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.Bottom,
