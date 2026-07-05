@@ -15,16 +15,16 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 36
-        versionCode 154
-        versionName "7.3.8-no-install-in-beranda"
-        versionName "7.3.8-no-install-in-beranda"
-        versionName "7.3.8-no-install-in-beranda"
-        versionCode 154
-        versionName "7.3.8-no-install-in-beranda"
-        versionCode 154
-        versionName "7.3.8-no-install-in-beranda"
-        versionCode 154
-        versionName "7.3.8-no-install-in-beranda"
+        versionCode 155
+        versionName "7.4.0-clean-profile-redesign"
+        versionName "7.4.0-clean-profile-redesign"
+        versionName "7.4.0-clean-profile-redesign"
+        versionCode 155
+        versionName "7.4.0-clean-profile-redesign"
+        versionCode 155
+        versionName "7.4.0-clean-profile-redesign"
+        versionCode 155
+        versionName "7.4.0-clean-profile-redesign"
         buildConfigField "String", "SUPABASE_URL", '"https://lvmucsxbmadtsgrxuwmo.supabase.co"'
         buildConfigField "String", "SUPABASE_ANON_KEY", '"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2bXVjc3hibWFkdHNncnh1d21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODUyODksImV4cCI6MjA5ODU2MTI4OX0.y-1sE6uYTn4Wbter6g6NozY6uojzD5x9YVeYif-5nJs"'
         buildConfigField "String", "SUPABASE_PUB_KEY", '"sb_publishable_aYFlbWVJMErOHwPsli33QQ_INJD9mhx"'

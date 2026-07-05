@@ -116,6 +116,7 @@ import androidx.compose.material.icons.rounded.HowToReg
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayCircle
@@ -5516,437 +5517,220 @@ fun ProfileScreen(
     ) {
 
         // ════════════════════════════════════════════════════════════════════
-        // v7.3.0: REDESIGNED PROFILE HEADER — Steam/TapTap/PS5 style
-        // Cover banner (halftone) + overlapping avatar + name/ID + stats cards
+        // v7.4.0: CLEAN MODERN PROFILE — no gimmicks, pure professional
         // ════════════════════════════════════════════════════════════════════
         if (profileLoading) {
             TTGameCardSkeleton()
         } else {
-            Box(Modifier.fillMaxWidth()) {
-                // ── Cover banner (halftone gradient, 140dp) ──
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(140.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(PureBlack, Carbon, Surface1)
-                            )
-                        )
-                ) {
-                    HalftoneBackground(
-                        modifier = Modifier.fillMaxSize(),
-                        dotSize = 2.5f,
-                        spacing = 18f,
-                        alpha = 0.5f
-                    )
-                    // Subtle top-left spotlight glow
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.radialGradient(
-                                    colors = listOf(
-                                        Color.White.copy(alpha = 0.06f),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                    )
-                    // Settings icon (top-right)
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(16.dp)
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.5f))
-                            .border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape)
-                            .clickable { onOpenSettings() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Rounded.Settings,
-                            contentDescription = t.settings,
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                // ── Avatar (overlapping cover, bottom-left) ──
-                val infiniteTransition = rememberInfiniteTransition(label = "profile_glow")
-                val avatarGlow by infiniteTransition.animateFloat(
-                    initialValue = 0.2f, targetValue = 0.5f,
-                    animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-                    label = "avatar_glow_val"
+            // ── Cover (120dp, FIFA cover art + halftone + dark scrim) ──
+            Box(
+                Modifier.fillMaxWidth().height(120.dp)
+            ) {
+                // FIFA 16 cover as blurred background
+                coil.compose.AsyncImage(
+                    model = R.drawable.fifa16_cover,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
                 )
-                val ringRotation by infiniteTransition.animateFloat(
-                    initialValue = 0f, targetValue = 360f,
-                    animationSpec = infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Restart),
-                    label = "ring_rotation"
-                )
+                // Dark scrim for readability
                 Box(
-                    Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(start = 20.dp, bottom = 0.dp)
-                        .offset(y = 40.dp)  // half overlap
-                        .size(96.dp)
-                        .clickable {
-                            if (!api.loggedIn()) {
-                                toast(t.loginToChangeAvatar)
-                                return@clickable
-                            }
-                            if (avatarUploading) return@clickable
-                            avatarPicker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
+                    Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = 0.4f),
+                            1f to Color.Black.copy(alpha = 0.9f)
+                        )
+                    )
+                )
+                // Settings icon (top-right, clean)
+                Box(
+                    Modifier.align(Alignment.TopEnd).padding(12.dp).size(32.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.4f))
+                        .clickable { onOpenSettings() },
                     contentAlignment = Alignment.Center
                 ) {
-                    // Glow
+                    Icon(Icons.Rounded.Settings, contentDescription = t.settings, tint = Color.White, modifier = Modifier.size(16.dp))
+                }
+            }
+
+            // ── Avatar (clean static, no rotation/glow) ──
+            Box(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = (-40).dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Avatar
                     Box(
-                        Modifier.matchParentSize().clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(Color.White.copy(avatarGlow * 0.4f), Color.Transparent),
-                                    radius = 90f
+                        Modifier.size(80.dp).clickable {
+                            if (api.loggedIn() && !avatarUploading) {
+                                avatarPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 )
-                            )
-                            .blur(10.dp)
-                    )
-                    // Rotating ring
-                    Canvas(
-                        Modifier.size(96.dp).graphicsLayer { rotationZ = ringRotation }
+                            }
+                        }
                     ) {
-                        val stroke = 2.5.dp.toPx()
-                        drawCircle(
-                            brush = Brush.sweepGradient(
-                                listOf(Color.White, Color.White.copy(0.3f), Color.White)
-                            ),
-                            radius = (size.minDimension / 2f) - (stroke / 2f),
-                            style = Stroke(width = stroke)
-                        )
-                    }
-                    // Avatar image or initial
-                    if (avatarUrlState.isNotEmpty()) {
-                        AsyncImage(
-                            model = avatarUrlState,
-                            contentDescription = "Avatar",
-                            modifier = Modifier.size(80.dp).clip(CircleShape)
-                                .border(2.dp, PureBlack, CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        DLavieLogoCover(
-                            size = 80.dp, text = initial,
-                            fontSize = 30.sp, shape = CircleShape
-                        )
-                    }
-                    // Upload overlay
-                    if (avatarUploading) {
-                        Box(
-                            Modifier.matchParentSize().clip(CircleShape)
-                                .background(Color.Black.copy(0.6f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                color = Color.White, strokeWidth = 2.dp
+                        if (avatarUrlState.isNotEmpty()) {
+                            AsyncImage(
+                                model = avatarUrlState,
+                                contentDescription = "Avatar",
+                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                    .border(3.dp, PureBlack, CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            DLavieLogoCover(
+                                size = 80.dp, text = initial,
+                                fontSize = 28.sp, shape = CircleShape,
+                                borderWidth = 3.dp
                             )
                         }
-                    }
-                    // Camera badge
-                    Box(
-                        Modifier.align(Alignment.BottomEnd).size(24.dp)
-                            .background(Color.White, CircleShape)
-                            .border(1.dp, PureBlack, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Rounded.CameraAlt, null, tint = PureBlack, modifier = Modifier.size(12.dp))
+                        if (avatarUploading) {
+                            Box(
+                                Modifier.fillMaxSize().clip(CircleShape)
+                                    .background(Color.Black.copy(0.6f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                            }
+                        }
+                        // Camera badge
+                        Box(
+                            Modifier.align(Alignment.BottomEnd).size(22.dp)
+                                .background(Color.White, CircleShape)
+                                .border(2.dp, PureBlack, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.CameraAlt, null, tint = PureBlack, modifier = Modifier.size(10.dp))
+                        }
                     }
                 }
             }
 
-            // ── Name + ID + Username + Role (below cover, padded for avatar overlap) ──
+            // ── Name + username + role ──
             Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 52.dp, start = 20.dp, end = 20.dp),
-                horizontalAlignment = Alignment.Start,
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                // Display name + verified icon
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
                         api.displayName().ifEmpty { "DLavie Player" },
-                        fontSize = 20.sp, fontWeight = FontWeight.Black, color = Color.White
+                        fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color.White
                     )
                     if (role.equals("admin", true) || role.equals("developer", true)) {
-                        Icon(
-                            Icons.Rounded.Verified,
-                            contentDescription = "Verified",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-                // Username + unique ID
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        "@${api.username().ifEmpty { "unknown" }}",
-                        color = SoftText, fontSize = 12.sp
-                    )
-                    if (uniqueId > 0) {
-                        Text("·", color = SubText, fontSize = 12.sp)
-                        Text("ID: $uniqueId", color = SubText, fontSize = 11.sp)
+                        Icon(Icons.Rounded.Verified, null, tint = Color.White, modifier = Modifier.size(14.dp))
                     }
                     ModernPill(role.uppercase(), roleBadgeColor(role))
                 }
-                // Bio
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("@${api.username().ifEmpty { "unknown" }}", color = SoftText, fontSize = 12.sp)
+                    if (uniqueId > 0) {
+                        Text("· ID: $uniqueId", color = SubText, fontSize = 11.sp)
+                    }
+                }
                 if (bio.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
+                    Text(bio, color = SoftText, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
+                }
+            }
+
+            // ── Stats inline (Posts · Followers · Following) ──
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                StatInline(value = myPostsCount, label = t.posts)
+                Box(Modifier.size(1.dp, 24.dp).background(GlassStroke))
+                StatInline(value = followerCount, label = t.followers)
+                Box(Modifier.size(1.dp, 24.dp).background(GlassStroke))
+                StatInline(value = followingCount, label = t.followingCount)
+            }
+
+            // ── Play time (if any) ──
+            if (totalPlayMin > 0 && gameInstalled) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(Icons.Rounded.Schedule, null, tint = SubText, modifier = Modifier.size(13.dp))
                     Text(
-                        bio,
-                        color = SoftText, fontSize = 12.sp, lineHeight = 16.sp
+                        "FIFA 16 · ${if (totalPlayMin >= 60) "${totalPlayMin / 60}h " else ""}${totalPlayMin % 60}m",
+                        color = SubText, fontSize = 11.sp
                     )
                 }
             }
 
-            // ── Stats cards row (Posts / Followers / Following) — modern card style ──
+            // ── Edit Profile button ──
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Posts stat
                 Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    color = GlassBase,
-                    border = BorderStroke(1.dp, GlassStroke)
+                    modifier = Modifier.weight(1f).height(38.dp).clickable { onOpenSettings() },
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color.White.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, GlassStrokeHi)
                 ) {
-                    Column(
-                        Modifier.padding(vertical = 10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            "$myPostsCount",
-                            color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black
-                        )
-                        Text(t.posts, color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Edit, null, tint = Color.White, modifier = Modifier.size(13.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text(t.editProfile, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
-                // Followers stat
                 Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    color = GlassBase,
-                    border = BorderStroke(1.dp, GlassStroke)
-                ) {
-                    Column(
-                        Modifier.padding(vertical = 10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            "$followerCount",
-                            color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black
-                        )
-                        Text(t.followers, color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-                // Following stat
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    color = GlassBase,
-                    border = BorderStroke(1.dp, GlassStroke)
-                ) {
-                    Column(
-                        Modifier.padding(vertical = 10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            "$followingCount",
-                            color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black
-                        )
-                        Text(t.followingCount, color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-            }
-
-            // ── Action buttons: Edit Profile + Share ──
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Edit Profile (primary, white)
-                Surface(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(40.dp)
-                        .clickable { onOpenSettings() },
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color.White
-                ) {
-                    Row(
-                        Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Rounded.Edit, null, tint = PureBlack, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(t.editProfile, color = PureBlack, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-                // Share (secondary, glass)
-                Surface(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clickable { /* TODO: share profile */ },
-                    shape = RoundedCornerShape(12.dp),
-                    color = GlassBase,
-                    border = BorderStroke(1.dp, GlassStroke)
+                    modifier = Modifier.size(38.dp).clickable { if (gameInstalled) launchGame(context) },
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color.White.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, GlassStrokeHi)
                 ) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Share, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Rounded.SportsEsports, null, tint = Color.White, modifier = Modifier.size(16.dp))
                     }
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
-        }
-
-        // ════════════════════════════════════════════════════════════════════
-        // B. Two-Column: Lencana (Badges) | Game Saya
-        // ════════════════════════════════════════════════════════════════════
-        if (!profileLoading) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
-            ) {
-                // ── KIRI: Lencana ──
-                GlassCard(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.EmojiEvents, null, tint = AmberWarn, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(TTSpacing.xs))
-                        Text("Lencana", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Black)
-                    }
-                    Spacer(Modifier.height(TTSpacing.sm))
-                    if (myBadges.isEmpty()) {
-                        Text(
-                            "Dapatkan Lencana",
-                            color = SubText, fontSize = 11.sp, fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            "Mainkan game & aktif di komunitas untuk membuka lencana.",
-                            color = SubText, fontSize = 9.sp, lineHeight = 12.sp
-                        )
-                    } else {
-                        // Horizontal scrollable row of badges
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
-                        ) {
-                            myBadges.take(8).forEach { badge ->
-                                BadgeChip(
-                                    icon = badgeIcon(badge.badgeCode),
-                                    label = formatBadgeName(badge.badgeCode)
-                                )
-                            }
-                        }
-                        if (myBadges.size > 8) {
-                            Spacer(Modifier.height(TTSpacing.xs))
-                            Text(
-                                "+${myBadges.size - 8} lainnya",
-                                color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-
-                // ── KANAN: Game Saya ──
-                GlassCard(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.SportsEsports, null, tint = NeonGreen, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(TTSpacing.xs))
-                        Text("Game Saya", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Black)
-                    }
-                    Spacer(Modifier.height(TTSpacing.sm))
-                    if (gameInstalled) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier.size(28.dp).background(NeonGreen.copy(0.12f), TTShapes.small),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Rounded.SportsSoccer, null, tint = NeonGreen, modifier = Modifier.size(16.dp))
-                            }
-                            Spacer(Modifier.width(TTSpacing.xs))
-                            Column {
-                                Text("FIFA 16 Mobile", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                                Text(
-                                    "Main ${if (totalPlayMin >= 60) "${totalPlayMin / 60}j " else ""}${totalPlayMin % 60}m",
-                                    color = SoftText, fontSize = 10.sp
-                                )
-                            }
-                        }
-                    } else {
-                        Text(
-                            "Belum ada game",
-                            color = SubText, fontSize = 11.sp, fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            "Install FIFA 16 untuk mulai main.",
-                            color = SubText, fontSize = 9.sp, lineHeight = 12.sp
+            // ── Badges (horizontal scroll, compact) ──
+            if (myBadges.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    myBadges.take(10).forEach { badge ->
+                        BadgeChip(
+                            icon = badgeIcon(badge.badgeCode),
+                            label = formatBadgeName(badge.badgeCode)
                         )
                     }
                 }
             }
         }
 
-        // ════════════════════════════════════════════════════════════════════
-        // C. Tab Bar (Post | Tersimpan | Draft) with underline indicator
-        // ════════════════════════════════════════════════════════════════════
+        // ── Segmented pill tabs ──
         if (!profileLoading) {
             Row(
-                Modifier.fillMaxWidth().clip(TTShapes.input)
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .background(Surface2)
-                    .padding(TTSpacing.xs),
-                horizontalArrangement = Arrangement.spacedBy(TTSpacing.xs)
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
             ) {
-                ProfileTabButton(
-                    label = "Post",
-                    count = myPosts.size,
-                    selected = selectedTab == 0,
-                    modifier = Modifier.weight(1f)
-                ) { selectedTab = 0 }
-                ProfileTabButton(
-                    label = "Tersimpan",
-                    count = mySavedPosts.size,
-                    selected = selectedTab == 1,
-                    modifier = Modifier.weight(1f)
-                ) { selectedTab = 1 }
-                ProfileTabButton(
-                    label = "Draft",
-                    count = myDrafts.size,
-                    selected = selectedTab == 2,
-                    modifier = Modifier.weight(1f)
-                ) { selectedTab = 2 }
+                SegmentedTab(t.myPosts, selectedTab == 0, Modifier.weight(1f)) { selectedTab = 0 }
+                SegmentedTab(t.savedPosts, selectedTab == 1, Modifier.weight(1f)) { selectedTab = 1 }
+                SegmentedTab("Drafts", selectedTab == 2, Modifier.weight(1f)) { selectedTab = 2 }
             }
         }
 
-        // ════════════════════════════════════════════════════════════════════
-        // D. Content per tab
-        // ════════════════════════════════════════════════════════════════════
+        // ── Content per tab ──
         if (!profileLoading) {
             when {
                 postsLoading -> {
@@ -5954,15 +5738,9 @@ fun ProfileScreen(
                         repeat(2) { TTGameCardSkeleton() }
                     }
                 }
-                selectedTab == 0 && myPosts.isEmpty() -> ProfileEmptyPosts(
-                    text = "Belum ada post. Buat post pertamamu di Komunitas!"
-                )
-                selectedTab == 1 && mySavedPosts.isEmpty() -> ProfileEmptyPosts(
-                    text = "Belum ada post tersimpan. Tap ikon bookmark di post mana pun untuk menyimpan."
-                )
-                selectedTab == 2 && myDrafts.isEmpty() -> ProfileEmptyPosts(
-                    text = "Belum ada draft. Aktifkan toggle 'Simpan sebagai Draft' saat membuat post."
-                )
+                selectedTab == 0 && myPosts.isEmpty() -> ProfileEmptyPosts(text = "No posts yet. Create your first post in Community!")
+                selectedTab == 1 && mySavedPosts.isEmpty() -> ProfileEmptyPosts(text = "No saved posts. Tap bookmark on any post to save.")
+                selectedTab == 2 && myDrafts.isEmpty() -> ProfileEmptyPosts(text = "No drafts. Toggle 'Save as Draft' when creating a post.")
                 else -> {
                     val list = when (selectedTab) {
                         0 -> myPosts
@@ -6010,158 +5788,125 @@ fun ProfileScreen(
             }
         }
 
-        // ════════════════════════════════════════════════════════════════════
-        // E. Bottom: Pengaturan entry + AccountSettings + Keamanan + Logout
-        // (preserved from v1.x — unchanged behavior)
-        // ════════════════════════════════════════════════════════════════════
+        // ── Settings + Account + Logout (compact menu items) ──
         if (!profileLoading) {
-            TTTappableCard(
-                onClick = { if (gameInstalled) launchGame(context) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        Modifier.size(36.dp).background(NeonGreen.copy(0.12f), TTShapes.small),
-                        contentAlignment = Alignment.Center
+            Spacer(Modifier.height(12.dp))
+
+            // Settings entry
+            ProfileMenuItem(
+                icon = Icons.Rounded.Settings,
+                label = t.settings,
+                onClick = { onOpenSettings() }
+            )
+            Spacer(Modifier.height(1.dp))
+
+            // Language
+            LanguageSettingsCard(context = context)
+
+            // Account settings
+            AccountSettingsCard(
+                api = api,
+                context = context,
+                expandedSection = expandedSection,
+                onExpandedSectionChange = onExpandedSectionChange
+            )
+
+            // FCM (admin only)
+            if (role == "admin" || role == "developer") {
+                FcmDiagnosticCard(api = api, context = context)
+            }
+
+            // Logout
+            AnimatedContent(targetState = confirmLogout, label = "logout") { confirm ->
+                if (!confirm) {
+                    OutlinedButton(
+                        onClick = { confirmLogout = true },
+                        modifier = Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 16.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, DangerRed.copy(0.4f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = DangerRed)
                     ) {
-                        Icon(Icons.Rounded.SportsSoccer, null, tint = NeonGreen, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Rounded.Logout, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(t.logout, color = DangerRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
-                    Spacer(Modifier.width(TTSpacing.md))
-                    Column(Modifier.weight(1f)) {
-                        Text("FIFA 16 Mobile", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
-                        Text(
-                            if (gameInstalled) "Tap untuk mainkan" else "Game belum terinstall",
-                            color = SoftText, fontSize = 11.sp
-                        )
-                    }
-                    if (gameInstalled) {
-                        Icon(Icons.Rounded.PlayCircle, null, tint = NeonGreen, modifier = Modifier.size(24.dp))
-                    }
-                }
-            }
-        }
-
-        if (!profileLoading) {
-            TTTappableCard(
-                onClick = { onOpenSettings() },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
-                            .background(Color.White.copy(0.05f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Rounded.Settings, null, tint = Color.White, modifier = Modifier.size(20.dp))
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Text("Pengaturan", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Icon(Icons.Rounded.ChevronRight, null, tint = SubText, modifier = Modifier.size(20.dp))
-                }
-            }
-        }
-
-        // ── Info akun ──
-        GlassCard {
-            TTSectionHeader(title = "Detail Akun", icon = Icons.Rounded.AccountCircle)
-            Spacer(Modifier.height(TTSpacing.sm))
-            ProfRow("Username",    "@${api.username().ifEmpty { "-" }}")
-            ProfRow("Nama",        api.displayName().ifEmpty { "-" })
-            ProfRow("Role",        role.replaceFirstChar { it.uppercase() })
-            ProfRow("Server",      "DLavie Cloud")
-        }
-
-        // ── Language Settings Card (v6.2) ──────────────────────────────────────
-        LanguageSettingsCard(context = context)
-
-        // ── FCM Diagnostic Card (v5.4.3) — ADMIN/DEVELOPER ONLY ────────────────
-        // Shows real-time FCM token + upload status on screen (no laptop needed).
-        // Only visible to admin & developer roles — regular users don't see this.
-        if (role == "admin" || role == "developer") {
-            FcmDiagnosticCard(api = api, context = context)
-        }
-
-        // ── Akun & Keamanan (Account Settings — password/email/profile/pin) ──
-        AccountSettingsCard(
-            api = api,
-            context = context,
-            expandedSection = expandedSection,
-            onExpandedSectionChange = onExpandedSectionChange
-        )
-
-        // ── Keamanan ──
-        GlassCard {
-            TTSectionHeader(title = "Keamanan", icon = Icons.Rounded.Security)
-            Spacer(Modifier.height(TTSpacing.sm))
-            listOf(
-                "Sesi terenkripsi — diperbarui otomatis setiap 50 menit.",
-                "Setiap pembaruan diverifikasi sebelum diterapkan.",
-                "Data login tidak pernah disimpan di penyimpanan lokal."
-            ).forEach { text ->
-                Row(
-                    Modifier.padding(vertical = 3.dp),
-                    verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
-                ) {
-                    Icon(Icons.Rounded.CheckCircle, null, tint = NeonGreen, modifier = Modifier.size(13.dp).padding(top = 2.dp))
-                    Text(text, color = SoftText, fontSize = 12.sp, lineHeight = 16.sp)
-                }
-            }
-        }
-
-        // ── Logout (preserved from v1.x) ──
-        AnimatedContent(targetState = confirmLogout, label = "logout") { confirm ->
-            if (!confirm) {
-                OutlinedButton(
-                    onClick  = { confirmLogout = true },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape    = TTShapes.button,
-                    border   = BorderStroke(1.dp, DangerRed.copy(0.45f)),
-                    colors   = ButtonDefaults.outlinedButtonColors(contentColor = DangerRed)
-                ) {
-                    Icon(Icons.Rounded.Cancel, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(TTSpacing.sm))
-                    Text("Keluar dari Akun", color = DangerRed, fontWeight = FontWeight.Black, fontSize = 14.sp)
-                }
-            } else {
-                GlassCard(borderColor = DangerRed.copy(0.55f)) {
-                    Text("Konfirmasi Keluar", color = DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                    Spacer(Modifier.height(TTSpacing.xs))
-                    Text("Kamu harus login kembali setelah keluar.", color = SoftText, fontSize = 13.sp)
-                    Spacer(Modifier.height(TTSpacing.md))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
-                        OutlinedButton(
-                            onClick  = { confirmLogout = false },
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            shape    = TTShapes.button,
-                            border   = BorderStroke(1.dp, GlassStroke),
-                            colors   = ButtonDefaults.outlinedButtonColors(contentColor = SoftText)
-                        ) { Text("Batal", fontWeight = FontWeight.Bold) }
-                        Button(
-                            onClick  = onLogout,
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            shape    = TTShapes.button,
-                            colors   = ButtonDefaults.buttonColors(
-                                containerColor = DangerRed,
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Icon(Icons.Rounded.Cancel, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(TTSpacing.xs))
-                            Text("Keluar", fontWeight = FontWeight.Black)
+                } else {
+                    GlassCard(borderColor = DangerRed.copy(0.5f)) {
+                        Text("Logout", color = DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                        Spacer(Modifier.height(4.dp))
+                        Text("You will need to sign in again.", color = SoftText, fontSize = 12.sp)
+                        Spacer(Modifier.height(12.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { confirmLogout = false },
+                                modifier = Modifier.weight(1f).height(44.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, GlassStroke),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = SoftText)
+                            ) { Text(t.cancel, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                            Button(
+                                onClick = onLogout,
+                                modifier = Modifier.weight(1f).height(44.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = DangerRed, contentColor = Color.White)
+                            ) {
+                                Text(t.logout, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                            }
                         }
                     }
                 }
             }
-        }
 
-        Spacer(Modifier.height(TTSpacing.sm))
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+// v7.4.0: Helper composables for clean profile
+@Composable
+private fun StatInline(value: Int, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("$value", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
+        Text(label, color = SubText, fontSize = 10.sp)
+    }
+}
+
+@Composable
+private fun SegmentedTab(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier
+            .height(34.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) Color.White else Color.Transparent)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            color = if (selected) PureBlack else SubText,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun ProfileMenuItem(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onClick() },
+        color = GlassBase,
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, GlassStroke)
+    ) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(label, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            Icon(Icons.Rounded.ChevronRight, null, tint = SubText, modifier = Modifier.size(18.dp))
+        }
     }
 }
 
