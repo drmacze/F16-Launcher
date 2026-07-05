@@ -1281,7 +1281,9 @@ fun MainShell(
 
         // ── v7.0.9 redesign: FloatingNav pill (PS5-style with elevated center play button) ──
         // Tetap accessible dari Home (tidak tampil saat GameDetail/Settings/Visit aktif).
-        if (!showGameDetail && !showSettings && visitingUserId == null) {
+        // v7.1.0: Hide saat page Chat (Komunitas) karena menutupi FAB "+" buat post.
+        // User tetap bisa navigasi via swipe pager atau system back.
+        if (!showGameDetail && !showSettings && visitingUserId == null && page != Page.Chat) {
             FloatingNav(
                 page     = page,
                 onPage   = { page = it },
@@ -1293,7 +1295,8 @@ fun MainShell(
         }
 
         // ── Floating ChatBot (v6.4) — always visible when logged in ──
-        if (!showGameDetail && !showSettings && visitingUserId == null && api.loggedIn()) {
+        // v7.1.0: Hide saat page Chat (Komunitas) karena menutupi FAB "+" buat post.
+        if (!showGameDetail && !showSettings && visitingUserId == null && api.loggedIn() && page != Page.Chat) {
             FloatingChatBot(api = api)
         }
 
