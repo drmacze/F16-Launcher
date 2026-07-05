@@ -30,16 +30,42 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install apktool + apksigner + zipalign
+      - name: Install required Android SDK packages
         shell: bash
         run: |
           set -euo pipefail
-          # Install apktool
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "build-tools;34.0.0" "platforms;android-34" || true
+          # Find apksigner in build-tools
+          ls "${ANDROID_HOME}/build-tools/" 2>/dev/null || true
+
+      - name: Install apktool + zipalign
+        shell: bash
+        run: |
+          set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq apktool apksigner zipalign wget
+          sudo apt-get install -y -qq apktool zipalign
           apktool --version
-          apksigner --version
-          zipalign --help 2>&1 | head -2
+          zipalign --help 2>&1 | head -2 || true
+
+      - name: Set up apksigner
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Use apksigner from Android SDK build-tools (most reliable)
+          APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f 2>/dev/null | head -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "ERROR: apksigner not found in build-tools"
+            ls "${ANDROID_HOME}/build-tools/" || true
+            exit 1
+          fi
+          echo "Found apksigner: $APKSIGNER"
+          "$APKSIGNER" --version
+          # Make it available in PATH
+          echo "$(dirname "$APKSIGNER")" >> $GITHUB_PATH
+          # Verify
+          which apksigner && apksigner --version
 
       - name: Download source APK
         shell: bash
