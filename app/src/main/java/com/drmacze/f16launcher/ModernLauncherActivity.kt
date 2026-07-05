@@ -8098,7 +8098,8 @@ fun GameHubScreen(
                 packageName = GAME_PKG_16,
                 mainActivity = "com.byfen.downloadzipsdk.MainActivity",
                 coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222)),
-                coverText = "DL"
+                coverText = "DL",
+                coverImageRes = R.drawable.fifa16_cover  // v7.0.3: real cover art
             ),
             GameItem(
                 title = "FIFA 15 Mobile",
@@ -8106,7 +8107,8 @@ fun GameHubScreen(
                 packageName = GAME_PKG_15,
                 mainActivity = FIFA15_MAIN_ACTIVITY,
                 coverGradient = listOf(Color(0xFF1A1A2E), Color(0xFF16213E)),
-                coverText = "D15"
+                coverText = "D15",
+                coverImageRes = R.drawable.fifa15_cover  // v7.0.3: real cover art
             )
         )
     }
@@ -8202,24 +8204,43 @@ private fun GameCard(game: GameItem, onClick: () -> Unit) {
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
     ) {
         Box(Modifier.fillMaxSize()) {
-            // Cover gradient
-            Box(
-                Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(game.coverGradient)
+            // v7.0.3: Cover image (real cover art) OR gradient fallback
+            if (game.coverImageRes != null) {
+                coil.compose.AsyncImage(
+                    model = game.coverImageRes,
+                    contentDescription = game.title,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
                 )
-            )
-            // Cover text
-            Box(
-                Modifier.fillMaxSize().padding(16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    game.coverText,
-                    color = Color.White.copy(alpha = 0.15f),
-                    fontSize = 48.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = InterFontFamily
+                // Scrim overlay for text readability (bottom gradient)
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            0.5f to Color.Transparent,
+                            1f to Color.Black.copy(alpha = 0.85f)
+                        )
+                    )
                 )
+            } else {
+                // Fallback: gradient + text
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(game.coverGradient)
+                    )
+                )
+                Box(
+                    Modifier.fillMaxSize().padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        game.coverText,
+                        color = Color.White.copy(alpha = 0.15f),
+                        fontSize = 48.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = InterFontFamily
+                    )
+                }
             }
             // Bottom info
             Column(
@@ -8255,13 +8276,22 @@ private fun GameListItem(game: GameItem, onClick: () -> Unit) {
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Cover thumbnail
+        // v7.0.3: Cover thumbnail — real image OR gradient fallback
         Box(
             Modifier.size(56.dp).clip(RoundedCornerShape(14.dp))
                 .background(Brush.verticalGradient(game.coverGradient)),
             contentAlignment = Alignment.Center
         ) {
-            Text(game.coverText, color = Color.White.copy(alpha = 0.3f), fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
+            if (game.coverImageRes != null) {
+                coil.compose.AsyncImage(
+                    model = game.coverImageRes,
+                    contentDescription = game.title,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text(game.coverText, color = Color.White.copy(alpha = 0.3f), fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
+            }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -8278,5 +8308,6 @@ private data class GameItem(
     val packageName: String,
     val mainActivity: String,
     val coverGradient: List<Color>,
-    val coverText: String
+    val coverText: String,
+    val coverImageRes: Int? = null  // v7.0.3: real cover image (nullable — fallback to gradient + text)
 )
