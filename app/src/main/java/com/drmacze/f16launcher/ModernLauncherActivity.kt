@@ -4657,7 +4657,7 @@ private fun CommunityEmptyState(
         Text(
             when {
                 errorMsg.isNotEmpty() -> errorMsg
-                isFollowing && !loggedIn -> t.loginToFollow
+                isFollowing && !loggedIn -> "Login untuk follow user lain"
                 isFollowing -> "Follow user lain untuk melihat post mereka di sini."
                 else -> "Jadilah yang pertama membuat post di komunitas DLavie 26."
             },
@@ -4727,7 +4727,7 @@ private fun CreatePostSheet(
                     }
                     imageUrl = url
                 } catch (e: Throwable) {
-                    onError(t.imageUploadFailed)
+                    onError("Gagal upload gambar. Coba lagi.")
                 } finally {
                     uploading = false
                 }
@@ -4936,7 +4936,7 @@ private fun CreatePostSheet(
                             }
                             onPosted()
                         } catch (e: Throwable) {
-                            onError(t.postCreateFailed)
+                            onError("Gagal membuat post. Coba lagi.")
                         } finally {
                             posting = false
                         }
@@ -7275,7 +7275,7 @@ fun AccountSettingsCard(
             }
             result.onFailure {
                 isSuccess = false
-                resultMsg = "Error: ${it.message ?: t.operationError}"
+                resultMsg = it.message ?: "Operasi gagal. Coba lagi."
             }
             working = false
         }
@@ -7319,7 +7319,7 @@ fun AccountSettingsCard(
             Button(
                 onClick  = {
                     if (newPass != newPassConfirm) {
-                        isSuccess = false; resultMsg = "Error: " + t.passwordMismatch; return@Button
+                        isSuccess = false; resultMsg = "Password tidak cocok."; return@Button
                     }
                     execute { AuthManager.updatePassword(api.token(), newPass) }
                     newPass = ""; newPassConfirm = ""
