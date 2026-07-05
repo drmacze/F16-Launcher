@@ -244,15 +244,20 @@ import java.net.URL
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 // FIFA 16 (DLavie 26)
+// ⚠️  PRIVACY: All download URLs point to DLavie proxy (Supabase Edge Function).
+//     This protects source code privacy — users cannot trace back to GitHub repos.
+//     The proxy streams files from private backend storage without exposing URLs.
+//     Proxy also supports HTTP Range requests for resume.
 const val GAME_PKG_16       = "com.ea.gp.fifaworld"
-const val FIFA16_APK_URL    = "https://github.com/drmacze/F16/releases/download/v3.0-launcher-only/DLavie26-Locked-LauncherOnly.apk"
+const val DLAVIE_PROXY_URL  = "https://lvmucsxbmadtsgrxuwmo.supabase.co/functions/v1/apk-proxy"
+const val FIFA16_APK_URL    = "${DLAVIE_PROXY_URL}?f=launcher-latest"
 const val MARKER_PATH_16    = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
 
 // FIFA 15 (DLavie 15)
 const val GAME_PKG_15       = "com.ea.game.fifa14_row"
-const val FIFA15_APK_URL    = "https://github.com/drmacze/F15/releases/download/v2.1.8/DLavie15-Android16-Compatible.apk"
-const val FIFA15_DATA_URL   = "https://github.com/drmacze/F15/releases/download/v2.1.8/DATA.zip"
-const val FIFA15_OBB_URL    = "https://github.com/drmacze/F15/releases/download/v2.1.8/OBB.zip"
+const val FIFA15_APK_URL    = "${DLAVIE_PROXY_URL}?f=fifa15-apk"
+const val FIFA15_DATA_URL   = "${DLAVIE_PROXY_URL}?f=fifa15-data"
+const val FIFA15_OBB_URL    = "${DLAVIE_PROXY_URL}?f=fifa15-obb"
 const val MARKER_PATH_15    = "/sdcard/Android/data/com.ea.game.fifa14_row/.dlavie15_data_installed"
 const val FIFA15_MAIN_ACTIVITY = "com.ea.game.fifa14.Fifa14Activity"
 
@@ -261,7 +266,7 @@ private const val GAME_PKG          = GAME_PKG_16
 private const val FIFA_APK_URL      = FIFA16_APK_URL
 private const val MARKER_PATH       = MARKER_PATH_16
 
-private const val DEFAULT_MANIFEST = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/manifest.json"
+private const val DEFAULT_MANIFEST = DLAVIE_PROXY_URL + "?f=fifa16-manifest"
 private const val LOCAL_VER        = 1
 private const val LOCAL_VER_NAME   = "v1"
 
@@ -509,7 +514,9 @@ fun DLavieModernApp(initialPostId: String? = null) {
                                 if (currentInfo == null || currentInfo.apkUrl.isBlank()) {
                                     // Tidak ada URL download — buka browser ke halaman release
                                     try {
-                                        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(currentInfo?.apkUrl ?: "https://github.com/drmacze/F16-Launcher/releases"))
+                                        // PRIVACY: Don't expose GitHub repo URL. Use DLavie proxy instead.
+                                        val fallbackUrl = currentInfo?.apkUrl?.takeIf { it.isNotBlank() } ?: (DLAVIE_PROXY_URL + "?f=launcher-latest")
+                                        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUrl))
                                         browserIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                                         context.startActivity(browserIntent)
                                     } catch (_: Throwable) { }
@@ -7788,7 +7795,9 @@ fun launchGame(context: android.content.Context, gamePackage: String = GAME_PKG_
         if (fallbackIntent != null) {
             context.startActivity(fallbackIntent)
         } else {
-            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("https://github.com/drmacze/F16/releases")))
+            // PRIVACY: Don't expose GitHub repo URL. Use DLavie proxy instead.
+            val proxyUrl = if (gamePackage == GAME_PKG_15) (DLAVIE_PROXY_URL + "?f=fifa15-apk") else (DLAVIE_PROXY_URL + "?f=launcher-latest")
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(proxyUrl)))
         }
     }
 }

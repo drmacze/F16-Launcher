@@ -64,10 +64,13 @@ class Fifa15DataManager(private val context: Context) {
         // Cache dir name inside app's external files dir
         private const val CACHE_DIR_NAME = "fifa15-install"
 
-        // URLs — kept here to avoid circular import with ModernLauncherActivity.kt
-        const val APK_URL = "https://github.com/drmacze/F15/releases/download/v2.1.8/DLavie15-Android16-Compatible.apk"
-        const val DATA_URL = "https://github.com/drmacze/F15/releases/download/v2.1.8/DATA.zip"
-        const val OBB_URL = "https://github.com/drmacze/F15/releases/download/v2.1.8/OBB.zip"
+        // URLs — DLavie proxy (Supabase Edge Function).
+        // Protects source code privacy: user never sees GitHub repo URLs.
+        // Proxy supports HTTP Range for resume + streams large files.
+        const val PROXY_BASE = "https://lvmucsxbmadtsgrxuwmo.supabase.co/functions/v1/apk-proxy"
+        const val APK_URL = "${PROXY_BASE}?f=fifa15-apk"
+        const val DATA_URL = "${PROXY_BASE}?f=fifa15-data"
+        const val OBB_URL = "${PROXY_BASE}?f=fifa15-obb"
     }
 
     private val cacheDir: File by lazy {

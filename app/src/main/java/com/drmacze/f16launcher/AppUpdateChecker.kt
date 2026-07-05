@@ -167,7 +167,9 @@ object AppUpdateChecker {
             context.startActivity(intent)
         } catch (_: Throwable) {
             try {
-                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/drmacze/F16-Launcher/releases"))
+                // PRIVACY: Don't expose GitHub repo URL. Use DLavie proxy instead.
+                val proxyUrl = com.drmacze.f16launcher.DLAVIE_PROXY_URL + "?f=launcher-latest"
+                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(proxyUrl))
                 browserIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 context.startActivity(browserIntent)
             } catch (_: Throwable) { }

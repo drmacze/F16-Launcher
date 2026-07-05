@@ -351,7 +351,8 @@ private fun baseAssets(): List<BaseInstallAsset> = listOf(
     BaseInstallAsset(
         "Main OBB",
         "main.13.com.ea.gp.fifaworld.obb",
-        "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/main.13.com.ea.gp.fifaworld.obb",
+        // PRIVACY: Use DLavie proxy instead of GitHub direct URL.
+        DLAVIE_PROXY_URL + "?f=fifa16-obb-main",
         "fe3e66c5e8c804656d8ee9ca62ace64a1fe968669f5c397b23ce174b0b8c720c",
         1376082760L,
         "obb"
@@ -359,7 +360,7 @@ private fun baseAssets(): List<BaseInstallAsset> = listOf(
     BaseInstallAsset(
         "Patch OBB",
         "patch.26.com.ea.gp.fifaworld.obb",
-        "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/patch.26.com.ea.gp.fifaworld.obb",
+        DLAVIE_PROXY_URL + "?f=fifa16-obb-patch",
         "bdca1604e7fc8dc80d96d656ae0e21ff3bd1ccf75a62ecaab0109dd269ef38a",
         102869675L,
         "obb"
@@ -367,7 +368,7 @@ private fun baseAssets(): List<BaseInstallAsset> = listOf(
     BaseInstallAsset(
         "Full Data",
         "dlavie26-data.zip",
-        "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/dlavie26-data.zip",
+        DLAVIE_PROXY_URL + "?f=fifa16-data",
         "7eb760ea663d019e3cb0e3ac70f9841d54255ac882b102b06eccb173212ac80a",
         1454191840L,
         "data"
