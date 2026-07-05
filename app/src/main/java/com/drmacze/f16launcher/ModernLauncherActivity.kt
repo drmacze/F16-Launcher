@@ -189,6 +189,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -784,15 +785,29 @@ fun MainShell(
         initialPage = page.ordinal,
         pageCount = { Page.values().size }
     )
-    // Pager → page (only when actually different to avoid feedback loop)
+    // v7.0.2 FIX: track apakah swipe sedang in-flight untuk avoid feedback loop.
+    //   Sebelumnya: tap nav → set page → LaunchedEffect(page) animateScrollToPage
+    //   → swipe selesai → LaunchedEffect(currentPage) set page lagi → re-trigger.
+    //   Sekarang: pakai flag `isProgrammaticScroll` untuk bedakan swipe user vs
+    //   programmatic animate. Hanya sync `page` saat USER swipe, bukan saat
+    //   programmatic scroll settling.
+    var isProgrammaticScroll by remember { mutableStateOf(false) }
+    // Pager → page (only when user swipes, not during programmatic scroll)
     LaunchedEffect(pagePagerState.currentPage) {
-        val newPage = Page.values()[pagePagerState.currentPage]
-        if (newPage != page) page = newPage
+        if (!isProgrammaticScroll) {
+            val newPage = Page.values()[pagePagerState.currentPage]
+            if (newPage != page) page = newPage
+        }
     }
-    // page → pager (animate when page changes from outside the pager)
+    // page → pager (animate when page changes from outside the pager — e.g. nav tap)
     LaunchedEffect(page) {
         if (page.ordinal != pagePagerState.currentPage) {
-            pagePagerState.animateScrollToPage(page.ordinal)
+            isProgrammaticScroll = true
+            try {
+                pagePagerState.animateScrollToPage(page.ordinal)
+            } finally {
+                isProgrammaticScroll = false
+            }
         }
     }
     val pendingPostId = remember { mutableStateOf(initialPostId) }
@@ -1142,18 +1157,23 @@ fun MainShell(
                             )
                         } else {
                             // ── P3A: HorizontalPager replaces AnimatedContent for tab nav ──
-                            // Swipe between Home / Update / Chat / Me. Sync with `page`
-                            // is handled at MainShell scope (LaunchedEffect above).
-                            // beyondViewportPageCount = 0 keeps only current page alive
-                            // (matches old AnimatedContent behavior — adjacent pages
-                            // are disposed and re-fetch on mount via their LaunchedEffect).
+                            // v7.0.2 FIX: beyondViewportPageCount = 1 (pre-render adjacent pages)
+                            //   Sebelumnya = 0 → setiap tab switch dispose page lama + re-mount page baru
+                            //   → LaunchedEffect(Unit) re-fire → re-fetch data dari Supabase
+                            //   → blank frame + frame drop (glitch saat transisi cepat).
+                            //   Dengan = 1, page tetangga sudah pre-rendered → swipe smooth.
+                            //   Trade-off: memory sedikit naik (3 pages alive), tapi UX jauh lebih baik.
                             HorizontalPager(
                                 state = pagePagerState,
                                 modifier = Modifier.fillMaxSize().padding(bottom = 84.dp),
                                 pageSpacing = 0.dp,
-                                beyondViewportPageCount = 0
+                                beyondViewportPageCount = 1
                             ) { pageIndex ->
                                 val target = Page.values()[pageIndex]
+                                // v7.0.2 FIX: key() supaya Compose track page identity stabil.
+                                //   Tanpa key, Compose bisa salah-identifikasi item saat swipe cepat
+                                //   → state tertukar antar page → visual glitch.
+                                key(target) {
                                 // ── Partial maintenance: NO blur, just block action buttons ──
                                 when (target) {
                                     Page.Home   -> HomeScreen(
@@ -1201,6 +1221,7 @@ fun MainShell(
                                         onVisitProfile          = { uid -> visitingUserId = uid }
                                     )
                                 }
+                                } // end key(target)
                             }
                         }
                     }
