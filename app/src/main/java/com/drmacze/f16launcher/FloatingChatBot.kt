@@ -604,6 +604,7 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
     }
 }
 
+@Composable
 private fun ChatBubble(msg: ChatMessage) {
     val isUser = msg.senderType == "user"
     val alignment = if (isUser) Alignment.End else Alignment.Start
