@@ -886,10 +886,19 @@ fun MainShell(
     LaunchedEffect(Unit) {
         // Fire app_open telemetry as soon as the shell mounts.
         Telemetry.track(api, context, Telemetry.EVT_APP_OPEN)
-        // Initial token refresh loop (existing behavior).
+        // v7.0.5: Presence heartbeat — update last_seen_at on app open + every 60s.
+        //   Lets other users see "Online" / "Last seen 5m ago" badge in user list.
+        //   Fire-and-forget (errors swallowed) — non-critical, never block UI.
+        if (api.loggedIn()) {
+            withContext(Dispatchers.IO) { runCatching { api.updateLastSeen() } }
+        }
+        // Initial token refresh loop (existing behavior) + heartbeat every 60s.
         while (true) {
-            delay(50L * 60_000)
-            withContext(Dispatchers.IO) { runCatching { api.refreshToken() } }
+            delay(60_000L)  // v7.0.5: 1 min heartbeat (was 50 min for token refresh)
+            withContext(Dispatchers.IO) {
+                runCatching { api.refreshToken() }
+                runCatching { if (api.loggedIn()) api.updateLastSeen() }
+            }
         }
     }
 
@@ -1174,6 +1183,11 @@ fun MainShell(
                                 //   Tanpa key, Compose bisa salah-identifikasi item saat swipe cepat
                                 //   → state tertukar antar page → visual glitch.
                                 key(target) {
+                                // v7.0.5 FIX: solid background per page supaya page tetangga
+                                //   yang pre-rendered (beyondViewportPageCount=1) TIDAK tembus
+                                //   ke page aktif. Sebelumnya background transparan → konten
+                                //   page sebelah terlihat menembus → glitch overlap.
+                                Box(Modifier.fillMaxSize().background(PureBlack)) {
                                 // ── Partial maintenance: NO blur, just block action buttons ──
                                 when (target) {
                                     Page.Home   -> HomeScreen(
@@ -1221,6 +1235,7 @@ fun MainShell(
                                         onVisitProfile          = { uid -> visitingUserId = uid }
                                     )
                                 }
+                                } // end Box (solid bg)
                                 } // end key(target)
                             }
                         }
@@ -3627,7 +3642,8 @@ fun CommunityScreen(
                             if (ss.isBlank() || ss.equals("null", ignoreCase = true)) "" else ss
                         },
                         uniqueId    = o.optInt("unique_id", 0),
-                        role        = o.optString("role", "user")
+                        role        = o.optString("role", "user"),
+                        lastSeenAt  = o.optString("last_seen_at", "")  // v7.0.5: presence
                     )
                 }.getOrNull()
             }.filter { it.id.isNotBlank() && it.id != api.userId() }
@@ -5233,7 +5249,8 @@ data class UserSearchResult(
     val displayName: String,
     val avatarUrl: String,
     val uniqueId: Int,
-    val role: String
+    val role: String,
+    val lastSeenAt: String = ""  // v7.0.5: ISO timestamp from profiles.last_seen_at (empty = never)
 )
 
 /**
@@ -6351,27 +6368,43 @@ private fun UserSearchRow(
     onClick: () -> Unit
 ) {
     val initial = (user.displayName.ifBlank { user.username }).firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+    // v7.0.5: Compute presence status from lastSeenAt
+    //   - Online: last_seen < 2 minutes ago (white dot + "Online" text)
+    //   - Recent: last_seen < 10 minutes (gray dot + "Last seen Xm ago")
+    //   - Away:   last_seen < 1 hour (gray dot + "Last seen Xm ago")
+    //   - Offline: last_seen > 1 hour or empty (dim dot + "Last seen Xh ago" / "Offline")
+    val presence = computePresence(user.lastSeenAt)
     Row(
         Modifier.fillMaxWidth().clickable { onClick() }
             .padding(horizontal = TTSpacing.md, vertical = TTSpacing.sm),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Avatar (circular, foto kalau ada, initial kalau tidak)
-        Box(
-            Modifier.size(36.dp).clip(CircleShape)
-                .background(Brush.linearGradient(listOf(CandyCyan, CandyBlue))),
-            contentAlignment = Alignment.Center
-        ) {
-            if (user.avatarUrl.isNotBlank()) {
-                AsyncImage(
-                    model = user.avatarUrl,
-                    contentDescription = user.displayName,
-                    modifier = Modifier.fillMaxSize().clip(CircleShape),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Text(initial, color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Black)
+        // Avatar (circular, foto kalau ada, initial kalau tidak) + presence dot
+        Box(contentAlignment = Alignment.BottomEnd) {
+            Box(
+                Modifier.size(36.dp).clip(CircleShape)
+                    .background(Brush.linearGradient(listOf(CandyCyan, CandyBlue))),
+                contentAlignment = Alignment.Center
+            ) {
+                if (user.avatarUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = user.avatarUrl,
+                        contentDescription = user.displayName,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text(initial, color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                }
             }
+            // v7.0.5: Presence dot (bottom-right of avatar)
+            Box(
+                Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(presence.dotColor)
+                    .border(1.5.dp, PureBlack, CircleShape)  // ring supaya kontras dgn avatar
+            )
         }
         Spacer(Modifier.width(TTSpacing.sm))
         Column(Modifier.weight(1f)) {
@@ -6389,10 +6422,91 @@ private fun UserSearchRow(
                     Text(" · ID: ${user.uniqueId}", color = SubText, fontSize = 10.sp)
                 }
             }
+            // v7.0.5: Presence status text (below username)
+            Text(
+                presence.label,
+                color = presence.labelColor,
+                fontSize = 10.sp,
+                fontWeight = if (presence.isOnline) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1
+            )
         }
         ModernPill(user.role.uppercase(), roleBadgeColor(user.role))
         Spacer(Modifier.width(TTSpacing.xs))
         Icon(Icons.Rounded.ChevronRight, null, tint = SubText, modifier = Modifier.size(18.dp))
+    }
+}
+
+// v7.0.5: Presence data class + computePresence helper
+private data class Presence(
+    val isOnline: Boolean,
+    val dotColor: Color,
+    val label: String,
+    val labelColor: Color
+)
+
+/**
+ * Compute presence from last_seen_at ISO timestamp.
+ *   - Online: < 2 min ago (white dot + "Online")
+ *   - Recent: < 10 min ago (gray dot + "Last seen Xm ago")
+ *   - Away:   < 1 hour (dim dot + "Last seen Xm ago")
+ *   - Offline: > 1 hour or empty (dim dot + "Last seen Xh ago" / "Offline")
+ */
+private fun computePresence(lastSeenAt: String): Presence {
+    if (lastSeenAt.isBlank()) {
+        return Presence(
+            isOnline = false,
+            dotColor = SubText,
+            label = "Offline",
+            labelColor = SubText
+        )
+    }
+    return try {
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", java.util.Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val seen = sdf.parse(lastSeenAt)?.time ?: System.currentTimeMillis()
+        val diffMs = System.currentTimeMillis() - seen
+        val diffMin = diffMs / 60_000L
+        val diffHour = diffMin / 60
+        when {
+            diffMin < 2 -> Presence(
+                isOnline = true,
+                dotColor = Color.White,  // monochrome — online = white dot
+                label = "Online",
+                labelColor = Color.White
+            )
+            diffMin < 10 -> Presence(
+                isOnline = false,
+                dotColor = SoftText,
+                label = "Last seen ${diffMin}m ago",
+                labelColor = SoftText
+            )
+            diffHour < 1 -> Presence(
+                isOnline = false,
+                dotColor = SubText,
+                label = "Last seen ${diffMin}m ago",
+                labelColor = SubText
+            )
+            diffHour < 24 -> Presence(
+                isOnline = false,
+                dotColor = SubText,
+                label = "Last seen ${diffHour}h ago",
+                labelColor = SubText
+            )
+            else -> Presence(
+                isOnline = false,
+                dotColor = SubText,
+                label = "Last seen ${diffHour / 24}d ago",
+                labelColor = SubText
+            )
+        }
+    } catch (_: Exception) {
+        Presence(
+            isOnline = false,
+            dotColor = SubText,
+            label = "Offline",
+            labelColor = SubText
+        )
     }
 }
 

@@ -1210,9 +1210,25 @@ public class CommunityApi {
      */
     public JSONArray searchUsers(String query) throws Exception {
         if (query == null || query.trim().isEmpty()) return new JSONArray();
+        // v7.0.5: include last_seen_at for online/last-seen status
         return new JSONArray(request("GET",
-            "/rest/v1/profiles?username=ilike.*" + enc(query.trim()) + "*&select=id,username,display_name,avatar_url,unique_id,role&limit=10",
+            "/rest/v1/profiles?username=ilike.*" + enc(query.trim()) + "*&select=id,username,display_name,avatar_url,unique_id,role,last_seen_at&limit=10",
             null, false, false));
+    }
+
+    /**
+     * v7.0.5: Update last_seen_at timestamp (presence heartbeat).
+     * Called every 60s while app is in foreground + on app open.
+     * Used to show "Online" / "Last seen 5m ago" badge in user list.
+     */
+    public void updateLastSeen() throws Exception {
+        if (userId().isEmpty()) return;
+        // v7.0.5: send ISO 8601 UTC timestamp — Supabase stores as timestamptz
+        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US);
+        sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+        JSONObject body = new JSONObject();
+        body.put("last_seen_at", sdf.format(new java.util.Date()));
+        request("PATCH", "/rest/v1/profiles?id=eq." + enc(userId()), body, true, "return=minimal");
     }
 
     /**
