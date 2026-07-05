@@ -1210,9 +1210,9 @@ public class CommunityApi {
      */
     public JSONArray searchUsers(String query) throws Exception {
         if (query == null || query.trim().isEmpty()) return new JSONArray();
-        // v7.0.5: include last_seen_at for online/last-seen status
+        // v7.0.5: include last_seen_at + updated_at for presence (fallback to updated_at if last_seen_at null)
         return new JSONArray(request("GET",
-            "/rest/v1/profiles?username=ilike.*" + enc(query.trim()) + "*&select=id,username,display_name,avatar_url,unique_id,role,last_seen_at&limit=10",
+            "/rest/v1/profiles?username=ilike.*" + enc(query.trim()) + "*&select=id,username,display_name,avatar_url,unique_id,role,last_seen_at,updated_at&limit=10",
             null, false, false));
     }
 
@@ -1222,13 +1222,24 @@ public class CommunityApi {
      * Used to show "Online" / "Last seen 5m ago" badge in user list.
      */
     public void updateLastSeen() throws Exception {
-        if (userId().isEmpty()) return;
+        if (userId().isEmpty()) {
+            android.util.Log.w("DLaviePresence", "updateLastSeen skipped — userId empty (not logged in)");
+            return;
+        }
         // v7.0.5: send ISO 8601 UTC timestamp — Supabase stores as timestamptz
         java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US);
         sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+        String timestamp = sdf.format(new java.util.Date());
+        android.util.Log.d("DLaviePresence", "Updating last_seen_at for user " + userId() + " → " + timestamp);
         JSONObject body = new JSONObject();
-        body.put("last_seen_at", sdf.format(new java.util.Date()));
-        request("PATCH", "/rest/v1/profiles?id=eq." + enc(userId()), body, true, "return=minimal");
+        body.put("last_seen_at", timestamp);
+        try {
+            String resp = request("PATCH", "/rest/v1/profiles?id=eq." + enc(userId()), body, true, "return=minimal");
+            android.util.Log.d("DLaviePresence", "Update OK, resp: " + resp);
+        } catch (Exception e) {
+            android.util.Log.e("DLaviePresence", "Update FAILED: " + e.getMessage(), e);
+            throw e;
+        }
     }
 
     /**

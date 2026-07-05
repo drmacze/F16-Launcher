@@ -3650,7 +3650,8 @@ fun CommunityScreen(
                         },
                         uniqueId    = o.optInt("unique_id", 0),
                         role        = o.optString("role", "user"),
-                        lastSeenAt  = o.optString("last_seen_at", "")  // v7.0.5: presence
+                        lastSeenAt  = o.optString("last_seen_at", ""),  // v7.0.5: presence
+                        updatedAt   = o.optString("updated_at", "")     // v7.0.5: fallback presence
                     )
                 }.getOrNull()
             }.filter { it.id.isNotBlank() && it.id != api.userId() }
@@ -5257,7 +5258,8 @@ data class UserSearchResult(
     val avatarUrl: String,
     val uniqueId: Int,
     val role: String,
-    val lastSeenAt: String = ""  // v7.0.5: ISO timestamp from profiles.last_seen_at (empty = never)
+    val lastSeenAt: String = "",  // v7.0.5: ISO timestamp from profiles.last_seen_at (empty = never)
+    val updatedAt: String = ""   // v7.0.5: fallback presence dari updated_at (saat last_seen_at null)
 )
 
 /**
@@ -6375,12 +6377,13 @@ private fun UserSearchRow(
     onClick: () -> Unit
 ) {
     val initial = (user.displayName.ifBlank { user.username }).firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-    // v7.0.5: Compute presence status from lastSeenAt
-    //   - Online: last_seen < 2 minutes ago (white dot + "Online" text)
-    //   - Recent: last_seen < 10 minutes (gray dot + "Last seen Xm ago")
-    //   - Away:   last_seen < 1 hour (gray dot + "Last seen Xm ago")
-    //   - Offline: last_seen > 1 hour or empty (dim dot + "Last seen Xh ago" / "Offline")
-    val presence = computePresence(user.lastSeenAt)
+    // v7.0.5: Compute presence — prefer last_seen_at (heartbeat), fallback to updated_at
+    //   - Online: < 2 min ago (white dot + "Online")
+    //   - Recent: < 10 min (gray dot + "Last seen Xm ago")
+    //   - Away:   < 1 hour (dim dot + "Last seen Xm ago")
+    //   - Offline: > 1 hour or empty (dim dot + "Last seen Xh ago" / "Offline")
+    val presenceTimestamp = user.lastSeenAt.ifBlank { user.updatedAt }
+    val presence = computePresence(presenceTimestamp)
     Row(
         Modifier.fillMaxWidth().clickable { onClick() }
             .padding(horizontal = TTSpacing.md, vertical = TTSpacing.sm),
@@ -6460,7 +6463,7 @@ private data class Presence(
  *   - Offline: > 1 hour or empty (dim dot + "Last seen Xh ago" / "Offline")
  */
 private fun computePresence(lastSeenAt: String): Presence {
-    if (lastSeenAt.isBlank()) {
+    if (lastSeenAt.isBlank() || lastSeenAt == "null") {
         return Presence(
             isOnline = false,
             dotColor = SubText,
@@ -6469,16 +6472,36 @@ private fun computePresence(lastSeenAt: String): Presence {
         )
     }
     return try {
-        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", java.util.Locale.US)
+        // v7.0.5: Supabase kirim format dengan microseconds: "2026-07-05T06:17:18.81963+00:00"
+        // atau "2026-07-05T06:17:18.81963Z". Trim microseconds ke millis (3 digit) supaya
+        // SimpleDateFormat bisa parse. Juga handle zone offset +00:00 vs Z.
+        var ts = lastSeenAt.trim()
+        // Normalisasi: ganti "+00:00" dengan "Z" (ISO 8601 UTC indicator)
+        if (ts.endsWith("+00:00")) ts = ts.substring(0, ts.length - 6) + "Z"
+        // Trim fractional seconds ke 3 digit (millis)
+        val dotIdx = ts.indexOf('.')
+        if (dotIdx > 0) {
+            val afterDot = ts.substring(dotIdx + 1)
+            // Find where fractional part ends (Z or + or -)
+            var endIdx = afterDot.length
+            for (i in afterDot.indices) {
+                val c = afterDot[i]
+                if (c == 'Z' || c == '+' || c == '-') { endIdx = i; break }
+            }
+            val frac = afterDot.substring(0, endIdx).take(3).padEnd(3, '0')
+            val tz = afterDot.substring(endIdx)
+            ts = ts.substring(0, dotIdx) + "." + frac + tz
+        }
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSX", java.util.Locale.US)
         sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
-        val seen = sdf.parse(lastSeenAt)?.time ?: System.currentTimeMillis()
+        val seen = sdf.parse(ts)?.time ?: System.currentTimeMillis()
         val diffMs = System.currentTimeMillis() - seen
         val diffMin = diffMs / 60_000L
         val diffHour = diffMin / 60
         when {
             diffMin < 2 -> Presence(
                 isOnline = true,
-                dotColor = Color.White,  // monochrome — online = white dot
+                dotColor = Color.White,
                 label = "Online",
                 labelColor = Color.White
             )
@@ -6507,7 +6530,8 @@ private fun computePresence(lastSeenAt: String): Presence {
                 labelColor = SubText
             )
         }
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+        android.util.Log.w("DLaviePresence", "computePresence parse failed: '${lastSeenAt}' → ${e.message}")
         Presence(
             isOnline = false,
             dotColor = SubText,
