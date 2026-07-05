@@ -3,6 +3,12 @@
     <external-files-path
         name="public_install"
         path="public-install/" />
+    <external-files-path
+        name="apk_downloads"
+        path="apk-downloads/" />
+    <external-files-path
+        name="root"
+        path="." />
     <cache-path
         name="app_updates"
         path="app-updates/" />

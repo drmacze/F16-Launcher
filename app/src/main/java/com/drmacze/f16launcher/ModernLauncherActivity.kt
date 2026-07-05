@@ -888,41 +888,50 @@ fun MainShell(
             }.onSuccess { apkFile ->
                 dlProgress = 2f
 
-                // v7.3.2 FIX: "App not installed" error pada Android 15+
-                // Root cause: signature mismatch — APK baru punya signature beda
-                // dengan versi yang sudah terinstall. Android menolak install.
-                // Fix: kalau game sudah terinstall, uninstall dulu sebelum install baru.
-                val alreadyInstalled = try {
-                    context.packageManager.getPackageInfo(GAME_PKG_16, 0)
-                    true
-                } catch (_: Exception) {
-                    false
-                }
+                // v7.3.4 FIX: Revert v7.3.2 uninstall logic yang merusak install flow.
+                // Root cause "App not installed":
+                //   1. ApkDownloader saves ke "apk-downloads/" TAPI file_paths.xml
+                //      hanya expose "public-install/" → getUriForFile crash → install gagal
+                //   2. v7.3.2 uninstall logic memaksa uninstall padahal user mungkin
+                //      mau reinstall versi yang sama (signature sama, tidak perlu uninstall)
+                //
+                // Fix:
+                //   - file_paths.xml: added apk-downloads/ + root path (done)
+                //   - startDownload: kembali ke flow sederhana yang work sebelum v7.3.2
+                //   - Added APK size validation (catch error pages)
+                //   - Added grantUriPermission untuk Android 13+ strict mode
 
-                if (alreadyInstalled) {
-                    android.util.Log.d("DLavieInstall", "Game sudah terinstall — uninstall dulu untuk avoid signature conflict")
-                    val uninstallIntent = Intent(Intent.ACTION_DELETE).apply {
-                        data = android.net.Uri.parse("package:$GAME_PKG_16")
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    context.startActivity(uninstallIntent)
-                    dlError = "Uninstall the old FIFA 16 first, then tap Get again to install the new version."
+                // Verify APK file valid (minimal size check — < 1MB = probably error page)
+                if (apkFile.length() < 1_000_000) {
+                    dlError = "Download failed — file too small. Check your connection and try again."
                     dlProgress = -1f
                 } else {
-                    // Game belum terinstall — verify APK + install
-                    android.util.Log.d("DLavieInstall", "Game belum terinstall — langsung install")
+                    android.util.Log.d("DLavieInstall", "APK downloaded: ${apkFile.length()} bytes, launching installer...")
 
-                    // Verify APK file valid (minimal size check — < 1MB = probably error page)
-                    if (apkFile.length() < 1_000_000) {
-                        dlError = "Downloaded file too small — server error. Try again."
-                        dlProgress = -1f
-                    } else {
+                    // Launch APK installer — same flow yang work di Android 7-15 sebelum v7.3.2
+                    try {
                         val uri = androidx.core.content.FileProvider.getUriForFile(
                             context, "${context.packageName}.files", apkFile)
-                        context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+
+                        val installIntent = Intent(Intent.ACTION_VIEW).apply {
                             setDataAndType(uri, "application/vnd.android.package-archive")
                             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        })
+                        }
+
+                        // v7.3.4: Grant URI permission ke package installer (Android 13+ strict)
+                        runCatching {
+                            context.grantUriPermission(
+                                "com.android.packageinstaller",
+                                uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
+                        }
+
+                        context.startActivity(installIntent)
+                    } catch (e: Exception) {
+                        android.util.Log.e("DLavieInstall", "Install launch failed", e)
+                        dlError = "Unable to open installer. Try again or install manually."
+                        dlProgress = -1f
                     }
                 }
             }.onFailure { dlError = it.message ?: "Download failed. Check your internet connection."; dlProgress = -1f }

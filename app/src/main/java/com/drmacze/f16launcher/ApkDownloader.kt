@@ -305,6 +305,14 @@ class ApkDownloader(private val context: Context) {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
+            // v7.3.4: Grant URI permission ke package installer (Android 13+ strict)
+            runCatching {
+                context.grantUriPermission(
+                    "com.android.packageinstaller",
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
             context.startActivity(intent)
             true
         } catch (_: Throwable) {
