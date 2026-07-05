@@ -51,7 +51,21 @@ fun FloatingChatBot(api: CommunityApi) {
     var mode by remember { mutableStateOf<String?>(null) } // null = menu, "report", "live_chat", "assistant"
 
     if (!expanded) {
-        // Floating button
+        // Floating button with auto-hide (slides to edge after 3 seconds)
+        var isHidden by remember { mutableStateOf(false) }
+        val offsetX by animateDpAsState(
+            targetValue = if (isHidden) 24.dp else 0.dp,
+            animationSpec = tween(400, easing = FastOutSlowInEasing),
+            label = "fab_offset"
+        )
+        
+        LaunchedEffect(isHidden) {
+            if (!isHidden) {
+                delay(3000)
+                isHidden = true
+            }
+        }
+
         Box(
             Modifier
                 .fillMaxSize()
@@ -61,17 +75,19 @@ fun FloatingChatBot(api: CommunityApi) {
             Box(
                 Modifier
                     .size(56.dp)
+                    .offset(x = offsetX)
                     .clip(CircleShape)
                     .background(Color.White)
                     .border(2.dp, Color.White.copy(alpha = 0.3f), CircleShape)
                     .clickable {
+                        isHidden = false
                         expanded = true
                         mode = null
                     },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Rounded.ChatBubble,
+                    if (isHidden) Icons.Rounded.ChatBubbleOutline else Icons.Rounded.ChatBubble,
                     contentDescription = "DLavie Assistant",
                     tint = Color.Black,
                     modifier = Modifier.size(28.dp)
@@ -395,27 +411,31 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
         }
     }
 
-    // Initialize: check existing open ticket OR cooldown OR create new
+    // Initialize: check existing open/pending ticket OR cooldown OR show form
     LaunchedEffect(Unit) {
         if (!isAssistant) {
+            // 1. Check for existing OPEN or PENDING ticket (resume session)
             val existingTicket = findOpenTicket(api)
             if (existingTicket != null) {
-                ticketId = existingTicket
-                ticketStatus = "open"
-                val history = pollMessages(api, existingTicket)
+                ticketId = existingTicket.first
+                ticketStatus = existingTicket.second // "open" or "pending"
+                val history = pollMessages(api, existingTicket.first)
                 messages = history
                 lastActivityTime = System.currentTimeMillis()
-                adminOnline = checkAdminOnline(api)
-                if (!adminOnline) {
-                    messages = messages + ChatMessage(
-                        senderType = "bot",
-                        body = "Saat ini tim kami offline. Mohon tunggu sampai tim kami merespon.",
-                        timestamp = System.currentTimeMillis()
-                    )
+                if (existingTicket.second == "open") {
+                    adminOnline = checkAdminOnline(api)
+                    if (!adminOnline) {
+                        messages = messages + ChatMessage(
+                            senderType = "bot",
+                            body = "Saat ini tim kami offline. Mohon tunggu sampai tim kami merespon.",
+                            timestamp = System.currentTimeMillis()
+                        )
+                    }
                 }
                 return@LaunchedEffect
             }
 
+            // 2. Check cooldown
             val cooldownEnd = checkCooldown(api)
             if (cooldownEnd > 0) {
                 val remaining = ((cooldownEnd - System.currentTimeMillis()) / 1000).toInt()
@@ -426,23 +446,10 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
                 }
             }
 
-            adminOnline = checkAdminOnline(api)
-            ticketId = createTicket(api, "live_chat")
-            ticketStatus = "open"
-            lastActivityTime = System.currentTimeMillis()
-            if (!adminOnline) {
-                messages = messages + ChatMessage(
-                    senderType = "bot",
-                    body = "Saat ini tim kami offline. Mohon tunggu sampai tim kami merespon.",
-                    timestamp = System.currentTimeMillis()
-                )
-            }
-            messages = messages + ChatMessage(
-                senderType = "bot",
-                body = "Sesi live chat dimulai. Tim developer akan segera merespon. Ketik pesan Anda di bawah ini.",
-                timestamp = System.currentTimeMillis()
-            )
+            // 3. No existing session, no cooldown → show create ticket form
+            ticketStatus = "form"
         } else {
+            // Assistant mode — always create new (no cooldown for AI)
             ticketId = createTicket(api, "assistant")
             ticketStatus = "open"
             messages = messages + ChatMessage(
@@ -493,6 +500,42 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
         }
     }
 
+    // Poll for pending→open status change
+    LaunchedEffect(ticketId, ticketStatus) {
+        if (ticketId != null && ticketStatus == "pending" && !isAssistant) {
+            val startTime = System.currentTimeMillis()
+            while (true) {
+                delay(5000)
+                val status = checkTicketStatus(api, ticketId!!)
+                if (status == "open") {
+                    ticketStatus = "open"
+                    lastActivityTime = System.currentTimeMillis()
+                    messages = messages + ChatMessage(
+                        senderType = "bot",
+                        body = "Developer telah menerima panggilan Anda. Silakan ketik pesan Anda.",
+                        timestamp = System.currentTimeMillis()
+                    )
+                    break
+                }
+                if (status == "closed") {
+                    ticketStatus = "closed"
+                    break
+                }
+                // Auto-close if pending > 5 min
+                if (System.currentTimeMillis() - startTime > 5 * 60 * 1000) {
+                    closeTicketWithCooldown(api, ticketId!!)
+                    ticketStatus = "closed"
+                    messages = messages + ChatMessage(
+                        senderType = "bot",
+                        body = "Tidak ada developer yang merespon dalam 5 menit. Sesi ditutup. Coba lagi nanti.",
+                        timestamp = System.currentTimeMillis()
+                    )
+                    break
+                }
+            }
+        }
+    }
+
     // Cooldown countdown
     LaunchedEffect(ticketStatus) {
         if (ticketStatus == "cooldown") {
@@ -519,7 +562,7 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
                         Column(Modifier.weight(1f)) {
                             Text(if (isAssistant) "DLavie Assistant" else "Live Chat", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
                             Text(
-                                when (ticketStatus) { "open" -> "Chat langsung dengan developer"; "closed" -> "Sesi ditutup"; "cooldown" -> "Cooldown aktif"; else -> "Memuat..." },
+                                when (ticketStatus) { "open" -> "Chat langsung dengan developer"; "closed" -> "Sesi ditutup"; "cooldown" -> "Cooldown aktif"; "form" -> "Buat sesi live chat"; "pending" -> "Menunggu developer..."; else -> "Memuat..." },
                                 color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp, fontFamily = InterFontFamily
                             )
                         }
@@ -548,6 +591,51 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
                                 Text("Tutup", color = Color.White, fontSize = 14.sp, fontFamily = InterFontFamily, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
                             }
                         }
+                    }
+                } else if (ticketStatus == "form") {
+                    // Create ticket form
+                    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Rounded.SupportAgent, null, tint = Color.White, modifier = Modifier.size(48.dp))
+                        Spacer(Modifier.height(16.dp))
+                        Text("Live Chat", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                        Text("Chat langsung dengan developer", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp, fontFamily = InterFontFamily)
+                        Spacer(Modifier.height(24.dp))
+                        Column(Modifier.fillMaxWidth()) {
+                            Text("Versi Android", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp, fontFamily = InterFontFamily)
+                            Spacer(Modifier.height(4.dp))
+                            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), color = Color.White.copy(alpha = 0.05f), border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))) {
+                                Text(android.os.Build.VERSION.RELEASE ?: "Unknown", color = Color.White, fontSize = 14.sp, fontFamily = InterFontFamily, modifier = Modifier.padding(12.dp))
+                            }
+                        }
+                        Spacer(Modifier.height(24.dp))
+                        Surface(Modifier.fillMaxWidth().clickable {
+                            scope.launch {
+                                ticketId = createTicket(api, "live_chat")
+                                if (ticketId != null) { ticketStatus = "pending"; lastActivityTime = System.currentTimeMillis() }
+                            }
+                        }, shape = RoundedCornerShape(12.dp), color = Color.White) {
+                            Box(Modifier.padding(16.dp), contentAlignment = Alignment.Center) {
+                                Text("Mulai", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                            }
+                        }
+                    }
+                } else if (ticketStatus == "pending") {
+                    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(48.dp), strokeWidth = 3.dp)
+                        Spacer(Modifier.height(16.dp))
+                        Text("Menghubungkan...", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Menunggu developer menerima panggilan Anda.", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp, fontFamily = InterFontFamily, textAlign = TextAlign.Center)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Sesi akan ditutup otomatis dalam 5 menit jika tidak ada respon.", color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp, fontFamily = InterFontFamily, textAlign = TextAlign.Center)
+                        Spacer(Modifier.height(24.dp))
+                        Surface(Modifier.clickable { ticketId?.let { closeTicketWithCooldown(api, it); ticketStatus = "closed" } }, shape = RoundedCornerShape(12.dp), color = Color.White.copy(alpha = 0.1f)) {
+                            Text("Batalkan", color = Color.White, fontSize = 13.sp, fontFamily = InterFontFamily, modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp))
+                        }
+                    }
+                } else if (ticketStatus == "loading") {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp))
                     }
                 } else {
                     LazyColumn(Modifier.weight(1f).padding(horizontal = 12.dp), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -666,7 +754,7 @@ private suspend fun createTicket(api: CommunityApi, category: String): String? {
             val payload = JSONObject().apply {
                 put("user_id", api.userId())
                 put("category", category)
-                put("status", "open")
+                put("status", "pending")
                 put("android_version", android.os.Build.VERSION.RELEASE ?: "")
             }
             val conn = (URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets").openConnection() as HttpURLConnection).apply {
@@ -983,10 +1071,10 @@ private suspend fun callAIAssistant(message: String, history: List<Map<String, S
 
 // ─── New helper functions for session management ────────────────────────────
 
-private suspend fun findOpenTicket(api: CommunityApi): String? {
+private suspend fun findOpenTicket(api: CommunityApi): Pair<String, String>? {
     return withContext(Dispatchers.IO) {
         try {
-            val conn = (URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets?user_id=eq.${api.userId()}&status=eq.open&category=eq.live_chat&order=created_at.desc&limit=1&select=id").openConnection() as HttpURLConnection).apply {
+            val conn = (URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets?user_id=eq.${api.userId()}&status=in.(open,pending)&category=eq.live_chat&order=created_at.desc&limit=1&select=id,status").openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 15000
                 readTimeout = 15000
@@ -996,8 +1084,11 @@ private suspend fun findOpenTicket(api: CommunityApi): String? {
             if (conn.responseCode in 200..299) {
                 val text = conn.inputStream.bufferedReader().use { it.readText() }
                 val arr = JSONArray(text)
-                if (arr.length() > 0) arr.getJSONObject(0).optString("id") else null
-            } else { null }
+                if (arr.length() > 0) {
+                    val obj = arr.getJSONObject(0)
+                    Pair(obj.optString("id"), obj.optString("status", "pending"))
+                } else null
+            } else null
         } catch (e: Exception) { null }
     }
 }
