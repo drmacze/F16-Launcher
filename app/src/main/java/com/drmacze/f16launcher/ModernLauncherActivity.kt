@@ -99,6 +99,7 @@ import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DataObject
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Event
@@ -319,11 +320,13 @@ data class NotificationItem(
 enum class SetupState { LOADING, NEED_GAME, NEED_DATA, READY }
 
 // ─── Navigation pages ─────────────────────────────────────────────────────────
+// v6.8 redesign: 5 tabs (added Discover between Home and Update).
 enum class Page(val label: String, val navIcon: ImageVector) {
-    Home  ("Beranda",   Icons.Rounded.Home),
-    Update("Update",    Icons.Rounded.CloudSync),
-    Chat  ("Komunitas", Icons.Rounded.Forum),
-    Me    ("Profil",    Icons.Rounded.AccountCircle)
+    Home    ("Beranda",   Icons.Rounded.Home),
+    Discover("Jelajahi",  Icons.Rounded.Explore),
+    Update  ("Update",    Icons.Rounded.CloudSync),
+    Chat    ("Komunitas", Icons.Rounded.Forum),
+    Me      ("Profil",    Icons.Rounded.AccountCircle)
 }
 
 // ─── Activity ─────────────────────────────────────────────────────────────────
@@ -1103,7 +1106,7 @@ fun MainShell(
                             // are disposed and re-fetch on mount via their LaunchedEffect).
                             HorizontalPager(
                                 state = pagePagerState,
-                                modifier = Modifier.fillMaxSize().padding(bottom = 100.dp),
+                                modifier = Modifier.fillMaxSize().padding(bottom = 84.dp),
                                 pageSpacing = 0.dp,
                                 beyondViewportPageCount = 0
                             ) { pageIndex ->
@@ -1117,11 +1120,22 @@ fun MainShell(
                                             dlProgress      = dlProgress,
                                             dlError         = dlError,
                                             startDownload   = { startDownload() },
+                                            onOpenSettings  = { showSettings = true },
                                             onGameCardClick = { inst, avg, count, blocked ->
                                                 detailGameInstalled      = inst
                                                 detailAvgRating          = avg
                                                 detailRatingCount        = count
                                                 detailMaintenanceBlocked = blocked
+                                                showGameDetail           = true
+                                            }
+                                        )
+                                    Page.Discover -> DiscoverScreen(
+                                            onNav = { page = it },
+                                            onGameCardClick = {
+                                                detailGameInstalled      = false
+                                                detailAvgRating          = 4.7
+                                                detailRatingCount        = 1250
+                                                detailMaintenanceBlocked = false
                                                 showGameDetail           = true
                                             }
                                         )
@@ -1174,14 +1188,13 @@ fun MainShell(
             )
         }
 
-        // ── FloatingNav tetap accessible dari Home (tidak tampil saat GameDetail/Settings/Visit aktif) ──
+        // ── v6.8 redesign: Bottom navigation (fixed bar, 5 icons) replaces FloatingNav pill ──
+        // Tetap accessible dari Home (tidak tampil saat GameDetail/Settings/Visit aktif).
         if (!showGameDetail && !showSettings && visitingUserId == null) {
-            FloatingNav(
+            DLavieBottomNav(
                 page     = page,
                 onPage   = { page = it },
                 modifier = Modifier.align(Alignment.BottomCenter)
-                                   .navigationBarsPadding()
-                                   .padding(bottom = 12.dp)
             )
         }
 
@@ -1412,6 +1425,8 @@ fun HomeScreen(
     dlProgress: Float = -1f,
     dlError: String = "",
     startDownload: () -> Unit = {},
+    // ── v6.8 redesign: hamburger menu opens Settings ──
+    onOpenSettings: () -> Unit = {},
     // ── Phase 2: tap TTGameCard → navigate ke GameDetailScreen ──
     onGameCardClick: (gameInstalled: Boolean, avgRating: Double, ratingCount: Int, maintenanceBlocked: Boolean) -> Unit = { _, _, _, _ -> }
 ) {
@@ -1627,149 +1642,95 @@ fun HomeScreen(
             }
         }
 
-        // ── Top Bar ─────────────────────────────────────────────────────────────
-        // Kiri: "DLavie 26" text (bold, white). Kanan: notification bell icon.
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // v3.0 monochrome DL logo cover (black bg + white DL + halftone)
-                DLavieLogoCover(size = 32.dp, fontSize = 13.sp, shape = CircleShape)
-                Spacer(Modifier.width(10.dp))
-                Text("DLavie 26", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
-            }
-            Box {
-                Icon(
-                    Icons.Rounded.Notifications, "Notifikasi",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp).clickable { showNotifPopup = true }
-                )
-                // Tiny unread dot indicator (subtle, kalau ada latestNotif belum di-dismiss)
-                if (latestNotif != null) {
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .offset(x = 1.dp, y = (-1).dp)
-                            .size(7.dp)
-                            .background(DangerRed, CircleShape)
-                    )
-                }
-                DropdownMenu(
-                    expanded = showNotifPopup,
-                    onDismissRequest = { showNotifPopup = false },
-                    modifier = Modifier.background(GlassBase)
-                ) {
-                    NotificationCategoryItems(
-                        onCategorySelected = { cat ->
-                            notifCategory = cat
-                            showNotifPopup = false
-                            // Fetch filtered notifications (fail-open).
-                            scope.launch {
-                                val list = withContext(Dispatchers.IO) {
-                                    runCatching {
-                                        val arr = api.getNotificationsByCategory(15, cat)
-                                        (0 until arr.length()).mapNotNull { i ->
-                                            runCatching {
-                                                val o = arr.getJSONObject(i)
-                                                NotifCampaign(
-                                                    id = o.optString("id"),
-                                                    title = o.optString("title"),
-                                                    body = o.optString("body"),
-                                                    sentAt = o.optString("sent_at")
-                                                )
-                                            }.getOrNull()
-                                        }
-                                    }.getOrDefault(emptyList())
-                                }
-                                notifList = list
-                                notifListOpen = true
-                            }
-                        }
-                    )
-                }
-            }
-        }
-
-        // ── Hero Banner (FIFA 16 Mobile — v5.1 Video Background) ───────────────
-        // YouTube video auto-play (muted, looping) + dark scrim + brand text
-        Box(
-            Modifier.fillMaxWidth().height(220.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .border(
-                    BorderStroke(1.dp, DLavieGlass.GlassStroke.copy(alpha = 0.7f)),
-                    RoundedCornerShape(28.dp)
-                )
-        ) {
-            // v6.0: Pure monochrome halftone background (no video — clean, elegant)
-            MonochromeHalftoneBackground(
-                modifier = Modifier.fillMaxSize(),
-                showLogoParticles = true
+        // ── v6.8 Top Bar: hamburger + search + bell + profile ───────────────────
+        // Hamburger → Settings overlay. Search → Komunitas (search aktif di sana).
+        // Bell → notification category popup (existing logic). Profile → Me tab.
+        Box {
+            DLavieTopBar(
+                onMenuClick    = { onOpenSettings() },
+                onSearchClick  = { onNav(Page.Chat) },
+                onBellClick    = { showNotifPopup = true },
+                onProfileClick = { onNav(Page.Me) },
+                hasUnreadNotif = latestNotif != null,
+                profileInitial = "DL"
             )
-
-            Column(
-                Modifier.fillMaxSize().padding(20.dp),
-                verticalArrangement = Arrangement.SpaceBetween
+            // Hidden dropdown — still driven by showNotifPopup state (unchanged logic)
+            DropdownMenu(
+                expanded = showNotifPopup,
+                onDismissRequest = { showNotifPopup = false },
+                modifier = Modifier.background(GlassBase)
             ) {
-                // Top row: brand text + rating badge (logos removed — user request)
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "DLAVIE",
-                            color = DLavieGlass.TextPrimary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 2.sp
-                        )
-                        ShinyTitle("FIFA 16 Mobile")
-                        Spacer(Modifier.height(8.dp))
-                        TypewriterText(
-                            texts = listOf(
-                                "Play FIFA 16 Mobile everywhere",
-                                "Play offline, Always update, More improvement."
-                            )
-                        )
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    // Rating badge — pojok kanan atas banner
-                    Column(horizontalAlignment = Alignment.End) {
-                        val rating10 = String.format("%.1f", avgRating * 2.0)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(Icons.Rounded.Star, contentDescription = null, tint = DLavieGlass.AuroraAmber, modifier = Modifier.size(16.dp))
-                            Text(rating10, color = DLavieGlass.AuroraAmber, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                        }
-                        Text("$ratingCount ratings", color = SoftText, fontSize = 10.sp)
-                    }
-                }
-
-                // Bottom row: verified pill only (circular DL logo removed — user request)
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        color = DLavieGlass.AuroraMint.copy(0.16f),
-                        border = BorderStroke(1.dp, DLavieGlass.AuroraMint.copy(0.45f)),
-                        shape = RoundedCornerShape(999.dp)
-                    ) {
-                        Row(
-                            Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(Icons.Rounded.Verified, null, tint = NeonGreen, modifier = Modifier.size(11.dp))
-                            Text("OFFICIAL", color = NeonGreen, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                NotificationCategoryItems(
+                    onCategorySelected = { cat ->
+                        notifCategory = cat
+                        showNotifPopup = false
+                        // Fetch filtered notifications (fail-open).
+                        scope.launch {
+                            val list = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    val arr = api.getNotificationsByCategory(15, cat)
+                                    (0 until arr.length()).mapNotNull { i ->
+                                        runCatching {
+                                            val o = arr.getJSONObject(i)
+                                            NotifCampaign(
+                                                id = o.optString("id"),
+                                                title = o.optString("title"),
+                                                body = o.optString("body"),
+                                                sentAt = o.optString("sent_at")
+                                            )
+                                        }.getOrNull()
+                                    }
+                                }.getOrDefault(emptyList())
+                            }
+                            notifList = list
+                            notifListOpen = true
                         }
                     }
-                }
+                )
             }
         }
+
+        // ── v6.8 Hero Carousel (full-width image + dots + 5-star rating) ────────
+        // Replaces single decorative hero banner. Swipeable, auto-scroll 5s,
+        // dots indicator below, 5-star rating overlay on each slide.
+        // Slide 1: FIFA 16 Mobile (real rating data dari Supabase).
+        // Slides 2-3: static highlight slides (Komunitas & Update promos).
+        val heroSlides = listOf(
+            HeroSlide(
+                title       = "FIFA 16 Mobile",
+                subtitle    = "DLavie 26 Mod — Play offline, Always update, More improvement",
+                rating      = avgRating.toFloat(),
+                ratingCount = ratingCount,
+                imageRes    = R.drawable.dlavie_game_logo,
+                tag         = "OFFICIAL"
+            ),
+            HeroSlide(
+                title       = "Komunitas DLavie",
+                subtitle    = "Berbagi patch, tips, dan diskusi dengan ribuan pemain",
+                rating      = 4.5f,
+                ratingCount = 820,
+                imageRes    = null,
+                tag         = "KOMUNITAS"
+            ),
+            HeroSlide(
+                title       = "Update v6.7.0",
+                subtitle    = "Patch terbaru — perbaikan bug & peningkatan performa",
+                rating      = 4.8f,
+                ratingCount = 412,
+                imageRes    = null,
+                tag         = "UPDATE"
+            )
+        )
+        DLavieHeroCarousel(
+            slides = heroSlides,
+            onSlideClick = { slide ->
+                when (slide.tag) {
+                    "OFFICIAL" -> onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked)
+                    "KOMUNITAS" -> onNav(Page.Chat)
+                    "UPDATE" -> onNav(Page.Update)
+                }
+            }
+        )
 
         // ── Beranda CLEAN (v5.0): Hanya game library DLavie 26 FIFA 16 ──────────
         // Banner carousel, Berita/Feed, Trusted by DLavie, Status bar (3 chips)

@@ -72,7 +72,7 @@ fun FloatingChatBot(api: CommunityApi) {
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(end = 16.dp, bottom = 96.dp),  // v6.8: clear new fixed bottom nav bar
             contentAlignment = Alignment.BottomEnd
         ) {
             Box(
