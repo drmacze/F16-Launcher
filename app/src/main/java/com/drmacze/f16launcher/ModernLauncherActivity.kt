@@ -893,7 +893,7 @@ fun MainShell(
                 // dengan versi yang sudah terinstall. Android menolak install.
                 // Fix: kalau game sudah terinstall, uninstall dulu sebelum install baru.
                 val alreadyInstalled = try {
-                    context.packageManager.getPackageInfo(GAME_PACKAGE, 0)
+                    context.packageManager.getPackageInfo(GAME_PKG_16, 0)
                     true
                 } catch (_: Exception) {
                     false
@@ -902,7 +902,7 @@ fun MainShell(
                 if (alreadyInstalled) {
                     android.util.Log.d("DLavieInstall", "Game sudah terinstall — uninstall dulu untuk avoid signature conflict")
                     val uninstallIntent = Intent(Intent.ACTION_DELETE).apply {
-                        data = android.net.Uri.parse("package:$GAME_PACKAGE")
+                        data = android.net.Uri.parse("package:$GAME_PKG_16")
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
                     }
                     context.startActivity(uninstallIntent)
