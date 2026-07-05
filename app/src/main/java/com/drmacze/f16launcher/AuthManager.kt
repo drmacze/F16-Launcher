@@ -32,7 +32,7 @@ object AuthManager {
      * Requires a valid access token.
      */
     fun updatePassword(accessToken: String, newPassword: String): String {
-        if (newPassword.length < 6) throw IllegalStateException("Password baru minimal 6 karakter.")
+        if (newPassword.length < 4) throw IllegalStateException("Password must be at least 4 characters.")
         val body = JSONObject().put("password", newPassword)
         val (_, _) = http("PUT", "/auth/v1/user", body, token = accessToken)
         return "OK: Password berhasil diubah. Sesi lain akan otomatis logout."

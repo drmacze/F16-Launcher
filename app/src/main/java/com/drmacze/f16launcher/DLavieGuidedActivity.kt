@@ -29,6 +29,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Email
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Public
@@ -681,35 +683,44 @@ private fun GuidedLoginScreen(
                         }
 
                         AnimatedVisibility(visible = message.isNotBlank()) {
-                            Box(
+                            Row(
                                 Modifier
                                     .fillMaxWidth()
                                     .background(
-                                        (if (isSuccess) GuideGreen else GuideRed).copy(alpha = 0.10f),
-                                        RoundedCornerShape(10.dp)
+                                        (if (isSuccess) GuideGreen else GuideRed).copy(alpha = 0.08f),
+                                        RoundedCornerShape(12.dp)
                                     )
                                     .border(
                                         1.dp,
-                                        (if (isSuccess) GuideGreen else GuideRed).copy(alpha = 0.28f),
-                                        RoundedCornerShape(10.dp)
+                                        (if (isSuccess) GuideGreen else GuideRed).copy(alpha = 0.20f),
+                                        RoundedCornerShape(12.dp)
                                     )
-                                    .padding(10.dp)
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.Top,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
+                                Icon(
+                                    if (isSuccess) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = if (isSuccess) GuideGreen else GuideRed,
+                                    modifier = Modifier.size(16.dp).padding(top = 1.dp)
+                                )
                                 Text(
                                     message,
                                     color = if (isSuccess) GuideGreen else GuideRed,
                                     fontSize = 12.sp,
                                     fontFamily = GuideFont,
-                                    lineHeight = 16.sp
+                                    lineHeight = 16.sp,
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         }
 
                         val canSubmit = when (mode) {
                             "forgot"  -> !working && email.isNotBlank() && email.contains("@")
-                            "login"   -> !working && email.isNotBlank() && password.length >= 6
+                            "login"   -> !working && email.isNotBlank() && password.length >= 4
                             "register"-> !working && email.isNotBlank() && email.contains("@") &&
-                                         password.length >= 6 && password == confirmPassword &&
+                                         password.length >= 4 && password == confirmPassword &&
                                          username.matches(Regex("[a-zA-Z0-9_]{3,24}")) &&
                                          displayName.trim().length >= 2
                             else -> false
@@ -1432,84 +1443,83 @@ private fun parseError(text: String): String {
 
         when (errorCode) {
             "weak_password" -> {
-                "Password terlalu lemah. Gunakan minimal 8 karakter dengan kombinasi huruf besar, huruf kecil, dan angka."
+                "Password needs to be stronger. Try adding numbers or symbols."
             }
             "user_already_exists" -> {
-                "Email sudah terdaftar. Silakan login atau gunakan email lain."
+                "This email is already registered. Try signing in instead."
             }
             "invalid_credentials" -> {
-                "Email atau password salah. Periksa kembali credentials Anda."
+                "Incorrect email or password. Please try again."
             }
             "email_not_confirmed" -> {
-                "Email belum diverifikasi. Cek inbox email Anda untuk link verifikasi."
+                "Please verify your email. Check your inbox for a confirmation link."
             }
             "email_exists" -> {
-                "Email sudah terdaftar. Silakan login atau gunakan email lain."
+                "This email is already registered. Try signing in instead."
             }
             "phone_exists" -> {
-                "Nomor telepon sudah terdaftar."
+                "This phone number is already registered."
             }
             "rate_limit_exceeded" -> {
-                "Terlalu banyak percobaan. Tunggu beberapa menit sebelum mencoba lagi."
+                "Too many attempts. Please wait a few minutes and try again."
             }
             "signup_disabled" -> {
-                "Pendaftaran sedang dinonaktifkan sementara. Coba lagi nanti."
+                "Registration is temporarily disabled. Please try again later."
             }
             "session_expired" -> {
-                "Sesi telah berakhir. Silakan login kembali."
+                "Your session has expired. Please sign in again."
             }
             "session_not_found" -> {
-                "Sesi tidak ditemukan. Silakan login kembali."
+                "Session not found. Please sign in again."
             }
             "user_not_found" -> {
-                "Akun tidak ditemukan. Periksa email Anda atau daftar akun baru."
+                "Account not found. Check your email or create a new account."
             }
             "no_authorization" -> {
-                "Tidak memiliki izin. Silakan login kembali."
+                "Authorization required. Please sign in again."
             }
             "reauthentication_needed" -> {
-                "Verifikasi ulang diperlukan. Silakan login kembali."
+                "Please verify your identity and try again."
             }
             "same_password" -> {
-                "Password baru tidak boleh sama dengan password lama."
+                "New password must be different from your current password."
             }
             "password_too_short" -> {
-                "Password terlalu pendek. Gunakan minimal 8 karakter."
+                "Password is too short. Use at least 4 characters."
             }
             "password_too_long" -> {
-                "Password terlalu panjang. Maksimal 72 karakter."
+                "Password is too long. Maximum 72 characters."
             }
             "validation_failed" -> {
-                "Data tidak valid. Periksa kembali input Anda."
+                "Invalid input. Please check your details and try again."
             }
             "captcha_failed" -> {
-                "Verifikasi CAPTCHA gagal. Coba lagi."
+                "Verification failed. Please try again."
             }
             "provider_email_needs_verification" -> {
-                "Email provider belum terverifikasi."
+                "Email verification required. Please verify your email."
             }
             "user_banned" -> {
-                "Akun Anda telah diblokir. Hubungi support untuk informasi."
+                "Your account has been suspended. Contact support for help."
             }
             "email_address_not_authorized" -> {
-                "Email tidak diizinkan. Hubungi admin."
+                "This email is not authorized. Contact support."
             }
             else -> {
-                // Generic error — show brief technical hint, not raw JSON
-                val hint = msg.take(120).ifBlank { "Terjadi kesalahan. Coba lagi." }
-                hint
+                // Modern generic error — no technical jargon
+                when {
+                    msg.contains("password", ignoreCase = true) && msg.contains("weak") -> "Password needs to be stronger. Try adding numbers or symbols."
+                    msg.contains("already", ignoreCase = true) -> "This email is already registered. Try signing in instead."
+                    msg.contains("invalid", ignoreCase = true) -> "Invalid credentials. Please check and try again."
+                    msg.contains("rate", ignoreCase = true) -> "Too many attempts. Please wait and try again."
+                    msg.contains("network", ignoreCase = true) || msg.contains("connect", ignoreCase = true) -> "Network error. Check your connection and try again."
+                    else -> "Something went wrong. Please try again."
+                }
             }
         }
     }.getOrElse {
-        // JSON parse failed — text might be plain text or HTML
-        // Sanitize: strip HTML tags, trim, limit length
-        val cleaned = text
-            .replace(Regex("<[^>]+>"), "")  // strip HTML
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .take(160)
-            .ifBlank { "Terjadi kesalahan. Coba lagi." }
-        cleaned
+        // JSON parse failed — clean modern message
+        "Something went wrong. Please try again."
     }
 }
 
