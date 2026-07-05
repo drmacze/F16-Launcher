@@ -46,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -343,7 +344,8 @@ private fun DLavieHeroSlide(
                 alpha = 0.55f
             )
             // Large promo icon centered-right (visual focal point)
-            slide.promoIcon?.let { icon ->
+            val promoIcon: ImageVector? = slide.promoIcon
+            if (promoIcon != null) {
                 Box(
                     Modifier
                         .align(Alignment.CenterEnd)
@@ -360,7 +362,7 @@ private fun DLavieHeroSlide(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            icon,
+                            promoIcon,
                             contentDescription = null,
                             tint = Color.White.copy(alpha = 0.85f),
                             modifier = Modifier.size(64.dp)
