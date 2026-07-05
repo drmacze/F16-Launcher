@@ -242,10 +242,25 @@ import java.net.URL
 // Design tokens sekarang ada di ModernUI.kt (premium palette v2.0)
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-private const val GAME_PKG         = "com.ea.gp.fifaworld"
-private const val FIFA_APK_URL     = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26.apk"
+// FIFA 16 (DLavie 26)
+private const val GAME_PKG_16       = "com.ea.gp.fifaworld"
+private const val FIFA16_APK_URL    = "https://github.com/drmacze/F16/releases/download/v3.0-launcher-only/DLavie26-Locked-LauncherOnly.apk"
+private const val MARKER_PATH_16    = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
+
+// FIFA 15 (DLavie 15)
+private const val GAME_PKG_15       = "com.ea.game.fifa14_row"
+private const val FIFA15_APK_URL    = "https://github.com/drmacze/F15/releases/download/v2.1.8/DLavie15-Android16-Compatible.apk"
+private const val FIFA15_DATA_URL   = "https://github.com/drmacze/F15/releases/download/v2.1.8/DATA.zip"
+private const val FIFA15_OBB_URL    = "https://github.com/drmacze/F15/releases/download/v2.1.8/OBB.zip"
+private const val MARKER_PATH_15    = "/sdcard/Android/data/com.ea.game.fifa14_row/.dlavie15_data_installed"
+private const val FIFA15_MAIN_ACTIVITY = "com.ea.game.fifa14.Fifa14Activity"
+
+// Legacy aliases (for existing code that references these)
+private const val GAME_PKG          = GAME_PKG_16
+private const val FIFA_APK_URL      = FIFA16_APK_URL
+private const val MARKER_PATH       = MARKER_PATH_16
+
 private const val DEFAULT_MANIFEST = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/manifest.json"
-private const val MARKER_PATH      = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
 private const val LOCAL_VER        = 1
 private const val LOCAL_VER_NAME   = "v1"
 
@@ -7610,14 +7625,9 @@ object GameSessionTracker {
     }
 }
 
-fun launchGame(context: android.content.Context) {
-    // ── Play-time tracking (Task 2): record session start time before launching.
-    // MainShell's ON_RESUME lifecycle observer will compute duration and persist it
-    // when the user returns to the launcher.
+fun launchGame(context: android.content.Context, gamePackage: String = GAME_PKG_16, mainActivity: String? = null) {
     GameSessionTracker.start()
-    // Fire-and-forget telemetry — game_launch event.
-    Telemetry.track(context, Telemetry.EVT_GAME_LAUNCH, mapOf("game_package" to GAME_PKG))
-    // Task 5: log game_launch activity (if logged in) — fire-and-forget on background thread.
+    Telemetry.track(context, Telemetry.EVT_GAME_LAUNCH, mapOf("game_package" to gamePackage))
     try {
         val appCtx = context.applicationContext
         Thread {
@@ -7628,23 +7638,22 @@ fun launchGame(context: android.content.Context) {
         }.start()
     } catch (_: Throwable) { }
 
-    // v6.3: Launch FIFA 16 via explicit component name.
-    // FIFA 16 APK no longer has LAUNCHER category (removed for launcher-only access),
-    // so getLaunchIntentForPackage returns null. We use explicit component intent instead.
     val intent = android.content.Intent().apply {
-        setClassName(GAME_PKG, "com.byfen.downloadzipsdk.MainActivity")
+        if (mainActivity != null) {
+            setClassName(gamePackage, mainActivity)
+        } else {
+            setClassName(gamePackage, "com.byfen.downloadzipsdk.MainActivity")
+        }
         addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
     }
     try {
         context.startActivity(intent)
     } catch (e: Exception) {
-        // Fallback: try getLaunchIntentForPackage (for older FIFA 16 APKs that still have LAUNCHER)
-        val fallbackIntent = context.packageManager.getLaunchIntentForPackage(GAME_PKG)
+        val fallbackIntent = context.packageManager.getLaunchIntentForPackage(gamePackage)
         if (fallbackIntent != null) {
             context.startActivity(fallbackIntent)
         } else {
-            // Last resort: open download page
-            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(FIFA_APK_URL)))
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("https://github.com/drmacze/F16/releases")))
         }
     }
 }
@@ -8063,16 +8072,18 @@ fun GameHubScreen(
     val games = remember {
         listOf(
             GameItem(
-                title = "DLavie 26: Football Game",
-                subtitle = "FIFA 16 Mobile Mod",
-                packageName = "com.ea.gp.fifaworld",
+                title = "FIFA 16 Mobile",
+                subtitle = "DLavie 26 Mod · Sports",
+                packageName = GAME_PKG_16,
+                mainActivity = "com.byfen.downloadzipsdk.MainActivity",
                 coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222)),
                 coverText = "DL"
             ),
             GameItem(
-                title = "DLavie 15: Football Game",
-                subtitle = "FIFA 15 Mobile Mod",
-                packageName = "com.ea.game.fifa15_row",
+                title = "FIFA 15 Mobile",
+                subtitle = "DLavie 15 Mod · Sports",
+                packageName = GAME_PKG_15,
+                mainActivity = FIFA15_MAIN_ACTIVITY,
                 coverGradient = listOf(Color(0xFF1A1A2E), Color(0xFF16213E)),
                 coverText = "D15"
             )
@@ -8104,7 +8115,17 @@ fun GameHubScreen(
             items(games) { game ->
                 GameCard(
                     game = game,
-                    onClick = { onGameClick(game.title) }
+                    onClick = {
+                        // Check if game is installed, if not download APK first
+                        val isInstalled = try { context.packageManager.getPackageInfo(game.packageName, 0); true } catch (_: Exception) { false }
+                        if (isInstalled) {
+                            launchGame(context, game.packageName, game.mainActivity)
+                        } else {
+                            // Open download page
+                            val url = if (game.packageName == GAME_PKG_15) FIFA15_APK_URL else FIFA16_APK_URL
+                            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url)))
+                        }
+                    }
                 )
             }
         }
@@ -8129,7 +8150,15 @@ fun GameHubScreen(
             items(games) { game ->
                 GameListItem(
                     game = game,
-                    onClick = { onGameClick(game.title) }
+                    onClick = {
+                        val isInstalled = try { context.packageManager.getPackageInfo(game.packageName, 0); true } catch (_: Exception) { false }
+                        if (isInstalled) {
+                            launchGame(context, game.packageName, game.mainActivity)
+                        } else {
+                            val url = if (game.packageName == GAME_PKG_15) FIFA15_APK_URL else FIFA16_APK_URL
+                            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url)))
+                        }
+                    }
                 )
             }
         }
@@ -8226,6 +8255,7 @@ private data class GameItem(
     val title: String,
     val subtitle: String,
     val packageName: String,
+    val mainActivity: String,
     val coverGradient: List<Color>,
     val coverText: String
 )
