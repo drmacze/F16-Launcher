@@ -1323,7 +1323,20 @@ private fun registerWithUsernamePassword(context: Context, email: String, passwo
         }
         AuthResult(session, "OK: akun dibuat. Selamat datang, $displayName!")
     }
-} catch (e: Exception) { AuthResult(null, "Error: ${e.message ?: "register gagal"}") }
+} catch (e: Exception) {
+    // v7.2.5: Show clean error message without "Error:" prefix or raw JSON.
+    // parseError() already converts Supabase errors to human-friendly Indonesian.
+    val cleanMsg = e.message?.let { msg ->
+        // If message still contains raw JSON/code (parseError failed somewhere),
+        // run parseError again as fallback.
+        if (msg.contains("{") || msg.contains("error_code") || msg.contains("code:")) {
+            parseError(msg)
+        } else {
+            msg
+        }
+    } ?: "Pendaftaran gagal. Coba lagi."
+    AuthResult(null, cleanMsg)
+}
 private fun authPassword(context: Context, path: String, email: String, password: String, okMessage: String): AuthResult = try {
     val json = httpPost(path, null, JSONObject().put("email", email).put("password", password))
     val token = json.optString("access_token", "")
@@ -1372,7 +1385,17 @@ private fun authPassword(context: Context, path: String, email: String, password
         }
         AuthResult(session, okMessage)
     }
-} catch (e: Exception) { AuthResult(null, "Error: ${e.message ?: "auth gagal"}") }
+} catch (e: Exception) {
+    // v7.2.5: Clean error message (parseError already converts Supabase JSON to human-friendly)
+    val cleanMsg = e.message?.let { msg ->
+        if (msg.contains("{") || msg.contains("error_code") || msg.contains("code:")) {
+            parseError(msg)
+        } else {
+            msg
+        }
+    } ?: "Login gagal. Coba lagi."
+    AuthResult(null, cleanMsg)
+}
 private fun loadBootstrap(session: AuthSession): BootstrapState = try { val json = httpPost("/rest/v1/rpc/dlavie_v2_get_launcher_bootstrap", session.accessToken, JSONObject().put("p_local_version_code", LOCAL_VERSION_CODE)); parseBootstrap(json) } catch (e: Exception) { BootstrapState(loaded = false, error = e.message ?: "backend gagal") }
 private fun parseBootstrap(json: JSONObject): BootstrapState { val profile = json.optJSONObject("profile") ?: JSONObject(); val update = json.optJSONObject("update") ?: JSONObject(); val patch = update.optJSONObject("patch"); val maintenance = json.optJSONObject("maintenance") ?: JSONObject(); val notices = jsonArrayObjectsToTitles(json.optJSONArray("notices")); return BootstrapState(displayName = profile.optString("display_name", "DLavie Player"), role = profile.optString("role", "user"), maintenance = maintenance.optBoolean("enabled", false), maintenanceMessage = maintenance.optString("message", ""), latestVersionCode = update.optInt("latestVersionCode", 0), latestVersionName = update.optString("latestVersionName", "Belum dicek"), updateAvailable = update.optBoolean("updateAvailable", false), patchName = patch?.optString("name", "") ?: "", patchUrl = patch?.optString("url", "") ?: "", notices = notices, unreadNotifications = json.optInt("unreadNotifications", 0), loaded = true) }
 private fun createSupportTicket(session: AuthSession, message: String): String = try { val marker = guidedReadMarkerSmart(); val json = httpPost("/rest/v1/rpc/dlavie_v2_create_ticket", session.accessToken, JSONObject().put("p_title", "DLavie Support").put("p_category", "general").put("p_message", message).put("p_app_version", "0.19.0-login-foundation").put("p_local_version", LOCAL_VERSION_NAME).put("p_latest_version", "").put("p_data_marker", marker).put("p_shizuku_status", guidedShizukuState())); "OK: ticket dibuat #${json.optString("public_code", json.optString("id", ""))}" } catch (e: Exception) { "Error: ${e.message ?: "ticket gagal"}" }
@@ -1381,7 +1404,114 @@ private fun httpPostWithPrefer(path: String, token: String?, body: JSONObject, p
 private fun httpGet(path: String, token: String? = null): JSONObject { val conn = (URL(SUPABASE_URL + path).openConnection() as HttpURLConnection); conn.requestMethod = "GET"; conn.setRequestProperty("apikey", SUPABASE_KEY); conn.setRequestProperty("Accept", "application/json"); if (!token.isNullOrBlank()) conn.setRequestProperty("Authorization", "Bearer $token"); val code = conn.responseCode; val stream = if (code in 200..299) conn.inputStream else conn.errorStream; val text = stream?.bufferedReader()?.readText().orEmpty(); conn.disconnect(); if (code !in 200..299) throw IllegalStateException(parseError(text)); return if (text.isBlank()) JSONObject() else runCatching { JSONObject(text) }.getOrElse { JSONObject() } }
 private fun httpGetArray(path: String, token: String? = null): JSONArray { val conn = (URL(SUPABASE_URL + path).openConnection() as HttpURLConnection); conn.requestMethod = "GET"; conn.setRequestProperty("apikey", SUPABASE_KEY); conn.setRequestProperty("Accept", "application/json"); if (!token.isNullOrBlank()) conn.setRequestProperty("Authorization", "Bearer $token"); val code = conn.responseCode; val stream = if (code in 200..299) conn.inputStream else conn.errorStream; val text = stream?.bufferedReader()?.readText().orEmpty(); conn.disconnect(); if (code !in 200..299) throw IllegalStateException(parseError(text)); return if (text.isBlank()) JSONArray() else JSONArray(text) }
 private fun httpPatch(path: String, token: String?, body: JSONObject): JSONObject { val conn = (URL(SUPABASE_URL + path).openConnection() as HttpURLConnection); conn.requestMethod = "PATCH"; conn.doOutput = true; conn.setRequestProperty("apikey", SUPABASE_KEY); conn.setRequestProperty("Content-Type", "application/json"); conn.setRequestProperty("Accept", "application/json"); conn.setRequestProperty("Prefer", "return=minimal"); if (!token.isNullOrBlank()) conn.setRequestProperty("Authorization", "Bearer $token"); conn.outputStream.use { it.write(body.toString().toByteArray()) }; val code = conn.responseCode; val stream = if (code in 200..299) conn.inputStream else conn.errorStream; val text = stream?.bufferedReader()?.readText().orEmpty(); conn.disconnect(); if (code !in 200..299) throw IllegalStateException(parseError(text)); return if (text.isBlank()) JSONObject() else runCatching { JSONObject(text) }.getOrElse { JSONObject() } }
-private fun parseError(text: String): String = runCatching { JSONObject(text).optString("message", text.take(160)) }.getOrElse { text.take(160).ifBlank { "request gagal" } }
+/**
+ * Parse error response dari Supabase / HTTP ke pesan yang professional dan
+ * human-friendly dalam Bahasa Indonesia.
+ *
+ * Handles common Supabase auth error codes:
+ * - weak_password → "Password terlalu lemah. Gunakan minimal 8 karakter..."
+ * - user_already_exists → "Email sudah terdaftar..."
+ * - invalid_credentials → "Email atau password salah..."
+ * - email_not_confirmed → "Email belum diverifikasi..."
+ * - rate_limit_exceeded → "Terlalu banyak percobaan..."
+ * - signup_disabled → "Pendaftaran sedang dinonaktifkan..."
+ * - etc.
+ *
+ * Falls back to generic "Terjadi kesalahan" + brief technical hint untuk
+ * error yang tidak dikenali.
+ */
+private fun parseError(text: String): String {
+    if (text.isBlank()) return "Permintaan gagal. Coba lagi."
+
+    return runCatching {
+        val obj = JSONObject(text)
+        // Supabase auth error format: {"code": "422", "error_code": "weak_password", "msg": "..."}
+        val errorCode = obj.optString("error_code", "").lowercase()
+        val msg = obj.optString("msg", obj.optString("message", ""))
+        val code = obj.optString("code", "")
+
+        when (errorCode) {
+            "weak_password" -> {
+                "Password terlalu lemah. Gunakan minimal 8 karakter dengan kombinasi huruf besar, huruf kecil, dan angka."
+            }
+            "user_already_exists" -> {
+                "Email sudah terdaftar. Silakan login atau gunakan email lain."
+            }
+            "invalid_credentials" -> {
+                "Email atau password salah. Periksa kembali credentials Anda."
+            }
+            "email_not_confirmed" -> {
+                "Email belum diverifikasi. Cek inbox email Anda untuk link verifikasi."
+            }
+            "email_exists" -> {
+                "Email sudah terdaftar. Silakan login atau gunakan email lain."
+            }
+            "phone_exists" -> {
+                "Nomor telepon sudah terdaftar."
+            }
+            "rate_limit_exceeded" -> {
+                "Terlalu banyak percobaan. Tunggu beberapa menit sebelum mencoba lagi."
+            }
+            "signup_disabled" -> {
+                "Pendaftaran sedang dinonaktifkan sementara. Coba lagi nanti."
+            }
+            "session_expired" -> {
+                "Sesi telah berakhir. Silakan login kembali."
+            }
+            "session_not_found" -> {
+                "Sesi tidak ditemukan. Silakan login kembali."
+            }
+            "user_not_found" -> {
+                "Akun tidak ditemukan. Periksa email Anda atau daftar akun baru."
+            }
+            "no_authorization" -> {
+                "Tidak memiliki izin. Silakan login kembali."
+            }
+            "reauthentication_needed" -> {
+                "Verifikasi ulang diperlukan. Silakan login kembali."
+            }
+            "same_password" -> {
+                "Password baru tidak boleh sama dengan password lama."
+            }
+            "password_too_short" -> {
+                "Password terlalu pendek. Gunakan minimal 8 karakter."
+            }
+            "password_too_long" -> {
+                "Password terlalu panjang. Maksimal 72 karakter."
+            }
+            "validation_failed" -> {
+                "Data tidak valid. Periksa kembali input Anda."
+            }
+            "captcha_failed" -> {
+                "Verifikasi CAPTCHA gagal. Coba lagi."
+            }
+            "provider_email_needs_verification" -> {
+                "Email provider belum terverifikasi."
+            }
+            "user_banned" -> {
+                "Akun Anda telah diblokir. Hubungi support untuk informasi."
+            }
+            "email_address_not_authorized" -> {
+                "Email tidak diizinkan. Hubungi admin."
+            }
+            else -> {
+                // Generic error — show brief technical hint, not raw JSON
+                val hint = msg.take(120).ifBlank { "Terjadi kesalahan. Coba lagi." }
+                hint
+            }
+        }
+    }.getOrElse {
+        // JSON parse failed — text might be plain text or HTML
+        // Sanitize: strip HTML tags, trim, limit length
+        val cleaned = text
+            .replace(Regex("<[^>]+>"), "")  // strip HTML
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(160)
+            .ifBlank { "Terjadi kesalahan. Coba lagi." }
+        cleaned
+    }
+}
 
 /**
  * Fetch maintenance config from app_config (key = 'maintenance').
