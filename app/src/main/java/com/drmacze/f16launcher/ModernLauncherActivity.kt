@@ -259,12 +259,13 @@ import java.net.URL
 //     causes infinite download loop because user installs launcher (same package)
 //     instead of FIFA 16 game → FIFA 16 never detected as installed.
 const val GAME_PKG_16       = "com.ea.gp.fifaworld"
-// v7.6.0: APK FIFA 16 langsung dari GitHub DLavie-Launcher-Data (sesuai user request).
-// Tidak pakai Supabase proxy untuk APK — pakai GitHub direct.
-// OBB/Data/Manifest tetap via proxy (untuk large file streaming).
+// v7.7.0: APK FIFA 16 dari GitHub DLavie-Launcher-Data release v26-compatible.
+// APK sudah di-modify: targetSdk=34, requiredAccountType dihapus, LAUNCHER dihapus,
+// V1+V2+V3 signed dengan DLavie keystore. Compatible Android 7-16.
+// OBB/Data/Manifest dari release v26 (original).
 const val DLAVIE_PROXY_URL  = "https://lvmucsxbmadtsgrxuwmo.supabase.co/functions/v1/apk-proxy"
 const val DLAVIE_DATA_BASE  = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26"
-const val FIFA16_APK_URL    = "${DLAVIE_DATA_BASE}/DLavie26.apk"
+const val FIFA16_APK_URL    = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26-compatible/DLavie26-Compatible.apk"
 const val FIFA16_MANIFEST   = "${DLAVIE_DATA_BASE}/manifest.json"
 const val FIFA16_OBB_MAIN   = "${DLAVIE_DATA_BASE}/main.13.com.ea.gp.fifaworld.obb"
 const val FIFA16_OBB_PATCH  = "${DLAVIE_DATA_BASE}/patch.26.com.ea.gp.fifaworld.obb"
