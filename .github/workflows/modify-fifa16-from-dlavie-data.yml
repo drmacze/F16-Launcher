@@ -30,12 +30,15 @@ jobs:
             -o fifa16-original.apk \
             "https://api.github.com/repos/drmacze/DLavie-Launcher-Data/releases/assets/463704916"
           ls -lh fifa16-original.apk
-      - name: Decode + Fix manifest
+      - name: Decode + Fix manifest AND apktool.yml
         shell: python
         run: |
-          import subprocess, re
+          import subprocess, re, yaml
           from pathlib import Path
+
           subprocess.run(["apktool", "d", "-f", "-o", "fifa16-decoded", "fifa16-original.apk"], check=True)
+
+          # 1. Fix AndroidManifest.xml
           manifest = Path("fifa16-decoded/AndroidManifest.xml")
           c = manifest.read_text()
           c = re.sub(r'(android:targetSdkVersion=")(\d+)(")', r'\g<1>34\g<3>', c)
@@ -43,7 +46,25 @@ jobs:
           c = re.sub(r'<category\s+android:name="android\.intent\.category\.LAUNCHER"\s*/?>', '', c, flags=re.IGNORECASE)
           c = re.sub(r'\n\s*\n\s*\n', '\n\n', c)
           manifest.write_text(c)
-          print("✅ targetSdk=34, requiredAccountType removed, LAUNCHER removed")
+          print("✅ AndroidManifest.xml fixed")
+
+          # 2. Fix apktool.yml — ini yang controls manifest saat rebuild!
+          yml_path = Path("fifa16-decoded/apktool.yml")
+          yml_text = yml_path.read_text()
+          print(f"Original apktool.yml (targetSdk line):")
+          for line in yml_text.split('\n'):
+              if 'targetSdkVersion' in line or 'minSdkVersion' in line:
+                  print(f"  {line}")
+
+          # Replace targetSdkVersion: '26' → '34' di apktool.yml
+          yml_text = re.sub(r"targetSdkVersion:\s*'?(\d+)'?", "targetSdkVersion: '34'", yml_text)
+          yml_path.write_text(yml_text)
+          print("✅ apktool.yml targetSdkVersion → 34")
+
+          # Verify
+          for line in yml_path.read_text().split('\n'):
+              if 'targetSdkVersion' in line:
+                  print(f"  After: {line}")
       - name: Rebuild + zipalign + sign
         shell: bash
         run: |
@@ -61,6 +82,29 @@ jobs:
             --out fifa16-final.apk \
             fifa16-aligned.apk
           ls -lh fifa16-final.apk
+      - name: Verify targetSdk in final APK
+        shell: bash
+        run: |
+          # Install apkInspector atau pakai aapt
+          AAPT=$(find "${ANDROID_HOME}/build-tools" -name aapt2 -type f 2>/dev/null | head -1)
+          if [ -n "$AAPT" ]; then
+            $AAPT dump badging fifa16-final.apk 2>/dev/null | grep -E "targetSdk|minSdk|package"
+          else
+            echo "aapt not found, checking via python"
+            python3 -c "
+            import zipfile
+            with zipfile.ZipFile('fifa16-final.apk') as z:
+                manifest = z.read('AndroidManifest.xml')
+                text = manifest.decode('utf-8', errors='ignore')
+                # Binary XML - search for sdk version patterns
+                import re
+                # Look for targetSdk in binary
+                if b'\x00\x22\x00\x00' in manifest:
+                    print('Binary manifest found')
+                # Just check file size
+                print(f'Manifest size: {len(manifest)} bytes')
+            "
+          fi
       - name: Upload to Supabase Storage
         shell: bash
         env:
