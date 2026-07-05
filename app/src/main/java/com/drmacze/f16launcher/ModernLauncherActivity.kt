@@ -1257,10 +1257,15 @@ fun MainShell(
                                             dlError         = dlError,
                                             startDownload   = { startDownload() },
                                             onOpenSettings  = { showSettings = true },
-                                            // v7.2.3: Game card "Dapatkan" → navigate to GameHub (not GameDetail)
-                                            // Installation flow only happens in GameHub via GameActionPanel
+                                            // v7.2.9: Game card "Lihat" → buka GameDetailScreen (info + rating)
+                                            // Install & play hanya di GameHub (bukan di Beranda)
                                             onGameCardClick = { inst, avg, count, blocked, myR ->
-                                                page = Page.GameHub
+                                                detailGameInstalled      = inst
+                                                detailAvgRating          = avg
+                                                detailRatingCount        = count
+                                                detailMaintenanceBlocked = blocked
+                                                detailMyRating           = myR
+                                                showGameDetail           = true
                                             }
                                         )
                                     Page.DLC -> DlcScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
@@ -1965,6 +1970,13 @@ fun HomeScreen(
             maintenanceBlocked -> ({ })
             gameInstalled      -> ({ launchGame(context) })
             else               -> ({ onNav(Page.GameHub) })  // v7.3.6: go to GameHub for install
+        // v7.2.9: Button label "Lihat" (View) — buka GameDetailScreen, bukan download.
+        // Install & play hanya di GameHub. Beranda = info + rating saja.
+        val ttButtonLabel: String = "Lihat"
+        val ttButtonEnabled: Boolean = true
+        // v7.2.9: Tombol "Lihat" selalu buka GameDetailScreen (tidak ada download dari Beranda)
+        val ttButtonClick: () -> Unit = {
+            onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked, myRating)
         }
         // Phase 2: tap card body → navigate ke GameDetailScreen (pass state ke MainShell)
         // v6.8.1: tambah myRating supaya Rate button di detail screen tahu state-nya.
