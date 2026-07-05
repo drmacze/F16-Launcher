@@ -62,6 +62,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -100,6 +101,7 @@ import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Event
@@ -320,13 +322,13 @@ data class NotificationItem(
 enum class SetupState { LOADING, NEED_GAME, NEED_DATA, READY }
 
 // ─── Navigation pages ─────────────────────────────────────────────────────────
-// v6.8 redesign: 5 tabs (added Discover between Home and Update).
+// v7.0 redesign: PS5-style nav (Home, DLC, GameHub center, Komunitas, Profile)
 enum class Page(val label: String, val navIcon: ImageVector) {
-    Home    ("Beranda",   Icons.Rounded.Home),
-    Discover("Jelajahi",  Icons.Rounded.Explore),
-    Update  ("Update",    Icons.Rounded.CloudSync),
+    Home    ("Home",      Icons.Rounded.Home),
+    DLC     ("DLC",       Icons.Rounded.Extension),
+    GameHub ("GameHub",   Icons.Rounded.SportsEsports),  // center button (PS5 stick)
     Chat    ("Komunitas", Icons.Rounded.Forum),
-    Me      ("Profil",    Icons.Rounded.AccountCircle)
+    Me      ("Profile",   Icons.Rounded.AccountCircle)
 }
 
 // ─── Activity ─────────────────────────────────────────────────────────────────
@@ -1156,9 +1158,11 @@ fun MainShell(
                                                 showGameDetail           = true
                                             }
                                         )
-                                    Page.Discover -> DiscoverScreen(
+                                    Page.DLC -> UpdateScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
+                                    Page.GameHub -> GameHubScreen(
                                             onNav = { page = it },
-                                            onGameCardClick = {
+                                            onGameClick = { gameTitle ->
+                                                // Navigate to game detail
                                                 detailGameInstalled      = false
                                                 detailAvgRating          = 0.0
                                                 detailRatingCount        = 0
@@ -1167,13 +1171,12 @@ fun MainShell(
                                                 showGameDetail           = true
                                             }
                                         )
-                                    Page.Update -> UpdateScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
                                     Page.Chat   -> CommunityScreen(
                                         api             = api,
                                         pendingPostId   = pendingPostId.value,
                                         onConsumePostId = { pendingPostId.value = null },
                                         onVisitProfile  = { uid -> visitingUserId = uid }
-                                    )   // normal, no blur
+                                    )
                                     Page.Me     -> ProfileScreen(
                                         api                     = api,
                                         onLogout                = onLogout,
@@ -1181,7 +1184,7 @@ fun MainShell(
                                         expandedSection         = profileExpandedSection,
                                         onExpandedSectionChange = { profileExpandedSection = it },
                                         onVisitProfile          = { uid -> visitingUserId = uid }
-                                    )   // normal, no blur
+                                    )
                                 }
                             }
                         }
@@ -1360,118 +1363,88 @@ private fun PartialMaintenanceOverlay(
 @Composable
 fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifier) {
     val haptic = LocalHapticFeedback.current
-    val infiniteTransition = rememberInfiniteTransition(label = "nav_glow")
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.5f, targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "glow"
-    )
+    val pages = Page.values().toList()
+    val centerPage = Page.GameHub
 
     Box(modifier = modifier.widthIn(max = 600.dp).padding(horizontal = 16.dp)) {
-        // Aurora glow backdrop — cyan + violet halo di belakang pill
-        Box(
-            Modifier.matchParentSize()
-                .clip(RoundedCornerShape(999.dp))
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(
-                            DLavieGlass.AuroraCyan.copy(alpha = glowAlpha * 0.18f),
-                            DLavieGlass.AuroraViolet.copy(alpha = glowAlpha * 0.12f),
-                            DLavieGlass.AuroraCyan.copy(alpha = glowAlpha * 0.18f)
-                        )
-                    )
-                )
-                .blur(28.dp)
-        )
+        // Main pill bar
         Surface(
-            shape           = RoundedCornerShape(999.dp),  // true pill
-            color           = DLavieGlass.SpaceBlack.copy(alpha = 0.92f),   // deep glass
-            border          = BorderStroke(1.dp, Brush.horizontalGradient(
-                listOf(
-                    DLavieGlass.GlassStroke,
-                    DLavieGlass.AuroraCyan.copy(alpha = 0.30f),
-                    DLavieGlass.GlassStroke
-                )
-            )),
-            shadowElevation = 20.dp,
-            tonalElevation  = 0.dp
+            shape = RoundedCornerShape(999.dp),
+            color = Color.White,
+            shadowElevation = 12.dp,
+            tonalElevation = 0.dp
         ) {
             Row(
-                Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(0.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Page.values().forEach { item ->
-                    val selected  = page == item
-                    val iconTint  by animateColorAsState(
-                        if (selected) DLavieGlass.SpaceBlack else DLavieGlass.TextSecondary,
-                        tween(380, easing = FastOutSlowInEasing), label = "nav_tint_${item.label}"
-                    )
-                    val scaleAnim by animateFloatAsState(
-                        if (selected) 1f else 0.94f, tween(280, easing = FastOutSlowInEasing),
-                        label = "nav_scale_${item.label}"
-                    )
-                    val iconScale by animateFloatAsState(
-                        if (selected) 1.15f else 1f, tween(280, easing = FastOutSlowInEasing),
-                        label = "nav_iconscale_${item.label}"
-                    )
-                    val horizontalPad by androidx.compose.animation.core.animateDpAsState(
-                        if (selected) 18.dp else 12.dp,
-                        tween(280, easing = FastOutSlowInEasing),
-                        label = "nav_pad_${item.label}"
+                // Left side: Home + DLC
+                pages.filter { it != centerPage }.forEach { item ->
+                    val selected = page == item
+                    val iconTint by animateColorAsState(
+                        if (selected) Color.Black else Color.Gray,
+                        tween(300), label = "nav_tint_${item.label}"
                     )
 
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(52.dp)
-                            .scale(scaleAnim)
+                            .height(48.dp)
                             .clip(RoundedCornerShape(999.dp))
-                            .background(
-                                // Active tab: aurora cyan gradient (modern, vibrant)
-                                if (selected) Brush.horizontalGradient(
-                                    listOf(
-                                        DLavieGlass.AuroraCyan,
-                                        DLavieGlass.AuroraCyan.copy(alpha = 0.85f)
-                                    )
-                                )
-                                else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
-                            )
                             .clickable {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onPage(item)
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            Modifier.padding(horizontal = horizontalPad),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
                             Icon(
                                 item.navIcon,
                                 contentDescription = item.label,
-                                tint     = iconTint,
-                                modifier = Modifier.size(20.dp).scale(iconScale)
+                                tint = iconTint,
+                                modifier = Modifier.size(22.dp)
                             )
-                            androidx.compose.animation.AnimatedVisibility(
-                                visible = selected,
-                                enter = androidx.compose.animation.fadeIn(tween(200)) +
-                                    androidx.compose.animation.expandHorizontally(tween(280, easing = FastOutSlowInEasing)),
-                                exit = androidx.compose.animation.fadeOut(tween(160)) +
-                                    androidx.compose.animation.shrinkHorizontally(tween(200, easing = FastOutSlowInEasing))
-                            ) {
-                                Text(
-                                    item.label,
-                                    fontSize   = 12.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color      = iconTint,
-                                    maxLines   = 1
-                                )
-                            }
+                            Text(
+                                item.label,
+                                fontSize = 9.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                color = iconTint,
+                                maxLines = 1
+                            )
                         }
                     }
                 }
+
+                // Center: floating black button (PS5 stick)
+                Spacer(Modifier.width(52.dp)) // space for floating button
             }
+        }
+
+        // Floating center button (overlaps the bar)
+        Box(
+            Modifier
+                .align(Alignment.Center)
+                .size(56.dp)
+                .offset(y = (-4).dp)
+                .clip(CircleShape)
+                .background(Color.Black)
+                .border(3.dp, Color.White, CircleShape)
+                .clickable {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onPage(centerPage)
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Rounded.SportsEsports,
+                contentDescription = "GameHub",
+                tint = Color.White,
+                modifier = Modifier.size(28.dp)
+            )
         }
     }
 }
@@ -8079,3 +8052,180 @@ fun uploadAndroidVersion(api: CommunityApi) {
         android.util.Log.w("DLavieFCM", "Android version upload failed (ignored): ${e.message}")
     }
 }
+
+// ─── GameHub Screen (PS5-style landscape game library) ──────────────────────
+@Composable
+fun GameHubScreen(
+    onNav: (Page) -> Unit,
+    onGameClick: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val games = remember {
+        listOf(
+            GameItem(
+                title = "DLavie 26: Football Game",
+                subtitle = "FIFA 16 Mobile Mod",
+                packageName = "com.ea.gp.fifaworld",
+                coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222)),
+                coverText = "DL"
+            ),
+            GameItem(
+                title = "DLavie 15: Football Game",
+                subtitle = "FIFA 15 Mobile Mod",
+                packageName = "com.ea.game.fifa15_row",
+                coverGradient = listOf(Color(0xFF1A1A2E), Color(0xFF16213E)),
+                coverText = "D15"
+            )
+        )
+    }
+
+    Column(
+        Modifier.fillMaxSize().background(PureBlack)
+    ) {
+        // Header
+        Row(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.SportsEsports, null, tint = Color.White, modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("GameHub", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
+                Text("${games.size} games available", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp, fontFamily = InterFontFamily)
+            }
+        }
+
+        // Game cards (horizontal scroll, landscape-style)
+        LazyRow(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp)
+        ) {
+            items(games) { game ->
+                GameCard(
+                    game = game,
+                    onClick = { onGameClick(game.title) }
+                )
+            }
+        }
+
+        // Recently played / All games section
+        Spacer(Modifier.height(24.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(width = 3.dp, height = 18.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
+            Spacer(Modifier.width(8.dp))
+            Text("All Games", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+        }
+        Spacer(Modifier.height(12.dp))
+
+        // Game list (vertical)
+        LazyColumn(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(games) { game ->
+                GameListItem(
+                    game = game,
+                    onClick = { onGameClick(game.title) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GameCard(game: GameItem, onClick: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
+    Card(
+        modifier = Modifier
+            .width(280.dp)
+            .height(160.dp)
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            },
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Black),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            // Cover gradient
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(game.coverGradient)
+                )
+            )
+            // Cover text
+            Box(
+                Modifier.fillMaxSize().padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    game.coverText,
+                    color = Color.White.copy(alpha = 0.15f),
+                    fontSize = 48.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = InterFontFamily
+                )
+            }
+            // Bottom info
+            Column(
+                Modifier.align(Alignment.BottomStart).padding(16.dp)
+            ) {
+                Text(game.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
+                Text(game.subtitle, color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp, fontFamily = InterFontFamily, maxLines = 1)
+                Spacer(Modifier.height(4.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.White
+                ) {
+                    Text("Play", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GameListItem(game: GameItem, onClick: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.05f))
+            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            }
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Cover thumbnail
+        Box(
+            Modifier.size(56.dp).clip(RoundedCornerShape(14.dp))
+                .background(Brush.verticalGradient(game.coverGradient)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(game.coverText, color = Color.White.copy(alpha = 0.3f), fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(game.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
+            Text(game.subtitle, color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontFamily = InterFontFamily, maxLines = 1)
+        }
+        Icon(Icons.Rounded.ChevronRight, null, tint = Color.White.copy(alpha = 0.3f), modifier = Modifier.size(20.dp))
+    }
+}
+
+private data class GameItem(
+    val title: String,
+    val subtitle: String,
+    val packageName: String,
+    val coverGradient: List<Color>,
+    val coverText: String
+)
