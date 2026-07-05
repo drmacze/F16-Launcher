@@ -53,6 +53,27 @@ public class CommunityApi {
         } catch (Throwable ignored) { }
         return true;
     }
+
+    /**
+     * v6.8.3: Guest mode — user pilih "Lanjutkan sebagai Guest" di login screen.
+     * Guest bisa browse Beranda, Jelajahi, Update, Komunitas (read-only).
+     * TIDAK bisa: post, comment, download APK, rate game, live chat.
+     * Guest prefs: is_guest=true, no access_token, no user_id.
+     */
+    public boolean isGuest() {
+        return prefs.getBoolean("is_guest", false) && !loggedIn();
+    }
+
+    /** v6.8.3: Set guest mode flag. Called when user taps "Lanjutkan sebagai Guest". */
+    public void setGuest(boolean guest) {
+        prefs.edit().putBoolean("is_guest", guest).apply();
+    }
+
+    /** v6.8.3: Clear guest flag (called on real login/register or explicit logout). */
+    public void clearGuest() {
+        prefs.edit().remove("is_guest").apply();
+    }
+
     public String userId() { return prefs.getString("user_id", ""); }
     public String token() { return prefs.getString("access_token", ""); }
     public String username() { return prefs.getString("username", ""); }
