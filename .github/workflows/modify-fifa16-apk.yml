@@ -1,0 +1,195 @@
+name: Modify FIFA 16 APK (Launcher-Only + targetSdk 34)
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_source_url:
+        description: 'URL APK FIFA 16 source'
+        required: false
+        default: 'https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26.apk'
+
+jobs:
+  modify-fifa16-apk:
+    name: Modify FIFA 16 APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install required Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "build-tools;34.0.0" "platforms;android-34" || true
+
+      - name: Install apktool + zipalign
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq apktool zipalign
+          apktool --version
+
+      - name: Set up apksigner
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f 2>/dev/null | head -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "ERROR: apksigner not found"
+            exit 1
+          fi
+          echo "Found: $APKSIGNER"
+          "$APKSIGNER" --version 2>&1 || true
+          echo "$(dirname "$APKSIGNER")" >> $GITHUB_PATH
+
+      - name: Download source APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_URL="${{ inputs.apk_source_url || 'https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26.apk' }}"
+          echo "Downloading from: $SOURCE_URL"
+          curl -L -s -o fifa16-original.apk "$SOURCE_URL"
+          ls -lh fifa16-original.apk
+          file fifa16-original.apk
+          if ! unzip -t fifa16-original.apk > /dev/null 2>&1; then
+            echo "ERROR: Not a valid APK"
+            exit 1
+          fi
+          echo "✅ APK valid"
+
+      - name: Decode APK with apktool
+        shell: bash
+        run: |
+          set -euo pipefail
+          apktool d -f -o fifa16-decoded fifa16-original.apk
+          echo "Original targetSdkVersion:"
+          grep "targetSdkVersion" fifa16-decoded/AndroidManifest.xml || true
+          echo "Original LAUNCHER category:"
+          grep "category.LAUNCHER" fifa16-decoded/AndroidManifest.xml || echo "(not found)"
+
+      - name: Bump targetSdkVersion + remove LAUNCHER category
+        shell: python
+        run: |
+          import re
+          from pathlib import Path
+
+          manifest = Path("fifa16-decoded/AndroidManifest.xml")
+          content = manifest.read_text()
+
+          # 1. Bump targetSdkVersion dari 26 → 34
+          content = re.sub(
+              r'(android:targetSdkVersion=")(\d+)(")',
+              r'\g<1>34\g<3>',
+              content
+          )
+          print("✅ targetSdkVersion bumped to 34")
+
+          # 2. Remove LAUNCHER category (lock to launcher-only)
+          launcher_pattern = re.compile(
+              r'<category\s+android:name="android\.intent\.category\.LAUNCHER"\s*/?>',
+              re.IGNORECASE
+          )
+          matches = launcher_pattern.findall(content)
+          print(f"Found {len(matches)} LAUNCHER category declaration(s)")
+          if matches:
+              content = launcher_pattern.sub('', content)
+              content = re.sub(r'\n\s*\n\s*\n', '\n\n', content)
+              print("✅ LAUNCHER category removed")
+
+          manifest.write_text(content)
+          print("\nModified manifest (first 15 lines):")
+          print(manifest.read_text()[:1500])
+
+      - name: Rebuild APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apktool b -f -o fifa16-rebuilt.apk fifa16-decoded
+          ls -lh fifa16-rebuilt.apk
+
+      - name: Decode signing keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > /tmp/dlavie.keystore
+          ls -lh /tmp/dlavie.keystore
+
+      - name: Zip-align APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          zipalign -v -p 4 fifa16-rebuilt.apk fifa16-aligned.apk 2>&1 | tail -3
+          ls -lh fifa16-aligned.apk
+
+      - name: Sign APK with V1+V2+V3 (apksigner)
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner sign \
+            --ks /tmp/dlavie.keystore \
+            --ks-key-alias ${{ secrets.SIGNING_KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.SIGNING_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.SIGNING_KEY_PASSWORD }} \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out fifa16-launcher-only-signed.apk \
+            fifa16-aligned.apk
+          ls -lh fifa16-launcher-only-signed.apk
+
+      - name: Verify signature
+        shell: bash
+        run: |
+          apksigner verify --print-certs --verbose fifa16-launcher-only-signed.apk 2>&1 | head -15
+          echo "---"
+          # Verify LAUNCHER removed
+          mkdir -p verify
+          unzip -p fifa16-launcher-only-signed.apk AndroidManifest.xml > verify/manifest.bin
+          if strings verify/manifest.bin | grep -q "android.intent.category.LAUNCHER"; then
+            echo "❌ LAUNCHER still present"
+            exit 1
+          else
+            echo "✅ LAUNCHER removed"
+          fi
+
+      - name: Upload to Supabase Storage
+        shell: bash
+        env:
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: https://lvmucsxbmadtsgrxuwmo.supabase.co
+        run: |
+          set -euo pipefail
+          curl -s -X POST \
+            "$SUPABASE_URL/storage/v1/object/apk-dist/fifa16/DLavie26-LauncherOnly.apk" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            -H "x-upsert: true" \
+            --data-binary @fifa16-launcher-only-signed.apk \
+            --max-time 300
+          echo ""
+          # Verify
+          curl -sI "$SUPABASE_URL/storage/v1/object/public/apk-dist/fifa16/DLavie26-LauncherOnly.apk" | head -5
+
+      - name: Upload modified APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fifa16-launcher-only-apk
+          path: fifa16-launcher-only-signed.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/dlavie.keystore
