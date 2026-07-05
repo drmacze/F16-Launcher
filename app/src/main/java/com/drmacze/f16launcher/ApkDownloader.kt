@@ -95,13 +95,20 @@ class ApkDownloader(private val context: Context) {
      * @return true kalau download dimulai, false kalau sudah ada download aktif
      */
     fun startDownload(fileKey: String, url: String, fileName: String, label: String): Boolean {
+        // v7.2.7: CRITICAL FIX untuk "progress seperti dummy, selesai tiba-tiba"
+        //
+        // Bug sebelumnya: kalau file cache lama ada (dari download sebelumnya),
+        // DownloadManager mungkin reuse file itu dan langsung report SUCCESSFUL
+        // → progress mental dari 0% ke 100% dalam 1 detik.
+        //
+        // Fix: ALWAYS delete old file + reset downloadId di prefs sebelum enqueue.
+        // Ini memastikan download benar-benar mulai dari scratch.
+
         // Check if there's already an ACTIVE download for this key
-        // (running/pending/paused in DownloadManager)
         val existingId = prefs.getLong(idKey(fileKey), -1L)
         if (existingId > 0L && isDownloadActive(existingId)) {
-            // Active download exists — but check if it's the SAME url to avoid duplicate
-            // If user taps download again, just continue polling existing download
-            return false  // Already downloading — caller should poll getProgress()
+            // Active download exists — don't start new one, just resume polling
+            return false
         }
 
         // Clean up stale download ID (completed/failed/cancelled from previous session)
@@ -110,10 +117,22 @@ class ApkDownloader(private val context: Context) {
             activeDownloads.remove(existingId)
         }
 
-        // Cleanup old file (in case it's a partial/corrupt download from before)
+        // v7.2.7: ALWAYS delete old file + clear prefs untuk avoid cache reuse
         val outDir = File(context.getExternalFilesDir(null), "apk-downloads").also { it.mkdirs() }
         val outFile = File(outDir, fileName)
-        if (outFile.exists()) outFile.delete()
+        if (outFile.exists()) {
+            outFile.delete()
+        }
+        // Also delete .tmp file if exists (DownloadManager partial download)
+        val tmpFile = File(outDir, "$fileName.tmp")
+        if (tmpFile.exists()) tmpFile.delete()
+
+        // Clear prefs untuk fileKey ini supaya getProgress() tidak return stale state
+        prefs.edit()
+            .remove(idKey(fileKey))
+            .remove(pathKey(fileKey))
+            .remove(labelKey(fileKey))
+            .commit()  // sync flush sebelum enqueue
 
         val request = DownloadManager.Request(Uri.parse(url)).apply {
             setTitle("DLavie: $label")

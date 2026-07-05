@@ -335,13 +335,13 @@ fun GameActionPanel(
                 label = "Install Resource",
                 done = false,
                 action = {
-                    // v7.2.6: Langsung open APK FIFA 16 — game akan handle
-                    // download data + OBB dari dalam APK (in-app download).
-                    // Setelah user selesai di game dan kembali ke launcher,
-                    // panel akan auto-refresh dan show "Play" only.
-                    if (apkInstalled) {
-                        launchGame(context, game.packageName, game.mainActivity)
+                    // v7.2.7: Check return value — kalau gagal, tampilkan error
+                    val launched = launchGame(context, game.packageName, game.mainActivity)
+                    if (launched) {
                         onDismiss()
+                    } else {
+                        installError = "Gagal membuka game. Pastikan APK sudah terinstall dengan benar."
+                        scope.launch { withContext(Dispatchers.Main) { refresh() } }
                     }
                 },
                 icon = Icons.Rounded.FolderOpen
@@ -349,13 +349,26 @@ fun GameActionPanel(
         }
 
         // Step 3: Play (always shown — muncul kalau semua resource sudah terpasang)
+        // v7.2.7: Play action sekarang check return value dari launchGame.
+        // Kalau launchGame return false (game belum terinstall), tampilkan error.
         steps.add(Step(
             num = n,
             label = "Play",
             done = false,
             action = {
-                launchGame(context, game.packageName, game.mainActivity)
-                onDismiss()
+                val launched = launchGame(context, game.packageName, game.mainActivity)
+                if (launched) {
+                    onDismiss()
+                } else {
+                    // v7.2.7: Game belum terinstall — tampilkan error, JANGAN buka browser
+                    installError = "Game belum terinstall. Install APK dulu sebelum main."
+                    scope.launch {
+                        withContext(Dispatchers.Main) {
+                            // Refresh state untuk pastikan apkInstalled akurat
+                            refresh()
+                        }
+                    }
+                }
             },
             icon = Icons.Rounded.PlayCircle
         ))
@@ -653,10 +666,27 @@ fun GameActionPanel(
                             verticalAlignment = Alignment.Top
                         ) {
                             visibleSteps.forEachIndexed { index, step ->
+                                // v7.2.7: Play step disabled kalau APK belum terinstall.
+                                // Sebelumnya user bisa tap Play walaupun APK belum install
+                                // → launchGame fallback ke browser → user kecewa.
+                                val stepEnabled = when {
+                                    !apkDownloadActive && !installing && !loading -> {
+                                        if (step.label == "Play") {
+                                            // Play hanya bisa di-tap kalau APK sudah terinstall
+                                            apkInstalled
+                                        } else if (step.label == "Install Resource") {
+                                            // Install Resource hanya bisa di-tap kalau APK sudah terinstall
+                                            apkInstalled
+                                        } else {
+                                            true
+                                        }
+                                    }
+                                    else -> false
+                                }
                                 StepCircle(
                                     step = step,
                                     isLast = index == visibleSteps.lastIndex,
-                                    canInteract = !apkDownloadActive && !installing && !loading,
+                                    canInteract = stepEnabled,
                                     modifier = Modifier.weight(1f)
                                 )
                             }

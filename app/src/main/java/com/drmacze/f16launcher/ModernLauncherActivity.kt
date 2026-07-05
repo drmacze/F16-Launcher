@@ -7862,7 +7862,34 @@ object GameSessionTracker {
     }
 }
 
-fun launchGame(context: android.content.Context, gamePackage: String = GAME_PKG_16, mainActivity: String? = null) {
+/**
+ * Launch game by package name + main activity.
+ *
+ * v7.2.7: CRITICAL FIX — removed browser fallback yang bikin user kecewa.
+ * Sebelumnya, kalau game belum terinstall, launchGame buka URL download
+ * di browser (Chrome) — ini UX yang sangat buruk.
+ *
+ * Sekarang:
+ * - Pre-check: getPackageInfo() untuk verify APK terinstall
+ * - Kalau belum terinstall → return false (caller handle, tampilkan error)
+ * - Kalau terinstall → coba setClassName, fallback ke getLaunchIntentForPackage
+ * - TIDAK ADA browser fallback lagi
+ *
+ * @return true kalau game berhasil di-launch, false kalau gagal/belum terinstall
+ */
+fun launchGame(context: android.content.Context, gamePackage: String = GAME_PKG_16, mainActivity: String? = null): Boolean {
+    // Pre-check: verify APK terinstall
+    val isInstalled = try {
+        context.packageManager.getPackageInfo(gamePackage, 0)
+        true
+    } catch (_: Throwable) {
+        false
+    }
+    if (!isInstalled) {
+        android.util.Log.w("DLavie", "launchGame: $gamePackage not installed — refusing to launch")
+        return false
+    }
+
     GameSessionTracker.start()
     Telemetry.track(context, Telemetry.EVT_GAME_LAUNCH, mapOf("game_package" to gamePackage))
     try {
@@ -7883,18 +7910,24 @@ fun launchGame(context: android.content.Context, gamePackage: String = GAME_PKG_
         }
         addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    try {
+    return try {
         context.startActivity(intent)
+        true
     } catch (e: Exception) {
+        // Fallback: getLaunchIntentForPackage (TIDAK ADA browser fallback)
         val fallbackIntent = context.packageManager.getLaunchIntentForPackage(gamePackage)
         if (fallbackIntent != null) {
-            context.startActivity(fallbackIntent)
+            fallbackIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                context.startActivity(fallbackIntent)
+                true
+            } catch (_: Throwable) {
+                android.util.Log.e("DLavie", "launchGame: fallback launch failed for $gamePackage", e)
+                false
+            }
         } else {
-            // PRIVACY: Don't expose GitHub repo URL. Use DLavie proxy instead.
-            // CRITICAL: FIFA 16 → fifa16-apk (game APK), FIFA 15 → fifa15-apk (game APK)
-            // NOT launcher-latest (that's the DLavie Launcher itself!)
-            val proxyUrl = if (gamePackage == GAME_PKG_15) (DLAVIE_PROXY_URL + "?f=fifa15-apk") else (DLAVIE_PROXY_URL + "?f=fifa16-apk")
-            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(proxyUrl)))
+            android.util.Log.e("DLavie", "launchGame: no launch intent for $gamePackage")
+            false
         }
     }
 }
