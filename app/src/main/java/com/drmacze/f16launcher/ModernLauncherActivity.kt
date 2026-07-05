@@ -1164,11 +1164,11 @@ fun MainShell(
                                 onRate             = {
                                     // v6.8.4: Guest restriction — rate requires login (dialog, not popup)
                                     if (api.isGuest()) {
-                                        ratingSubmitError = "Login diperlukan untuk rate game. Guest mode hanya untuk browse."
+                                        ratingSubmitError = t.loginToRateGuest
                                         showRatingPopup = true
                                     } else if (!api.loggedIn()) {
                                         // Cek login dulu — rating wajib login (Supabase RLS).
-                                        ratingSubmitError = "Login dulu untuk rate game ini."
+                                        ratingSubmitError = t.loginToRate
                                         showRatingPopup = true
                                     } else if (detailMyRating > 0) {
                                         // Sudah rate — tidak bisa rate lagi. Tombol sudah jadi checkmark
@@ -1330,7 +1330,7 @@ fun MainShell(
                             ratingSubmitError = ""
                             showRatingPopup = false
                         } else {
-                            ratingSubmitError = "Gagal kirim rating. Coba lagi nanti."
+                            ratingSubmitError = t.ratingFailed
                         }
                     }
                 }
@@ -2831,7 +2831,7 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
         loading = true; updateError = ""
         scope.launch {
             withContext(Dispatchers.IO) { runCatching { fetchUpdateInfo(api) } }
-                .fold(onSuccess = { updateInfo = it }, onFailure = { updateError = it.message ?: "Gagal terhubung" })
+                .fold(onSuccess = { updateInfo = it }, onFailure = { updateError = it.message ?: t.connectionFailed })
             loading = false
         }
     }
@@ -3343,7 +3343,7 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
                             engine.resetLocalVersion((engine.localVersion() - 1).coerceAtLeast(1))
                             refresh()
                         }
-                        result.onFailure { rollbackMsg = "Error: ${it.message ?: "rollback gagal"}" }
+                        result.onFailure { rollbackMsg = t.operationError }
                         rollbackBusy = false
                     }
                 }) { Text("Pulihkan", color = CandyCyan, fontWeight = FontWeight.Bold) }
@@ -3381,7 +3381,7 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
                             else "OK: $count backup dihapus. ${GameUtils.formatBytes(freed)} dibebaskan."
                             refreshStorage()
                         }
-                        result.onFailure { cleanupMsg = "Error: ${it.message ?: "cleanup gagal"}" }
+                        result.onFailure { cleanupMsg = t.operationError }
                         cleanupBusy = false
                     }
                 }) { Text("Bersihkan", color = AmberWarn, fontWeight = FontWeight.Bold) }
@@ -3626,7 +3626,7 @@ fun CommunityScreen(
                 )
                 posts = filtered
             } catch (t: Throwable) {
-                errorMsg = t.message ?: "Gagal memuat feed"
+                errorMsg = t.message ?: t.feedLoadFailed
                 posts = emptyList()
             } finally {
                 loading = false
@@ -3719,7 +3719,7 @@ fun CommunityScreen(
             onDismiss = { showCreateSheet = false },
             onPosted = {
                 showCreateSheet = false
-                toast("Post terkirim!")
+                toast(t.postSent)
                 loading = true
                 loadPosts()
             },
@@ -3735,9 +3735,9 @@ fun CommunityScreen(
                 scope.launch {
                     try {
                         withContext(Dispatchers.IO) { api.reportPost(target.id, category, reason) }
-                        toast("Laporan terkirim. Terima kasih.")
+                        toast(t.reportSent)
                     } catch (t: Throwable) {
-                        toast("Gagal melaporkan: ${t.message}")
+                        toast(t.reportFailed)
                     }
                 }
                 reportTarget = null
@@ -3954,7 +3954,7 @@ fun CommunityScreen(
                                         loggedIn = api.loggedIn(),
                                         onLike = {
                                             if (!api.loggedIn()) {
-                                                toast("Login dulu untuk like post")
+                                                toast(t.loginToLike)
                                                 return@FeedPostCard
                                             }
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -3970,7 +3970,7 @@ fun CommunityScreen(
                                                 } catch (t: Throwable) {
                                                     // Revert
                                                     likeState = likeState + (post.id to (wasLiked to curCount))
-                                                    toast("Gagal: ${t.message}")
+                                                    toast(t.operationFailed)
                                                 }
                                             }
                                         },
@@ -3980,7 +3980,7 @@ fun CommunityScreen(
                                         },
                                         onSave = {
                                             if (!api.loggedIn()) {
-                                                toast("Login dulu untuk menyimpan post")
+                                                toast(t.loginToSave)
                                                 return@FeedPostCard
                                             }
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -3994,7 +3994,7 @@ fun CommunityScreen(
                                                     toast(if (wasSaved) "Post dihapus dari simpanan." else "Post disimpan.")
                                                 } catch (t: Throwable) {
                                                     savedState = savedState + (post.id to wasSaved)
-                                                    toast("Gagal: ${t.message}")
+                                                    toast(t.operationFailed)
                                                 }
                                             }
                                         },
@@ -4013,7 +4013,7 @@ fun CommunityScreen(
                                                     Intent(Intent.ACTION_VIEW, Uri.parse(url))
                                                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                                 )
-                                            }.onFailure { toast("Tidak bisa membuka URL") }
+                                            }.onFailure { toast(t.cannotOpenUrl) }
                                         },
                                         onVisitProfile = { uid -> onVisitProfile(uid) }
                                     )
@@ -4047,9 +4047,9 @@ fun CommunityScreen(
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             if (api.isGuest()) {
-                                toast("Login diperlukan untuk posting. Guest mode hanya untuk browse.")
+                                toast(t.guestPostBlocked)
                             } else if (!api.loggedIn()) {
-                                toast("Login dulu untuk membuat post")
+                                toast(t.loginToPost)
                             } else {
                                 showCreateSheet = true
                             }
@@ -4654,7 +4654,7 @@ private fun CommunityEmptyState(
         Text(
             when {
                 errorMsg.isNotEmpty() -> errorMsg
-                isFollowing && !loggedIn -> "Login dulu, lalu follow user lain untuk melihat post mereka di sini."
+                isFollowing && !loggedIn -> t.loginToFollow
                 isFollowing -> "Follow user lain untuk melihat post mereka di sini."
                 else -> "Jadilah yang pertama membuat post di komunitas DLavie 26."
             },
@@ -4724,7 +4724,7 @@ private fun CreatePostSheet(
                     }
                     imageUrl = url
                 } catch (t: Throwable) {
-                    onError("Gagal upload gambar: ${t.message}")
+                    onError(t.imageUploadFailed)
                 } finally {
                     uploading = false
                 }
@@ -4933,7 +4933,7 @@ private fun CreatePostSheet(
                             }
                             onPosted()
                         } catch (t: Throwable) {
-                            onError("Gagal membuat post: ${t.message}")
+                            onError(t.postCreateFailed)
                         } finally {
                             posting = false
                         }
@@ -5072,7 +5072,7 @@ private fun CommentsBottomSheet(
                 }
                 comments = list
             } catch (t: Throwable) {
-                errorMsg = t.message ?: "Gagal memuat komentar"
+                errorMsg = t.message ?: t.commentsLoadFailed
             } finally {
                 loading = false
             }
@@ -5168,7 +5168,7 @@ private fun CommentsBottomSheet(
                     border = BorderStroke(1.dp, GlassStroke)
                 ) {
                     Text(
-                        "Login dulu untuk menulis komentar.",
+                        t.loginToComment,
                         color = SubText, fontSize = 12.sp, textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth().padding(12.dp)
                     )
@@ -5221,7 +5221,7 @@ private fun CommentsBottomSheet(
                                         commentText = ""
                                         onCommentAdded()
                                     } catch (t: Throwable) {
-                                        toast("Gagal: ${t.message}")
+                                        toast(t.operationFailed)
                                     } finally {
                                         sending = false
                                     }
@@ -5567,9 +5567,9 @@ fun ProfileScreen(
                         uploadedUrl
                     }
                     avatarUrlState = newUrl
-                    toast("Foto profil diperbarui.")
+                    toast(t.profilePhotoUpdated)
                 } catch (t: Throwable) {
-                    toast("Gagal upload foto: ${t.message}")
+                    toast(t.photoUploadFailed)
                 } finally {
                     avatarUploading = false
                 }
@@ -5676,7 +5676,7 @@ fun ProfileScreen(
                     Box(
                         Modifier.size(88.dp).clickable {
                             if (!api.loggedIn()) {
-                                toast("Login dulu untuk ganti foto profil.")
+                                toast(t.loginToChangeAvatar)
                                 return@clickable
                             }
                             if (avatarUploading) return@clickable
@@ -5967,11 +5967,11 @@ fun ProfileScreen(
                                     scope.launch {
                                         try {
                                             withContext(Dispatchers.IO) { api.publishDraft(post.id) }
-                                            toast("Draft di-publish!")
+                                            toast(t.draftPublished)
                                             publishingId = null
                                             loadTab()
                                         } catch (t: Throwable) {
-                                            toast("Gagal publish: ${t.message}")
+                                            toast(t.publishFailed)
                                             publishingId = null
                                         }
                                     }
@@ -5980,10 +5980,10 @@ fun ProfileScreen(
                                     scope.launch {
                                         try {
                                             withContext(Dispatchers.IO) { api.deleteFeedPost(post.id) }
-                                            toast("Post dihapus.")
+                                            toast(t.postDeleted)
                                             loadTab()
                                         } catch (t: Throwable) {
-                                            toast("Gagal hapus: ${t.message}")
+                                            toast(t.deleteFailed)
                                         }
                                     }
                                 },
@@ -6873,7 +6873,7 @@ fun UserProfileScreen(
                                             // Revert
                                             isFollowing = prev
                                             followerCount += if (prev) 1 else -1
-                                            toast("Gagal: ${t.message}")
+                                            toast(t.operationFailed)
                                         } finally {
                                             followBusy = false
                                         }
@@ -6906,7 +6906,7 @@ fun UserProfileScreen(
                         } else if (!api.loggedIn()) {
                             // Not logged in — show disabled "Login untuk ikuti"
                             OutlinedButton(
-                                onClick = { toast("Login dulu untuk mengikuti user ini.") },
+                                onClick = { toast(t.loginToFollow) },
                                 modifier = Modifier.fillMaxWidth().height(46.dp),
                                 shape = TTShapes.button,
                                 border = BorderStroke(1.dp, GlassStroke),
@@ -7269,7 +7269,7 @@ fun AccountSettingsCard(
             }
             result.onFailure {
                 isSuccess = false
-                resultMsg = "Error: ${it.message ?: "operasi gagal"}"
+                resultMsg = "Error: ${it.message ?: t.operationError}"
             }
             working = false
         }
@@ -7313,7 +7313,7 @@ fun AccountSettingsCard(
             Button(
                 onClick  = {
                     if (newPass != newPassConfirm) {
-                        isSuccess = false; resultMsg = "Error: Password tidak cocok."; return@Button
+                        isSuccess = false; resultMsg = "Error: " + t.passwordMismatch; return@Button
                     }
                     execute { AuthManager.updatePassword(api.token(), newPass) }
                     newPass = ""; newPassConfirm = ""
