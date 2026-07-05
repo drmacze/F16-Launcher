@@ -53,6 +53,8 @@ fun GameDetailScreen(
     onRate: () -> Unit = {}
 ) {
     val haptic = LocalHapticFeedback.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     Box(Modifier.fillMaxSize().background(Carbon)) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
@@ -213,7 +215,7 @@ fun GameDetailScreen(
                         ) {
                             Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(22.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Mainkan Sekarang", fontSize = 16.sp, fontWeight = FontWeight.Black)
+                            Text(t.play, fontSize = 16.sp, fontWeight = FontWeight.Black)
                         }
                     }
                     else -> {
@@ -232,7 +234,7 @@ fun GameDetailScreen(
                         ) {
                             Icon(Icons.Rounded.Download, null, modifier = Modifier.size(22.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Dapatkan", fontSize = 16.sp, fontWeight = FontWeight.Black)
+                            Text(t.getFifa, fontSize = 16.sp, fontWeight = FontWeight.Black)
                         }
                     }
                 }
@@ -243,14 +245,14 @@ fun GameDetailScreen(
                 Modifier.fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                InfoCard("Kategori", "Olahraga", Icons.Rounded.SportsSoccer, Modifier.weight(1f))
-                InfoCard("Versi", "1.2.0", Icons.Rounded.Update, Modifier.weight(1f))
-                InfoCard("Ukuran", "33 MB", Icons.Rounded.Storage, Modifier.weight(1f))
+                InfoCard(t.category, t.sports, Icons.Rounded.SportsSoccer, Modifier.weight(1f))
+                InfoCard(t.version, "1.2.0", Icons.Rounded.Update, Modifier.weight(1f))
+                InfoCard(t.size, "33 MB", Icons.Rounded.Storage, Modifier.weight(1f))
             }
 
             // ── About section ──
             Column(Modifier.padding(16.dp)) {
-                TTSectionHeader(title = "Tentang Game", icon = Icons.Rounded.Info)
+                TTSectionHeader(title = t.aboutGame, icon = Icons.Rounded.Info)
                 Spacer(Modifier.height(10.dp))
                 Text(
                     "DLavie 26: Football Game adalah mod FIFA 16 Mobile dengan gameplay yang ditingkatkan, " +
@@ -262,7 +264,7 @@ fun GameDetailScreen(
 
             // ── Features section ──
             Column(Modifier.padding(16.dp)) {
-                TTSectionHeader(title = "Fitur Unggulan", icon = Icons.Rounded.Star)
+                TTSectionHeader(title = t.keyFeatures, icon = Icons.Rounded.Star)
                 Spacer(Modifier.height(10.dp))
                 FeatureItem(Icons.Rounded.SportsSoccer, "Gameplay Realistis", "Mod gameplay yang ditingkatkan untuk pengalaman lebih realistis")
                 FeatureItem(Icons.Rounded.Group, "Komunitas Aktif", "Bergabung dengan ribuan pemain di komunitas DLavie")
@@ -278,7 +280,7 @@ fun GameDetailScreen(
             ) {
                 Icon(Icons.Rounded.Verified, null, tint = NeonGreen, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Trusted by DLavie", color = NeonGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(t.trustedByDlavie, color = NeonGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
 
             Spacer(Modifier.height(100.dp))

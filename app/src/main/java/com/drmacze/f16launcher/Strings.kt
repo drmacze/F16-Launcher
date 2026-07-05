@@ -122,6 +122,77 @@ data class DLavieStrings(
     val refresh: String,
     val rate: String,
     val rated: String,
+
+    // ─── Setup states (HomeScreen) ──────────────────────────────────────────
+    val installFifa: String,
+    val gameNotFound: String,
+    val downloadOnce: String,
+    val gameInstalled: String,
+    val oneMoreStep: String,
+    val dataNotReady: String,
+    val openFifaData: String,
+    val playFifa16: String,
+    val blockedMaintenance: String,
+    val processing: String,
+    val downloading: String,
+
+    // ─── Game detail ────────────────────────────────────────────────────────
+    val aboutGame: String,
+    val keyFeatures: String,
+    val trustedByDlavie: String,
+    val category: String,
+    val version: String,
+    val size: String,
+    val sports: String,
+    val gameplayRealistic: String,
+    val communityActive: String,
+    val regularUpdates: String,
+    val safeVerified: String,
+
+    // ─── Community tabs ─────────────────────────────────────────────────────
+    val allPosts: String,
+    val following: String,
+    val officialPosts: String,
+    val members: String,
+    val staff: String,
+    val banned: String,
+    val allUsers: String,
+
+    // ─── Profile ────────────────────────────────────────────────────────────
+    val myPosts: String,
+    val savedPosts: String,
+    val badges: String,
+    val followers: String,
+    val followingCount: String,
+    val posts: String,
+    val editProfile: String,
+    val bio: String,
+
+    // ─── Sort/filter ────────────────────────────────────────────────────────
+    val newest: String,
+    val oldest: String,
+    val usernameAZ: String,
+    val recentlyActive: String,
+    val onlineFirst: String,
+
+    // ─── DLC ────────────────────────────────────────────────────────────────
+    val explore: String,
+    val fifa16Season2016: String,
+    val modFootball: String,
+    val dlavieEdition: String,
+
+    // ─── Live chat ──────────────────────────────────────────────────────────
+    val liveChat: String,
+    val connecting: String,
+    val waitingDeveloper: String,
+    val sessionClosedAuto: String,
+    val cancelChat: String,
+    val androidVersion: String,
+    val start: String,
+
+    // ─── Notification ───────────────────────────────────────────────────────
+    val allNotifications: String,
+    val unreadNotifications: String,
 )
 
 object Strings {
@@ -230,6 +301,69 @@ object Strings {
         refresh = "Refresh",
         rate = "Rate",
         rated = "Rated",
+        // Setup states
+        installFifa = "Install FIFA 16",
+        gameNotFound = "Game not found on this device.",
+        downloadOnce = "Download and install the FIFA 16 APK file first. This is only done once.",
+        gameInstalled = "Game Installed!",
+        oneMoreStep = "One more step to start playing.",
+        dataNotReady = "Game data not available. Open FIFA 16 — the game will automatically download OBB and data on first launch.",
+        openFifaData = "Open FIFA 16 & Setup Data",
+        playFifa16 = "Play FIFA 16",
+        blockedMaintenance = "Blocked by Maintenance",
+        processing = "Processing...",
+        downloading = "Downloading...",
+        // Game detail
+        aboutGame = "About Game",
+        keyFeatures = "Key Features",
+        trustedByDlavie = "Trusted by DLavie",
+        category = "Category",
+        version = "Version",
+        size = "Size",
+        sports = "Sports",
+        gameplayRealistic = "Realistic Gameplay",
+        communityActive = "Active Community",
+        regularUpdates = "Regular Updates",
+        safeVerified = "Safe & Verified",
+        // Community tabs
+        allPosts = "All",
+        following = "Following",
+        officialPosts = "Official",
+        members = "Members",
+        staff = "Staff",
+        banned = "Banned",
+        allUsers = "All Users",
+        // Profile
+        myPosts = "My Posts",
+        savedPosts = "Saved",
+        badges = "Badges",
+        followers = "Followers",
+        followingCount = "Following",
+        posts = "Posts",
+        editProfile = "Edit Profile",
+        bio = "Bio",
+        // Sort/filter
+        newest = "Newest",
+        oldest = "Oldest",
+        usernameAZ = "Username A-Z",
+        recentlyActive = "Recently Active",
+        onlineFirst = "Online First",
+        // DLC
+        explore = "Explore",
+        fifa16Season2016 = "FIFA 16 Mobile — Season 2016",
+        modFootball = "Mod Football · DLavie 26 Edition",
+        dlavieEdition = "DLavie 26 Edition",
+        // Live chat
+        liveChat = "Live Chat",
+        connecting = "Connecting...",
+        waitingDeveloper = "Waiting for developer to accept your call.",
+        sessionClosedAuto = "Session will auto-close in 5 min if no response.",
+        cancelChat = "Cancel",
+        androidVersion = "Android Version",
+        start = "Start",
+        // Notifications
+        allNotifications = "All",
+        unreadNotifications = "Unread",
     )
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -282,10 +416,70 @@ object Strings {
         autoDetect = "Deteksi otomatis",
         logout = "Keluar",
         saveProfile = "Simpan Profil",
+        // Setup states
+        installFifa = "Instal FIFA 16",
+        gameNotFound = "Game belum ditemukan di perangkat ini.",
+        downloadOnce = "Unduh dan instal file APK FIFA 16 terlebih dahulu. Proses ini hanya dilakukan sekali.",
+        gameInstalled = "Game Terinstall!",
+        oneMoreStep = "Satu langkah lagi untuk mulai bermain.",
+        dataNotReady = "Data game belum tersedia. Buka FIFA 16 — game akan otomatis mengunduh OBB dan data saat pertama kali dibuka.",
+        openFifaData = "Buka FIFA 16 & Siapkan Data",
+        playFifa16 = "Main FIFA 16",
+        blockedMaintenance = "Diblokir Maintenance",
+        processing = "Memproses...",
+        downloading = "Mengunduh...",
+        // Game detail
+        aboutGame = "Tentang Game",
+        keyFeatures = "Fitur Unggulan",
+        trustedByDlavie = "Trusted by DLavie",
+        category = "Kategori",
+        version = "Versi",
+        size = "Ukuran",
+        sports = "Olahraga",
+        gameplayRealistic = "Gameplay Realistis",
+        communityActive = "Komunitas Aktif",
+        regularUpdates = "Update Rutin",
+        safeVerified = "Aman & Terverifikasi",
+        // Community tabs
+        allPosts = "Semua",
+        following = "Mengikuti",
+        officialPosts = "Official",
+        members = "Member",
+        staff = "Staff",
+        banned = "Banned",
+        allUsers = "Semua User",
+        // Profile
+        myPosts = "Post Saya",
+        savedPosts = "Tersimpan",
+        badges = "Lencana",
+        followers = "Pengikut",
+        followingCount = "Mengikuti",
+        posts = "Post",
+        editProfile = "Edit Profil",
+        bio = "Bio",
+        // Sort
+        newest = "Terbaru",
+        oldest = "Terlama",
+        usernameAZ = "Username A-Z",
+        recentlyActive = "Paling Aktif",
+        onlineFirst = "Online duluan",
+        // DLC
+        explore = "Jelajahi",
+        fifa16Season2016 = "FIFA 16 Mobile — Season 2016",
+        modFootball = "Mod Football · DLavie 26 Edition",
+        dlavieEdition = "DLavie 26 Edition",
+        // Live chat
+        liveChat = "Live Chat",
+        connecting = "Menghubungkan...",
+        waitingDeveloper = "Menunggu developer menerima panggilan Anda.",
+        sessionClosedAuto = "Sesi akan ditutup otomatis dalam 5 menit jika tidak ada respon.",
+        cancelChat = "Batalkan",
+        androidVersion = "Versi Android",
+        start = "Mulai",
+        // Notifications
+        allNotifications = "Semua",
+        unreadNotifications = "Belum dibaca",
     )
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // MALAY
     // ═══════════════════════════════════════════════════════════════════════
     val MS = EN.copy(
         home = "Laman Utama",

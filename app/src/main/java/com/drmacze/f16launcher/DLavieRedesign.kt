@@ -75,7 +75,7 @@ import kotlinx.coroutines.launch
 //   3. DLavieHeroCarousel — full-width image cards + dots indicator + 5-star overlay
 //   4. DLavieFullWidthGameCard — full-width image card with title + rating + CTA
 //   5. DLavieBottomNav    — fixed bar with 5 icons (replaces FloatingNav pill)
-//   6. DiscoverScreen     — new "Jelajahi" tab placeholder (5th bottom-nav tab)
+//   6. DiscoverScreen     — new t.explore tab placeholder (5th bottom-nav tab)
 // ════════════════════════════════════════════════════════════════════════════
 
 // ─── 1. Top Bar ───────────────────────────────────────────────────────────────
@@ -697,7 +697,7 @@ fun DLavieBottomNav(
 }
 
 // ─── 6. Discover Screen — FIFA 16 DLC Library ────────────────────────────────
-// v6.8.1: Tab "Jelajahi" adalah tempat DLC data FIFA 16.
+// v6.8.1: Tab t.explore adalah tempat DLC data FIFA 16.
 // User akan tambah beberapa mod data (Season 2016, World Cup 2026, dll).
 // Saat ini hanya 1 DLC tersedia (FIFA 16 Mobile — Season 2016).
 // Tap card → masuk ke library game (GameDetailScreen via onGameCardClick).
@@ -708,6 +708,8 @@ fun DiscoverScreen(
     onNav: (Page) -> Unit,
     onGameCardClick: () -> Unit = {}
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     // v6.8.1: Real DLC list — FIFA 16 mod data variants.
     // Hanya Season 2016 yang tersedia saat ini. User bisa tambah more later
     // (World Cup 2026, Euro 2024, dll) — tinggal tambah entry ke list ini.
@@ -715,11 +717,11 @@ fun DiscoverScreen(
     val dlcList = remember {
         listOf(
             DLavieDlcItem(
-                title    = "FIFA 16 Mobile — Season 2016",
-                subtitle = "Mod Football · DLavie 26 Edition",
+                title    = t.fifa16Season2016,
+                subtitle = t.modFootball,
                 edition  = "SEASON 2016",
                 imageRes = R.drawable.dlavie_game_logo,
-                status   = "TERSEDIA"
+                status   = t.available
             )
             // Reserved slots for future DLC (DO NOT add until real data ready —
             // user explicitly said: "tidak suka fitur dummy/simulasi"):
@@ -739,7 +741,7 @@ fun DiscoverScreen(
                 tag      = "OFFICIAL"
             ),
             HeroSlide(
-                title         = "DLC Library",
+                title         = t.dlcLibrary,
                 subtitle      = "Pilih mod data FIFA 16 sesuai season favoritmu",
                 imageRes      = null,
                 tag           = "DLC",
@@ -771,7 +773,7 @@ fun DiscoverScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Jelajahi",
+                t.explore,
                 color = Color.White,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Black
@@ -803,7 +805,7 @@ fun DiscoverScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "DLC Library",
+                t.dlcLibrary,
                 color = Color.White,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Black
@@ -846,7 +848,7 @@ fun DiscoverScreen(
                 )
                 Column {
                     Text(
-                        "More DLC coming soon",
+                        t.moreDlcComing,
                         color = Color.White,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
@@ -981,7 +983,7 @@ private fun DLavieDlcCard(
 
             Spacer(Modifier.width(10.dp))
 
-            // CTA pill — "Masuk Library"
+            // CTA pill — t.enterLibrary
             Surface(
                 color = Color.White,
                 shape = RoundedCornerShape(999.dp),
@@ -991,7 +993,7 @@ private fun DLavieDlcCard(
                 }
             ) {
                 Text(
-                    "Masuk Library",
+                    t.enterLibrary,
                     color = PureBlack,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Black,

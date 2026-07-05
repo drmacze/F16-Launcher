@@ -333,9 +333,8 @@ private fun GuidedLoginScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-
-    // v6.8.3 Grok-style redesign: initial screen shows auth options stacked vertically.
-    // Mode: "chooser" | "login" | "register" | "forgot" | "email_form"
+    // v7.2.4: Localized strings
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     //   - "chooser": Google + Email + Guest buttons (default)
     //   - "login" / "register": expanded email/password form
     //   - "forgot": reset password form
@@ -436,11 +435,11 @@ private fun GuidedLoginScreen(
             Spacer(Modifier.height(10.dp))
             Text(
                 when (mode) {
-                    "chooser"  -> "FIFA 16 Mobile Mod Hub"
-                    "login"    -> "Masuk dengan akun DLavie"
-                    "register" -> "Buat akun DLavie baru"
-                    "forgot"   -> "Reset password via email"
-                    else       -> "FIFA 16 Mobile Mod Hub"
+                    "chooser"  -> t.loginTitle
+                    "login"    -> t.loginSubtitle
+                    "register" -> t.registerAccount
+                    "forgot"   -> t.forgotPassword
+                    else       -> t.loginTitle
                 },
                 color = Color.White.copy(alpha = 0.5f),
                 fontSize = 13.sp,
@@ -452,7 +451,7 @@ private fun GuidedLoginScreen(
             if (mode == "chooser") {
                 // 1. Google Sign-In button (primary, white bg)
                 AuthProviderButton(
-                    label = "Lanjutkan dengan Google",
+                    label = t.loginWithGoogle,
                     icon = { GoogleIcon() },
                     containerColor = Color.White,
                     contentColor = Color.Black,
@@ -479,7 +478,7 @@ private fun GuidedLoginScreen(
 
                 // 2. Email button (secondary, dark glass)
                 AuthProviderButton(
-                    label = "Lanjutkan dengan Email",
+                    label = t.loginWithEmail,
                     icon = {
                         Icon(
                             Icons.Rounded.Email,
@@ -498,7 +497,7 @@ private fun GuidedLoginScreen(
 
                 // 3. Guest button (tertiary, subtle — text only with border)
                 AuthProviderButton(
-                    label = "Lanjutkan sebagai Guest",
+                    label = t.continueAsGuest,
                     icon = {
                         Icon(
                             Icons.Rounded.Person,
@@ -528,7 +527,7 @@ private fun GuidedLoginScreen(
                 // Guest mode notice
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    "Guest mode: browse only. Untuk post, komentar, download APK, dan rate game, perlu akun DLavie.",
+                    t.guestNotice,
                     color = Color.White.copy(alpha = 0.3f),
                     fontSize = 10.sp,
                     fontFamily = GuideFont,
@@ -568,7 +567,7 @@ private fun GuidedLoginScreen(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        "Masuk",
+                                        t.login,
                                         color = if (mode == "login") Color.Black else GuideMuted,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
@@ -585,7 +584,7 @@ private fun GuidedLoginScreen(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        "Daftar",
+                                        t.register,
                                         color = if (mode == "register") Color.Black else GuideMuted,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
@@ -774,9 +773,9 @@ private fun GuidedLoginScreen(
                             Text(
                                 when {
                                     working -> "Memproses..."
-                                    mode == "login"    -> "Masuk"
-                                    mode == "register" -> "Daftar"
-                                    mode == "forgot"   -> "Kirim Link Reset"
+                                    mode == "login"    -> t.login
+                                    mode == "register" -> t.register
+                                    mode == "forgot"   -> t.forgotPassword
                                     else -> "→"
                                 },
                                 fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont
@@ -802,7 +801,7 @@ private fun GuidedLoginScreen(
             // ── Legal text (bottom) ──
             Spacer(Modifier.height(32.dp))
             Text(
-                "Dengan melanjutkan, Anda menyetujui Ketentuan Layanan dan Kebijakan Privasi DLavie.",
+                t.legalNotice,
                 color = Color.White.copy(alpha = 0.25f),
                 fontSize = 10.sp,
                 fontFamily = GuideFont,

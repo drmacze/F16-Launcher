@@ -2017,13 +2017,13 @@ fun HomeScreen(
                             Icon(Icons.Rounded.CloudDownload, null, tint = CandyCyan, modifier = Modifier.size(26.dp))
                         }
                         Column {
-                            Text("Instal FIFA 16", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                            Text("Game belum ditemukan di perangkat ini.", color = SoftText, fontSize = 12.sp)
+                            Text(t.installFifa, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                            Text(t.gameNotFound, color = SoftText, fontSize = 12.sp)
                         }
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "Unduh dan instal file APK FIFA 16 terlebih dahulu. Proses ini hanya dilakukan sekali.",
+                        t.downloadOnce,
                         color = SoftText, fontSize = 13.sp, lineHeight = 18.sp
                     )
                     Spacer(Modifier.height(14.dp))
@@ -2064,7 +2064,7 @@ fun HomeScreen(
                             maintenanceBlocked -> {
                                 Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(22.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text("Diblokir Maintenance", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                                Text(t.blockedMaintenance, fontSize = 15.sp, fontWeight = FontWeight.Black)
                             }
                             dlProgress >= 2f -> {
                                 Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(22.dp))
@@ -2164,7 +2164,7 @@ fun HomeScreen(
                         if (maintenanceBlocked) {
                             Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(22.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Diblokir Maintenance", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                            Text(t.blockedMaintenance, fontSize = 15.sp, fontWeight = FontWeight.Black)
                         } else {
                             Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
                             Spacer(Modifier.width(8.dp))
@@ -2199,11 +2199,11 @@ fun HomeScreen(
                             if (maintenanceBlocked) {
                                 Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(26.dp))
                                 Spacer(Modifier.width(10.dp))
-                                Text("Diblokir Maintenance", fontSize = 19.sp, fontWeight = FontWeight.Black)
+                                Text(t.blockedMaintenance, fontSize = 19.sp, fontWeight = FontWeight.Black)
                             } else {
                                 Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(26.dp))
                                 Spacer(Modifier.width(10.dp))
-                                Text("Main FIFA 16", fontSize = 19.sp, fontWeight = FontWeight.Black)
+                                Text(t.playFifa16, fontSize = 19.sp, fontWeight = FontWeight.Black)
                             }
                         }
                     }
@@ -3288,7 +3288,7 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
                     if (maintenanceBlocked) {
                         Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Diblokir Maintenance", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                        Text(t.blockedMaintenance, fontWeight = FontWeight.Black, fontSize = 13.sp)
                     } else if (patching) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF00111D), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
@@ -3355,7 +3355,7 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
                 if (maintenanceBlocked) {
                     Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text("Diblokir Maintenance", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                    Text(t.blockedMaintenance, fontSize = 17.sp, fontWeight = FontWeight.Black)
                 } else {
                     Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(10.dp))
