@@ -302,12 +302,20 @@ fun GameActionPanel(
         }
     }
 
-    // ── Build step list (auto-skip: only show steps NOT done + Play) ──
-    val visibleSteps = remember(apkInstalled, dataReady, patched, game, apkDownloadActive, installing) {
+    // ── Build step list (v7.2.6: simplified flow per user request) ──
+    // ALUR BARU:
+    //   1. Install APK (jika belum terinstall) → download APK → auto-open installer
+    //   2. Install Resource (jika data+obb belum) → klik → OPEN APK FIFA 16
+    //      APK akan download data+obb otomatis dari dalam game (in-app)
+    //   3. Play (jika semua resource sudah terpasang) → langsung launch game
+    //
+    // TIDAK ADA lagi "Apply Data" / "Apply Mod" step di sini.
+    // Mod patches tetap di DLC page (terpisah, untuk user yang mau apply mod).
+    val visibleSteps = remember(apkInstalled, dataReady, game, apkDownloadActive, installing) {
         val steps = mutableListOf<Step>()
         var n = 1
 
-        // Step: Install APK (skip if already installed)
+        // Step 1: Install APK (skip if already installed)
         if (!apkInstalled) {
             steps.add(Step(
                 num = n++,
@@ -318,35 +326,29 @@ fun GameActionPanel(
             ))
         }
 
-        // Step: Install Data (skip if already dataReady)
+        // Step 2: Install Resource (skip if already dataReady)
+        // Klik → langsung OPEN APK FIFA 16 (bukan ke DLC page)
+        // APK akan download data + OBB otomatis dari dalam game saat first launch.
         if (!dataReady) {
             steps.add(Step(
                 num = n++,
-                label = if (game.packageName == GAME_PKG_15) "Install Data" else "Apply Data",
+                label = "Install Resource",
                 done = false,
                 action = {
-                    if (game.packageName == GAME_PKG_15) {
-                        startFifa15Install()
-                    } else {
-                        onGoToDlc()
+                    // v7.2.6: Langsung open APK FIFA 16 — game akan handle
+                    // download data + OBB dari dalam APK (in-app download).
+                    // Setelah user selesai di game dan kembali ke launcher,
+                    // panel akan auto-refresh dan show "Play" only.
+                    if (apkInstalled) {
+                        launchGame(context, game.packageName, game.mainActivity)
+                        onDismiss()
                     }
                 },
                 icon = Icons.Rounded.FolderOpen
             ))
         }
 
-        // Step: Apply Mod (FIFA 16 only, skip if already patched)
-        if (game.packageName == GAME_PKG_16 && !patched) {
-            steps.add(Step(
-                num = n++,
-                label = "Apply Mod",
-                done = false,
-                action = { onGoToDlc() },
-                icon = Icons.Rounded.Extension
-            ))
-        }
-
-        // Final step: Play (always shown)
+        // Step 3: Play (always shown — muncul kalau semua resource sudah terpasang)
         steps.add(Step(
             num = n,
             label = "Play",
@@ -362,17 +364,14 @@ fun GameActionPanel(
     }
 
     // Build checklist items (only DONE items shown at top — like screenshot)
-    val completedItems = remember(apkInstalled, dataReady, patched, game) {
+    val completedItems = remember(apkInstalled, dataReady, game) {
         val items = mutableListOf<Triple<String, Boolean, ImageVector>>()
         if (apkInstalled) items.add(Triple("APK ${game.title} terpasang", true, Icons.Rounded.Android))
         if (dataReady) items.add(Triple(
-            if (game.packageName == GAME_PKG_15) "Data + OBB terpasang" else "Data game siap",
+            "Resource data + OBB terpasang",
             true,
             Icons.Rounded.FolderOpen
         ))
-        if (game.packageName == GAME_PKG_16 && patched) {
-            items.add(Triple("Mod patch terpasang", true, Icons.Rounded.Extension))
-        }
         items
     }
 
@@ -672,9 +671,7 @@ fun GameActionPanel(
                         installing -> "${phaseLabel(installPhase)} ${(installProgress * 100).toInt()}%"
                         currentStep.label == "Play" -> "Play Now"
                         currentStep.label == "Install APK" -> "Download APK"
-                        currentStep.label == "Install Data" || currentStep.label == "Apply Data" ->
-                            if (game.packageName == GAME_PKG_15) "Download & Install Data" else "Apply Data"
-                        currentStep.label == "Apply Mod" -> "Open DLC Mods"
+                        currentStep.label == "Install Resource" -> "Open Game & Install"
                         else -> currentStep.label
                     }
 
@@ -708,7 +705,7 @@ fun GameActionPanel(
                     ) {
                         Icon(Icons.Rounded.CheckCircle, null, tint = PanelMuted, modifier = Modifier.size(12.dp))
                         Text(
-                            "Tip: Selesaikan semua langkah untuk pengalaman terbaik. Status tersimpan otomatis.",
+                            "Tip: Setelah install APK, buka game untuk download data + OBB otomatis. Setelah selesai, kembali ke launcher untuk main.",
                             color = PanelMuted,
                             fontSize = 10.sp,
                             fontFamily = InterFontFamily,
