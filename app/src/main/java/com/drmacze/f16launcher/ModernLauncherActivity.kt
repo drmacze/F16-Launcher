@@ -244,17 +244,17 @@ import java.net.URL
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 // FIFA 16 (DLavie 26)
-private const val GAME_PKG_16       = "com.ea.gp.fifaworld"
-private const val FIFA16_APK_URL    = "https://github.com/drmacze/F16/releases/download/v3.0-launcher-only/DLavie26-Locked-LauncherOnly.apk"
-private const val MARKER_PATH_16    = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
+const val GAME_PKG_16       = "com.ea.gp.fifaworld"
+const val FIFA16_APK_URL    = "https://github.com/drmacze/F16/releases/download/v3.0-launcher-only/DLavie26-Locked-LauncherOnly.apk"
+const val MARKER_PATH_16    = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
 
 // FIFA 15 (DLavie 15)
-private const val GAME_PKG_15       = "com.ea.game.fifa14_row"
-private const val FIFA15_APK_URL    = "https://github.com/drmacze/F15/releases/download/v2.1.8/DLavie15-Android16-Compatible.apk"
-private const val FIFA15_DATA_URL   = "https://github.com/drmacze/F15/releases/download/v2.1.8/DATA.zip"
-private const val FIFA15_OBB_URL    = "https://github.com/drmacze/F15/releases/download/v2.1.8/OBB.zip"
-private const val MARKER_PATH_15    = "/sdcard/Android/data/com.ea.game.fifa14_row/.dlavie15_data_installed"
-private const val FIFA15_MAIN_ACTIVITY = "com.ea.game.fifa14.Fifa14Activity"
+const val GAME_PKG_15       = "com.ea.game.fifa14_row"
+const val FIFA15_APK_URL    = "https://github.com/drmacze/F15/releases/download/v2.1.8/DLavie15-Android16-Compatible.apk"
+const val FIFA15_DATA_URL   = "https://github.com/drmacze/F15/releases/download/v2.1.8/DATA.zip"
+const val FIFA15_OBB_URL    = "https://github.com/drmacze/F15/releases/download/v2.1.8/OBB.zip"
+const val MARKER_PATH_15    = "/sdcard/Android/data/com.ea.game.fifa14_row/.dlavie15_data_installed"
+const val FIFA15_MAIN_ACTIVITY = "com.ea.game.fifa14.Fifa14Activity"
 
 // Legacy aliases (for existing code that references these)
 private const val GAME_PKG          = GAME_PKG_16
@@ -1193,7 +1193,7 @@ fun MainShell(
                                                 showGameDetail           = true
                                             }
                                         )
-                                    Page.DLC -> UpdateScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
+                                    Page.DLC -> DlcScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
                                     Page.GameHub -> GameHubScreen(
                                             onNav = { page = it },
                                             onGameClick = { gameTitle ->
