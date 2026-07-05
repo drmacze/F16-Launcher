@@ -1766,7 +1766,7 @@ fun HomeScreen(
                 when (slide.tag) {
                     "OFFICIAL" -> onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked, myRating)
                     "KOMUNITAS" -> onNav(Page.Chat)
-                    "UPDATE" -> onNav(Page.Update)
+                    "UPDATE" -> onNav(Page.DLC)
                 }
             }
         )
@@ -2114,7 +2114,7 @@ fun HomeScreen(
                             }
                             Spacer(Modifier.height(10.dp))
                             Button(
-                                onClick  = { onNav(Page.Update) },
+                                onClick  = { onNav(Page.DLC) },
                                 modifier = Modifier.fillMaxWidth().height(48.dp),
                                 shape    = RoundedCornerShape(14.dp),
                                 colors   = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D))
