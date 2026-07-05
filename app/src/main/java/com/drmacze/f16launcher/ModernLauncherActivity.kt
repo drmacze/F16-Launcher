@@ -1576,6 +1576,8 @@ fun HomeScreen(
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
+    // v7.2.2: Localized strings untuk HomeScreen
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
 
     // ── Onboarding slider state (v6.0 — show on first open) ──
     var showOnboarding by remember { mutableStateOf(false) }
@@ -1869,7 +1871,7 @@ fun HomeScreen(
             ),
             HeroSlide(
                 title         = "Update v6.7.0",
-                subtitle      = "Patch terbaru — perbaikan bug & peningkatan performa",
+                subtitle      = t.update,
                 imageRes      = null,
                 tag           = "UPDATE",
                 promoIcon     = Icons.Rounded.CloudSync,
@@ -1909,7 +1911,7 @@ fun HomeScreen(
         val ttButtonLabel: String = when {
             maintenanceBlocked -> "Diblokir"
             gameInstalled      -> "Mainkan"
-            else               -> "Dapatkan"
+            else               -> t.getFifa
         }
         val ttButtonEnabled: Boolean = !maintenanceBlocked
         val ttButtonClick: () -> Unit = when {
@@ -2077,7 +2079,7 @@ fun HomeScreen(
                             else -> {
                                 Icon(Icons.Rounded.CloudDownload, null, modifier = Modifier.size(22.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text("Unduh FIFA 16 Sekarang", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                                Text(t.downloadFifa, fontSize = 15.sp, fontWeight = FontWeight.Black)
                             }
                         }
                     }

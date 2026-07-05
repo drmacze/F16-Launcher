@@ -87,12 +87,14 @@ fun DLavieTopBar(
     onSearchClick: () -> Unit,
     onBellClick: () -> Unit,
     onProfileClick: () -> Unit,
-    onLanguageClick: () -> Unit = {},  // v7.0.8: language toggle
+    onLanguageClick: () -> Unit = {},
     hasUnreadNotif: Boolean = false,
     profileInitial: String = "DL",
-    currentLangFlag: String = "🇬🇧",  // v7.0.8: flag emoji dari LanguageManager
+    currentLangFlag: String = "🇬🇧",
     modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -139,7 +141,7 @@ fun DLavieTopBar(
                 modifier = Modifier.size(16.dp)
             )
             Text(
-                "Search…",
+                t.searchPlaceholder,
                 color = SubText,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
@@ -608,6 +610,9 @@ fun DLavieBottomNav(
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // v7.2.2: Get localized strings for bottom nav labels
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -672,7 +677,14 @@ fun DLavieBottomNav(
                         )
                     }
                     Text(
-                        item.label,
+                        // v7.2.2: localized label
+                        when (item) {
+                            Page.Home -> t.home
+                            Page.DLC -> t.dlc
+                            Page.GameHub -> t.gameHub
+                            Page.Chat -> t.community
+                            Page.Me -> t.profile
+                        },
                         color = iconTint,
                         fontSize = 10.sp,
                         fontWeight = if (selected) FontWeight.Black else FontWeight.Medium,
