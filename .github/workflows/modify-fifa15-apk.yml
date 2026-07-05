@@ -73,7 +73,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE_URL="${{ inputs.apk_source_url || 'https://github.com/drmacze/F15/releases/download/v2.1.8/DLavie15-Android16-Compatible.apk' }}"
+          # Source URL: Supabase Storage (uploaded there because F15 repo is private)
+          # Can override via workflow_dispatch input
+          SOURCE_URL="${{ inputs.apk_source_url || 'https://lvmucsxbmadtsgrxuwmo.supabase.co/storage/v1/object/public/apk-dist/fifa15/DLavie15-Original.apk' }}"
           echo "Downloading from: $SOURCE_URL"
           curl -L -s -o fifa15-original.apk "$SOURCE_URL"
           ls -lh fifa15-original.apk
