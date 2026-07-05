@@ -259,20 +259,24 @@ import java.net.URL
 //     causes infinite download loop because user installs launcher (same package)
 //     instead of FIFA 16 game → FIFA 16 never detected as installed.
 const val GAME_PKG_16       = "com.ea.gp.fifaworld"
-// v7.3.5: DIRECT from GitHub releases — no proxy, more reliable
-const val DLAVIE_DATA_BASE  = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26"
-const val FIFA16_APK_URL    = "${DLAVIE_DATA_BASE}/DLavie26.apk"
-const val FIFA16_MANIFEST   = "${DLAVIE_DATA_BASE}/manifest.json"
-const val FIFA16_OBB_MAIN   = "${DLAVIE_DATA_BASE}/main.13.com.ea.gp.fifaworld.obb"
-const val FIFA16_OBB_PATCH  = "${DLAVIE_DATA_BASE}/patch.26.com.ea.gp.fifaworld.obb"
-const val LAUNCHER_APK_URL  = "https://github.com/drmacze/F16-Launcher/releases/latest/download/app-release.apk"
+// v7.4.0: CRITICAL FIX — gunakan DLavie proxy untuk SEMUA download.
+// Direct GitHub URL (DLAVIE_DATA_BASE) download APK original dengan targetSdk=26
+// → Android 14+ tolak "App not installed as app isn't compatible".
+// APK di Supabase Storage sudah di-modify: targetSdk=34 + LAUNCHER removed + V2 signed.
+// Proxy juga hide GitHub repo URL (privacy).
+const val DLAVIE_PROXY_URL  = "https://lvmucsxbmadtsgrxuwmo.supabase.co/functions/v1/apk-proxy"
+const val FIFA16_APK_URL    = "${DLAVIE_PROXY_URL}?f=fifa16-apk"
+const val FIFA16_MANIFEST   = "${DLAVIE_PROXY_URL}?f=fifa16-manifest"
+const val FIFA16_OBB_MAIN   = "${DLAVIE_PROXY_URL}?f=fifa16-obb-main"
+const val FIFA16_OBB_PATCH  = "${DLAVIE_PROXY_URL}?f=fifa16-obb-patch"
+const val LAUNCHER_APK_URL  = "${DLAVIE_PROXY_URL}?f=launcher-latest"
 const val MARKER_PATH_16    = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
 
 // FIFA 15 (DLavie 15)
 const val GAME_PKG_15       = "com.ea.game.fifa14_row"
-const val FIFA15_APK_URL    = "${DLAVIE_DATA_BASE}/DLavie15.apk"
-const val FIFA15_DATA_URL   = "${DLAVIE_DATA_BASE}/dlavie15-data.zip"
-const val FIFA15_OBB_URL    = "${DLAVIE_DATA_BASE}/main.13.com.ea.game.fifa14_row.obb"
+const val FIFA15_APK_URL    = "${DLAVIE_PROXY_URL}?f=fifa15-apk"
+const val FIFA15_DATA_URL   = "${DLAVIE_PROXY_URL}?f=fifa15-data"
+const val FIFA15_OBB_URL    = "${DLAVIE_PROXY_URL}?f=fifa15-obb"
 const val MARKER_PATH_15    = "/sdcard/Android/data/com.ea.game.fifa14_row/.dlavie15_data_installed"
 const val FIFA15_MAIN_ACTIVITY = "com.ea.game.fifa14.Fifa14Activity"
 
