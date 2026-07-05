@@ -27,11 +27,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material3.Dialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -50,6 +52,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -976,7 +979,7 @@ fun GuestUpgradeDialog(
     onLogin: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    androidx.compose.material3.Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(24.dp),
             color = PureBlack,
@@ -995,7 +998,7 @@ fun GuestUpgradeDialog(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        androidx.compose.material.icons.Icons.Rounded.Lock,
+                        Icons.Rounded.Lock,
                         contentDescription = null,
                         tint = Color.White,
                         modifier = Modifier.size(28.dp)
