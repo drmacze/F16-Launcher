@@ -5535,6 +5535,7 @@ fun ProfileScreen(
 
     // ── Posts / Drafts / Saved state ──
     var myPosts      by remember { mutableStateOf<List<FeedPostData>>(emptyList()) }
+    var myPostsCount by remember { mutableStateOf(0) }  // v7.3.0: for stat card
     var myDrafts     by remember { mutableStateOf<List<FeedPostData>>(emptyList()) }
     var mySavedPosts by remember { mutableStateOf<List<FeedPostData>>(emptyList()) }
     var postsLoading by remember { mutableStateOf(true) }
@@ -5629,6 +5630,7 @@ fun ProfileScreen(
                             myPosts = (0 until arr.length()).mapNotNull { i ->
                                 runCatching { parseFeedPostData(arr.getJSONObject(i)) }.getOrNull()
                             }
+                            myPostsCount = myPosts.size
                         }
                         1 -> {
                             val arr = api.getSavedPosts()
@@ -5655,32 +5657,88 @@ fun ProfileScreen(
     LaunchedEffect(selectedTab) { loadTab() }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.xl),
-        verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
 
         // ════════════════════════════════════════════════════════════════════
-        // A. Profile Header (avatar + display name + unique ID + stats + bio)
+        // v7.3.0: REDESIGNED PROFILE HEADER — Steam/TapTap/PS5 style
+        // Cover banner (halftone) + overlapping avatar + name/ID + stats cards
         // ════════════════════════════════════════════════════════════════════
         if (profileLoading) {
             TTGameCardSkeleton()
         } else {
-            PremiumGlassCard(gradientBorder = true) {
+            Box(Modifier.fillMaxWidth()) {
+                // ── Cover banner (halftone gradient, 140dp) ──
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(PureBlack, Carbon, Surface1)
+                            )
+                        )
+                ) {
+                    HalftoneBackground(
+                        modifier = Modifier.fillMaxSize(),
+                        dotSize = 2.5f,
+                        spacing = 18f,
+                        alpha = 0.5f
+                    )
+                    // Subtle top-left spotlight glow
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.06f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                    )
+                    // Settings icon (top-right)
+                    Box(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(16.dp)
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape)
+                            .clickable { onOpenSettings() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Rounded.Settings,
+                            contentDescription = t.settings,
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // ── Avatar (overlapping cover, bottom-left) ──
                 val infiniteTransition = rememberInfiniteTransition(label = "profile_glow")
                 val avatarGlow by infiniteTransition.animateFloat(
-                    initialValue = 0.25f, targetValue = 0.55f,
+                    initialValue = 0.2f, targetValue = 0.5f,
                     animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
                     label = "avatar_glow_val"
                 )
-                Column(
-                    Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(TTSpacing.sm)
-                ) {
-                    // Avatar (tap to change) with rotating gradient ring + glow
-                    Box(
-                        Modifier.size(88.dp).clickable {
+                val ringRotation by infiniteTransition.animateFloat(
+                    initialValue = 0f, targetValue = 360f,
+                    animationSpec = infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Restart),
+                    label = "ring_rotation"
+                )
+                Box(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 20.dp, bottom = 0.dp)
+                        .offset(y = 40.dp)  // half overlap
+                        .size(96.dp)
+                        .clickable {
                             if (!api.loggedIn()) {
                                 toast(t.loginToChangeAvatar)
                                 return@clickable
@@ -5690,133 +5748,228 @@ fun ProfileScreen(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
                         },
-                        contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Glow
+                    Box(
+                        Modifier.matchParentSize().clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(Color.White.copy(avatarGlow * 0.4f), Color.Transparent),
+                                    radius = 90f
+                                )
+                            )
+                            .blur(10.dp)
+                    )
+                    // Rotating ring
+                    Canvas(
+                        Modifier.size(96.dp).graphicsLayer { rotationZ = ringRotation }
                     ) {
+                        val stroke = 2.5.dp.toPx()
+                        drawCircle(
+                            brush = Brush.sweepGradient(
+                                listOf(Color.White, Color.White.copy(0.3f), Color.White)
+                            ),
+                            radius = (size.minDimension / 2f) - (stroke / 2f),
+                            style = Stroke(width = stroke)
+                        )
+                    }
+                    // Avatar image or initial
+                    if (avatarUrlState.isNotEmpty()) {
+                        AsyncImage(
+                            model = avatarUrlState,
+                            contentDescription = "Avatar",
+                            modifier = Modifier.size(80.dp).clip(CircleShape)
+                                .border(2.dp, PureBlack, CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        DLavieLogoCover(
+                            size = 80.dp, text = initial,
+                            fontSize = 30.sp, shape = CircleShape
+                        )
+                    }
+                    // Upload overlay
+                    if (avatarUploading) {
                         Box(
                             Modifier.matchParentSize().clip(CircleShape)
-                                .background(
-                                    Brush.radialGradient(
-                                        listOf(CandyCyan.copy(avatarGlow * 0.6f), Color.Transparent),
-                                        radius = 90f
-                                    )
-                                )
-                                .blur(12.dp)
-                        )
-                        val ringRotation by infiniteTransition.animateFloat(
-                            initialValue = 0f, targetValue = 360f,
-                            animationSpec = infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Restart),
-                            label = "ring_rotation"
-                        )
-                        Canvas(
-                            Modifier.size(88.dp).graphicsLayer { rotationZ = ringRotation }
-                        ) {
-                            val stroke = 3.dp.toPx()
-                            drawCircle(
-                                brush = Brush.sweepGradient(
-                                    listOf(CandyCyan, PremiumViolet, CandyCyan.copy(0.3f), CandyCyan)
-                                ),
-                                radius = (size.minDimension / 2f) - (stroke / 2f),
-                                style = Stroke(width = stroke)
-                            )
-                        }
-                        if (avatarUrlState.isNotEmpty()) {
-                            AsyncImage(
-                                model = avatarUrlState,
-                                contentDescription = "Avatar",
-                                modifier = Modifier.size(72.dp).clip(CircleShape),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            DLavieLogoCover(
-                                size = 72.dp, text = initial,
-                                fontSize = 28.sp, shape = CircleShape
-                            )
-                        }
-                        if (avatarUploading) {
-                            Box(
-                                Modifier.matchParentSize().clip(CircleShape)
-                                    .background(Color.Black.copy(0.55f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp),
-                                    color = Color.White, strokeWidth = 2.dp
-                                )
-                            }
-                        }
-                        Box(
-                            Modifier.align(Alignment.BottomEnd).size(26.dp)
-                                .background(Color.White, CircleShape)
-                                .border(1.dp, Carbon, CircleShape),
+                                .background(Color.Black.copy(0.6f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.CameraAlt, null, tint = Carbon, modifier = Modifier.size(14.dp))
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                color = Color.White, strokeWidth = 2.dp
+                            )
                         }
                     }
-
-                    // Display name
-                    Text(
-                        api.displayName().ifEmpty { "DLavie Player" },
-                        fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color.White,
-                        textAlign = TextAlign.Center
-                    )
-
-                    // Unique ID (small gray)
-                    if (uniqueId > 0) {
-                        Text(
-                            "ID: $uniqueId",
-                            color = SubText, fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-
-                    // Username + role pill row
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(TTSpacing.xs)
+                    // Camera badge
+                    Box(
+                        Modifier.align(Alignment.BottomEnd).size(24.dp)
+                            .background(Color.White, CircleShape)
+                            .border(1.dp, PureBlack, CircleShape),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            "@${api.username().ifEmpty { "unknown" }}",
-                            color = SoftText, fontSize = 12.sp
-                        )
-                        ModernPill(role.uppercase(), roleBadgeColor(role))
-                    }
-
-                    // Bio (optional)
-                    if (bio.isNotBlank()) {
-                        Text(
-                            bio,
-                            color = SoftText, fontSize = 12.sp, lineHeight = 16.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = TTSpacing.md)
-                        )
-                    }
-
-                    Spacer(Modifier.height(TTSpacing.xs))
-
-                    // ── Stats row: Following | Followers | Likes (3 column) ──
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
-                    ) {
-                        ProfileStatColumn(
-                            label = "Mengikuti",
-                            value = followingCount,
-                            modifier = Modifier.weight(1f)
-                        )
-                        ProfileStatColumn(
-                            label = "Pengikut",
-                            value = followerCount,
-                            modifier = Modifier.weight(1f)
-                        )
-                        ProfileStatColumn(
-                            label = "Likes",
-                            value = likesCount,
-                            modifier = Modifier.weight(1f)
-                        )
+                        Icon(Icons.Rounded.CameraAlt, null, tint = PureBlack, modifier = Modifier.size(12.dp))
                     }
                 }
             }
+
+            // ── Name + ID + Username + Role (below cover, padded for avatar overlap) ──
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 52.dp, start = 20.dp, end = 20.dp),
+                horizontalAlignment = Alignment.Start,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                // Display name + verified icon
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        api.displayName().ifEmpty { "DLavie Player" },
+                        fontSize = 20.sp, fontWeight = FontWeight.Black, color = Color.White
+                    )
+                    if (role.equals("admin", true) || role.equals("developer", true)) {
+                        Icon(
+                            Icons.Rounded.Verified,
+                            contentDescription = "Verified",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                // Username + unique ID
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        "@${api.username().ifEmpty { "unknown" }}",
+                        color = SoftText, fontSize = 12.sp
+                    )
+                    if (uniqueId > 0) {
+                        Text("·", color = SubText, fontSize = 12.sp)
+                        Text("ID: $uniqueId", color = SubText, fontSize = 11.sp)
+                    }
+                    ModernPill(role.uppercase(), roleBadgeColor(role))
+                }
+                // Bio
+                if (bio.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        bio,
+                        color = SoftText, fontSize = 12.sp, lineHeight = 16.sp
+                    )
+                }
+            }
+
+            // ── Stats cards row (Posts / Followers / Following) — modern card style ──
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Posts stat
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = GlassBase,
+                    border = BorderStroke(1.dp, GlassStroke)
+                ) {
+                    Column(
+                        Modifier.padding(vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "$myPostsCount",
+                            color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black
+                        )
+                        Text(t.posts, color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+                // Followers stat
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = GlassBase,
+                    border = BorderStroke(1.dp, GlassStroke)
+                ) {
+                    Column(
+                        Modifier.padding(vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "$followerCount",
+                            color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black
+                        )
+                        Text(t.followers, color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+                // Following stat
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = GlassBase,
+                    border = BorderStroke(1.dp, GlassStroke)
+                ) {
+                    Column(
+                        Modifier.padding(vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "$followingCount",
+                            color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black
+                        )
+                        Text(t.followingCount, color = SubText, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+
+            // ── Action buttons: Edit Profile + Share ──
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Edit Profile (primary, white)
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(40.dp)
+                        .clickable { onOpenSettings() },
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.White
+                ) {
+                    Row(
+                        Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Edit, null, tint = PureBlack, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(t.editProfile, color = PureBlack, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                // Share (secondary, glass)
+                Surface(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clickable { /* TODO: share profile */ },
+                    shape = RoundedCornerShape(12.dp),
+                    color = GlassBase,
+                    border = BorderStroke(1.dp, GlassStroke)
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Share, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
         }
 
         // ════════════════════════════════════════════════════════════════════
