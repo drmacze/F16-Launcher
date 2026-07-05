@@ -89,6 +89,13 @@ private const val PREF_EMAIL = "email"
 private const val SHIZUKU_REQUEST = 2026
 
 class DLavieGuidedActivity : ComponentActivity() {
+
+    // v6.8.4: Deep link callback state — saat Google OAuth redirect ke
+    // dlavie://auth-callback#access_token=...&refresh_token=..., kita parse
+    // token dan langsung save session → navigate ke launcher.
+    // State ini di-observe oleh Composable untuk show success/error.
+    private var deepLinkResult: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val existing = loadSession(this)
@@ -98,7 +105,84 @@ class DLavieGuidedActivity : ComponentActivity() {
             finish()
             return
         }
-        setContent { DLavieGuidedApp() }
+        // v6.8.4: Cek apakah activity dibuka via deep link (Google OAuth callback)
+        handleDeepLink(intent)
+        setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
+    }
+
+    // v6.8.4: singleTop launch mode → deep link redirect datang via onNewIntent
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDeepLink(intent)
+        // Re-render composable dengan result baru
+        setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
+    }
+
+    /**
+     * v6.8.4: Parse deep link callback dari Supabase OAuth.
+     * Format: dlavie://auth-callback#access_token=...&refresh_token=...&expires_in=...
+     * Atau error: dlavie://auth-callback#error=...&error_description=...
+     *
+     * Token dikirim di URL fragment (#) bukan query (?), jadi pakai uri.fragment.
+     */
+    private fun handleDeepLink(intent: Intent?) {
+        if (intent == null) return
+        val action = intent.action
+        val data = intent.data ?: return
+        if (action != Intent.ACTION_VIEW) return
+
+        val fragment = data.fragment ?: ""
+        val query = data.query ?: ""
+
+        // Parse key=value pairs dari fragment (token) dan query (error)
+        val params = mutableMapOf<String, String>()
+        val pairs = (fragment + "&" + query).split("&").filter { it.contains("=") }
+        for (pair in pairs) {
+            val idx = pair.indexOf("=")
+            if (idx > 0) {
+                val key = pair.substring(0, idx)
+                val value = java.net.URLDecoder.decode(pair.substring(idx + 1), "UTF-8")
+                params[key] = value
+            }
+        }
+
+        val accessToken = params["access_token"]
+        val refreshToken = params["refresh_token"]
+        val error = params["error"]
+
+        if (!accessToken.isNullOrBlank() && !refreshToken.isNullOrBlank()) {
+            // v6.8.4: Success — save session & navigate to launcher
+            val email = params["user_email"] ?: ""
+            val session = AuthSession(accessToken, refreshToken, email)
+            saveSession(this, session)
+            syncToCommunityPrefs(this, session)
+            // Clear guest flag (auto-upgrade dari guest ke user penuh)
+            val api = CommunityApi(this)
+            api.clearGuest()
+            // Sync profile dari Supabase (retry 3x — trigger handle_new_user async)
+            runCatching {
+                val ca = CommunityApi(this)
+                for (attempt in 1..3) {
+                    try { ca.loadMyProfile(); break } catch (_: Exception) {
+                        if (attempt < 3) Thread.sleep(500L)
+                    }
+                }
+            }
+            // Fire telemetry
+            runCatching { Telemetry.track(this, Telemetry.EVT_LOGIN, mapOf("method" to "google_oauth")) }
+            deepLinkResult = "OK: Login Google berhasil. Memuat launcher..."
+            // Navigate setelah delay singkat supaya UI bisa show success message
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                startActivity(Intent(this, ModernLauncherActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK))
+                finish()
+            }, 1500)
+        } else if (!error.isNullOrBlank()) {
+            val desc = params["error_description"] ?: error
+            deepLinkResult = "Error: Google login gagal — $desc"
+        }
+        // else: not a deep link callback → ignore (normal launch)
     }
 }
 
@@ -181,11 +265,13 @@ private val GuideBorder = Color(0x30FFFFFF)      // v3.0 subtle white border (ha
 private val GuideFont = FontFamily.SansSerif
 
 @Composable
-private fun DLavieGuidedApp() {
+private fun DLavieGuidedApp(deepLinkResult: String? = null) {
     val context = LocalContext.current
     // Maintenance state fetched at app startup BEFORE the login screen is shown.
     var maintenance by remember { mutableStateOf(MaintenanceState()) }
     var showLogin  by remember { mutableStateOf(false) }
+    // v6.8.4: Deep link result dari Google OAuth callback
+    var deepLinkMsg by remember { mutableStateOf(deepLinkResult ?: "") }
 
     LaunchedEffect(Unit) {
         maintenance = withContext(Dispatchers.IO) { fetchMaintenanceConfig() }
@@ -218,14 +304,17 @@ private fun DLavieGuidedApp() {
                         }
                     )
                 } else if (showLogin || maintenance.loaded) {
-                    GuidedLoginScreen(onLoggedIn = { session ->
-                        saveSession(context, session)
-                        syncToCommunityPrefs(context, session)
-                        context.startActivity(
-                            Intent(context, ModernLauncherActivity::class.java)
-                                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    })
+                    GuidedLoginScreen(
+                        deepLinkMessage = deepLinkMsg,
+                        onLoggedIn = { session ->
+                            saveSession(context, session)
+                            syncToCommunityPrefs(context, session)
+                            context.startActivity(
+                                Intent(context, ModernLauncherActivity::class.java)
+                                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    )
                 } else {
                     // Initial loading state (very brief — maintenance fetch is fast).
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -238,7 +327,10 @@ private fun DLavieGuidedApp() {
 }
 
 @Composable
-private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
+private fun GuidedLoginScreen(
+    deepLinkMessage: String = "",
+    onLoggedIn: (AuthSession) -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -256,8 +348,9 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
     var country by remember { mutableStateOf(DEFAULT_COUNTRY) }
     var showPass by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf("") }
-    var isSuccess by remember { mutableStateOf(false) }
+    // v6.8.4: Init message dari deep link callback (Google OAuth result)
+    var message by remember { mutableStateOf(deepLinkMessage) }
+    var isSuccess by remember { mutableStateOf(deepLinkMessage.startsWith("OK")) }
 
     Box(
         Modifier
@@ -829,23 +922,27 @@ private fun GoogleIcon() {
     }
 }
 
-// ─── v6.8.3: Start Google OAuth via Supabase (Custom Tabs Intent) ───────────
-// Supabase Auth supports OAuth providers via /auth/v1/authorize endpoint.
-// We launch the URL in a Custom Tabs browser — user signs in with Google,
-// then Supabase redirects back to our app via deep link (configured separately).
+// ─── v6.8.4: Start Google OAuth via Supabase with deep-link redirect ────────
+// Supabase Auth /auth/v1/authorize?provider=google&redirect_to=dlavie://auth-callback
+// User signs in with Google in Custom Tabs browser → Supabase redirects ke
+// dlavie://auth-callback#access_token=...&refresh_token=... → Android OS
+// opens DLavieGuidedActivity via intent-filter → handleDeepLink() parses token.
 //
-// NOTE: This requires a redirect URL configured in Supabase Dashboard → Auth →
-// URL Configuration → Redirect URLs. For now, we use the default
-// https://lvmucsxbmadtsgrxuwmo.supabase.co/auth/v1/callback which shows the
-// session token in the browser (user copies it back — not ideal but works
-// without deep link setup).
+// PREREQUISITE (one-time setup by user):
+//   1. Google Cloud Console → Create OAuth 2.0 Client ID (Web application)
+//      - Authorized redirect URI: https://lvmucsxbmadtsgrxuwmo.supabase.co/auth/v1/callback
+//   2. Supabase Dashboard → Auth → Providers → Google
+//      - Enable Google
+//      - Paste Client ID + Client Secret
+//      - (redirect_to dlavie://auth-callback already added to URL allow list)
 //
-// PROPER implementation: configure deep link (e.g. dlavie://auth-callback) in
-// AndroidManifest + Supabase, then handle the redirect in DLavieGuidedActivity
-// via intent extras. That's a separate task.
+// Run helper script /home/z/my-project/scripts/configure-google-oauth.sh
+// with CLIENT_ID and CLIENT_SECRET to configure via Management API.
 private fun startGoogleOAuth(context: Context): String {
     return try {
-        val url = "${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${SUPABASE_URL}/auth/v1/callback"
+        // v6.8.4: redirect ke deep link dlavie://auth-callback (bukan /auth/v1/callback)
+        val redirect = "dlavie://auth-callback"
+        val url = "${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${java.net.URLEncoder.encode(redirect, "UTF-8")}"
         val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -860,7 +957,7 @@ private fun startGoogleOAuth(context: Context): String {
             // Fallback: open in default browser
             context.startActivity(intent)
         }
-        "OK: Membuka Google login di browser. Setelah login, salin token dari URL dan masuk manual sementara deep link dikonfigurasi."
+        "OK: Membuka Google login. Setelah login, Anda akan otomatis kembali ke DLavie."
     } catch (e: Exception) {
         "Error: ${e.message ?: "gagal buka Google OAuth"}"
     }

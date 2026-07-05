@@ -965,3 +965,98 @@ private fun DLavieDlcCard(
         }
     }
 }
+
+// ─── 7. Guest Upgrade Dialog ─────────────────────────────────────────────────
+// v6.8.4: Dialog yang muncul saat guest user coba akses fitur restricted
+// (download APK, post, comment, rate, live chat). Tombol "Login Sekarang"
+// akan clear guest flag + redirect ke DLavieGuidedActivity.
+@Composable
+fun GuestUpgradeDialog(
+    feature: String,
+    onLogin: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.material3.Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = PureBlack,
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+        ) {
+            Column(
+                Modifier.padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.08f))
+                        .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.20f)), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        androidx.compose.material.icons.Icons.Rounded.Lock,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Login Diperlukan",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = InterFontFamily
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Untuk $feature, Anda perlu akun DLavie.\n\nGuest mode hanya untuk browse — melihat Beranda, Jelajahi, Update, dan Komunitas (read-only).",
+                    color = SoftText,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    textAlign = TextAlign.Center,
+                    fontFamily = InterFontFamily
+                )
+                Spacer(Modifier.height(20.dp))
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clickable { onLogin() },
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.White
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            "Login Sekarang",
+                            color = PureBlack,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = InterFontFamily
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .clickable { onDismiss() },
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.White.copy(alpha = 0.05f)
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            "Nanti Saja",
+                            color = SoftText,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            fontFamily = InterFontFamily
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

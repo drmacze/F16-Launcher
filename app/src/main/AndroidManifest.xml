@@ -105,10 +105,20 @@
 
         <activity
             android:name=".DLavieGuidedActivity"
-            android:exported="false"
+            android:exported="true"
             android:icon="@mipmap/dlavie_launcher_icon"
             android:label="DLavie 26"
-            android:theme="@style/AppTheme.Splash" />
+            android:launchMode="singleTop"
+            android:theme="@style/AppTheme.Splash">
+            <!-- v6.8.4: Deep link for Google OAuth callback (dlavie://auth-callback) -->
+            <!-- Supabase redirects here after Google login with access_token in URL fragment -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dlavie" android:host="auth-callback" />
+            </intent-filter>
+        </activity>
 
         <!-- Internal recovery shell only. Do not expose this as the public launcher entry. -->
         <activity

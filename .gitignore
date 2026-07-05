@@ -11,3 +11,9 @@ local.properties
 # OS
 .DS_Store
 Thumbs.db
+
+# Secrets — NEVER commit credentials
+backend/firebase-service-account.json
+backend/*.key.json
+*.keystore
+!debug.keystore

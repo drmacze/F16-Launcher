@@ -1106,7 +1106,7 @@ fun MainShell(
                                 hasRated           = detailMyRating > 0,
                                 myRating           = detailMyRating,
                                 onRate             = {
-                                    // v6.8.3: Guest restriction — rate requires login
+                                    // v6.8.4: Guest restriction — rate requires login (dialog, not popup)
                                     if (api.isGuest()) {
                                         ratingSubmitError = "Login diperlukan untuk rate game. Guest mode hanya untuk browse."
                                         showRatingPopup = true
@@ -1535,6 +1535,9 @@ fun HomeScreen(
     // Filtered notification list (fetched saat kategori dipilih). Bisa kosong.
     var notifList       by remember { mutableStateOf<List<NotifCampaign>>(emptyList()) }
     var notifListOpen   by remember { mutableStateOf(false) }
+    // v6.8.4: Guest upgrade dialog state — ditampilkan saat guest coba download/rate
+    var showGuestDialog by remember { mutableStateOf(false) }
+    var guestDialogFeature by remember { mutableStateOf("") }
 
     // ── Bug 2: Partial maintenance blocking ──
     // Kalau scope=partial, block download/apply/launch tapi allow komunitas & profile.
@@ -1937,10 +1940,11 @@ fun HomeScreen(
                     // Download button with inline progress
                     Button(
                         onClick  = {
-                            // v6.8.3: Guest restriction — download APK requires login
+                            // v6.8.4: Guest restriction — download APK requires login (dialog, not toast)
                             if (api.isGuest()) {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                android.widget.Toast.makeText(context, "Login diperlukan untuk download APK FIFA 16. Guest mode hanya untuk browse.", android.widget.Toast.LENGTH_LONG).show()
+                                guestDialogFeature = "download APK FIFA 16"
+                                showGuestDialog = true
                                 return@Button
                             }
                             if (dlProgress < 0f || dlProgress >= 2f) {
@@ -2180,6 +2184,24 @@ fun HomeScreen(
             category = notifCategory,
             items = notifList,
             onDismiss = { notifListOpen = false }
+        )
+    }
+
+    // v6.8.4: Guest upgrade dialog — ditampilkan saat guest coba download/rate
+    if (showGuestDialog) {
+        GuestUpgradeDialog(
+            feature = guestDialogFeature,
+            onLogin = {
+                showGuestDialog = false
+                // Clear guest flag + go to login screen
+                api.clearGuest()
+                api.logout()
+                context.startActivity(
+                    Intent(context, DLavieGuidedActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            },
+            onDismiss = { showGuestDialog = false }
         )
     }
 }
