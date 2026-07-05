@@ -277,6 +277,11 @@ fun GameActionPanel(
     // CRITICAL: fileKey must be fifa16-apk for FIFA 16 (NOT launcher-latest).
     // launcher-latest downloads the DLavie Launcher APK → installing it doesn't
     // install FIFA 16 game → panel keeps asking to install → infinite loop.
+    //
+    // v7.2.4: Auto-request StorageAccess permission early (saat user tap install APK).
+    // APK download sendiri tidak butuh permission (DownloadManager handles), tapi
+    // step selanjutnya (Install Data, Apply Mod) butuh permission. Request early
+    // supaya user tidak perlu tap permission card terpisah.
     fun startApkDownload() {
         if (apkDownloadActive) return
         apkDownloadError = ""
@@ -287,8 +292,13 @@ fun GameActionPanel(
         val started = apkDownloader.startDownload(fileKey, url, fileName, label)
         if (started) {
             apkDownloadActive = true
+            // Auto-request StorageAccess permission early (for next steps)
+            if (!StorageAccess.isGranted()) {
+                StorageAccess.request(context)
+            }
         } else {
-            apkDownloadError = "Download sudah berjalan atau gagal dimulai"
+            // Download already running — just resume polling
+            apkDownloadActive = true
         }
     }
 
@@ -505,30 +515,10 @@ fun GameActionPanel(
                         )
                     }
 
-                    // ─── Storage permission warning (if not granted) ────────
-                    AnimatedVisibility(!filesAccessGranted, enter = fadeIn(), exit = fadeOut()) {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            color = PanelYellow.copy(alpha = 0.1f),
-                            border = BorderStroke(1.dp, PanelYellow.copy(alpha = 0.4f))
-                        ) {
-                            Row(
-                                Modifier.padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(Icons.Rounded.Security, null, tint = PanelYellow, modifier = Modifier.size(14.dp))
-                                Text(
-                                    "Aktifkan izin Akses File untuk install data otomatis",
-                                    color = PanelYellow,
-                                    fontSize = 11.sp,
-                                    fontFamily = InterFontFamily,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                    }
+                    // ─── Storage permission: AUTO-REQUEST saat tap install (tidak ada card warning terpisah) ──
+                    // v7.2.4: Permission flow disatukan — saat user tap "Install Data" / "Apply Mod"
+                    // dan permission belum granted, otomatis buka settings. Tidak ada card warning
+                    // terpisah yang bikin bingung (per user complaint).
 
                     // ─── APK Download progress (when downloading) ───────────
                     AnimatedVisibility(apkDownloadActive, enter = fadeIn(), exit = fadeOut()) {

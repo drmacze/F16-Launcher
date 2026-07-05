@@ -95,13 +95,22 @@ class ApkDownloader(private val context: Context) {
      * @return true kalau download dimulai, false kalau sudah ada download aktif
      */
     fun startDownload(fileKey: String, url: String, fileName: String, label: String): Boolean {
-        // Check if there's already an active download for this key
+        // Check if there's already an ACTIVE download for this key
+        // (running/pending/paused in DownloadManager)
         val existingId = prefs.getLong(idKey(fileKey), -1L)
         if (existingId > 0L && isDownloadActive(existingId)) {
-            return false  // Already downloading
+            // Active download exists — but check if it's the SAME url to avoid duplicate
+            // If user taps download again, just continue polling existing download
+            return false  // Already downloading — caller should poll getProgress()
         }
 
-        // Cleanup old file
+        // Clean up stale download ID (completed/failed/cancelled from previous session)
+        if (existingId > 0L) {
+            try { downloadManager.remove(existingId) } catch (_: Throwable) {}
+            activeDownloads.remove(existingId)
+        }
+
+        // Cleanup old file (in case it's a partial/corrupt download from before)
         val outDir = File(context.getExternalFilesDir(null), "apk-downloads").also { it.mkdirs() }
         val outFile = File(outDir, fileName)
         if (outFile.exists()) outFile.delete()
@@ -125,11 +134,15 @@ class ApkDownloader(private val context: Context) {
         }
 
         activeDownloads[downloadId] = fileKey
+        // IMPORTANT: use commit() (sync) instead of apply() (async) so that
+        // getProgress() called immediately after startDownload() returns the
+        // correct downloadId. apply() is async and may not flush in time,
+        // causing getProgress() to read stale downloadId and return wrong state.
         prefs.edit()
             .putLong(idKey(fileKey), downloadId)
             .putString(pathKey(fileKey), outFile.absolutePath)
             .putString(labelKey(fileKey), label)
-            .apply()
+            .commit()  // sync flush
 
         // Register receiver once
         if (!receiverRegistered) {
@@ -148,30 +161,20 @@ class ApkDownloader(private val context: Context) {
 
     /**
      * Get current download progress untuk fileKey.
-     * Returns DownloadProgress(active=false, progress=100, ...) kalau tidak ada download aktif
-     * dan file sudah ada (downloaded).
+     * Returns DownloadProgress(active=false, progress=100, ...) HANYA jika ada
+     * download ID yang sudah selesai (STATUS_SUCCESSFUL) di DownloadManager.
+     *
+     * BUG FIX v7.2.4: Jangan return done=true hanya karena file ada di cache.
+     * DownloadManager menulis ke file tujuan langsung selama download, jadi
+     * file.exists() true tidak menjamin download selesai. Hanya rely ke
+     * STATUS_SUCCESSFUL dari DownloadManager.Query.
      */
     fun getProgress(fileKey: String): DownloadProgress {
         val downloadId = prefs.getLong(idKey(fileKey), -1L)
         val path = prefs.getString(pathKey(fileKey), "") ?: ""
         val label = prefs.getString(labelKey(fileKey), "") ?: ""
 
-        // Check if file already exists (downloaded previously)
-        if (path.isNotBlank()) {
-            val file = File(path)
-            if (file.exists() && file.length() > 1_000_000) {
-                return DownloadProgress(
-                    active = false,
-                    done = true,
-                    progress = 100,
-                    downloadedBytes = file.length(),
-                    totalBytes = file.length(),
-                    label = label,
-                    filePath = file.absolutePath
-                )
-            }
-        }
-
+        // No download ID — never started or cleared
         if (downloadId <= 0L) {
             return DownloadProgress(active = false, done = false, progress = 0, label = label)
         }
@@ -215,7 +218,27 @@ class ApkDownloader(private val context: Context) {
             }
         }
 
-        // Download ID exists but not found in DownloadManager (maybe completed & cleaned)
+        // Download ID exists in prefs but not found in DownloadManager.
+        // This means: download completed & cleaned from DownloadManager, OR
+        // download was cancelled. Check if file exists and is valid — if yes,
+        // it's a completed download from previous session.
+        if (path.isNotBlank()) {
+            val file = File(path)
+            if (file.exists() && file.length() > 1_000_000) {
+                return DownloadProgress(
+                    active = false,
+                    done = true,
+                    progress = 100,
+                    downloadedBytes = file.length(),
+                    totalBytes = file.length(),
+                    label = label,
+                    filePath = file.absolutePath
+                )
+            }
+        }
+
+        // Download ID not found in DownloadManager and file doesn't exist
+        // → download was cancelled or failed silently. Reset state.
         return DownloadProgress(active = false, done = false, progress = 0, label = label)
     }
 
