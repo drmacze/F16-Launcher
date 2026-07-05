@@ -256,16 +256,20 @@ import java.net.URL
 //     causes infinite download loop because user installs launcher (same package)
 //     instead of FIFA 16 game → FIFA 16 never detected as installed.
 const val GAME_PKG_16       = "com.ea.gp.fifaworld"
-const val DLAVIE_PROXY_URL  = "https://lvmucsxbmadtsgrxuwmo.supabase.co/functions/v1/apk-proxy"
-const val FIFA16_APK_URL    = "${DLAVIE_PROXY_URL}?f=fifa16-apk"
-const val LAUNCHER_APK_URL  = "${DLAVIE_PROXY_URL}?f=launcher-latest"  // For launcher self-update only
+// v7.3.5: DIRECT from GitHub releases — no proxy, more reliable
+const val DLAVIE_DATA_BASE  = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26"
+const val FIFA16_APK_URL    = "${DLAVIE_DATA_BASE}/DLavie26.apk"
+const val FIFA16_MANIFEST   = "${DLAVIE_DATA_BASE}/manifest.json"
+const val FIFA16_OBB_MAIN   = "${DLAVIE_DATA_BASE}/main.13.com.ea.gp.fifaworld.obb"
+const val FIFA16_OBB_PATCH  = "${DLAVIE_DATA_BASE}/patch.26.com.ea.gp.fifaworld.obb"
+const val LAUNCHER_APK_URL  = "https://github.com/drmacze/F16-Launcher/releases/latest/download/app-release.apk"
 const val MARKER_PATH_16    = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
 
 // FIFA 15 (DLavie 15)
 const val GAME_PKG_15       = "com.ea.game.fifa14_row"
-const val FIFA15_APK_URL    = "${DLAVIE_PROXY_URL}?f=fifa15-apk"
-const val FIFA15_DATA_URL   = "${DLAVIE_PROXY_URL}?f=fifa15-data"
-const val FIFA15_OBB_URL    = "${DLAVIE_PROXY_URL}?f=fifa15-obb"
+const val FIFA15_APK_URL    = "${DLAVIE_DATA_BASE}/DLavie15.apk"
+const val FIFA15_DATA_URL   = "${DLAVIE_DATA_BASE}/dlavie15-data.zip"
+const val FIFA15_OBB_URL    = "${DLAVIE_DATA_BASE}/main.13.com.ea.game.fifa14_row.obb"
 const val MARKER_PATH_15    = "/sdcard/Android/data/com.ea.game.fifa14_row/.dlavie15_data_installed"
 const val FIFA15_MAIN_ACTIVITY = "com.ea.game.fifa14.Fifa14Activity"
 
@@ -274,7 +278,7 @@ private const val GAME_PKG          = GAME_PKG_16
 private const val FIFA_APK_URL      = FIFA16_APK_URL
 private const val MARKER_PATH       = MARKER_PATH_16
 
-private const val DEFAULT_MANIFEST = DLAVIE_PROXY_URL + "?f=fifa16-manifest"
+private const val DEFAULT_MANIFEST = FIFA16_MANIFEST
 private const val LOCAL_VER        = 1
 private const val LOCAL_VER_NAME   = "v1"
 
@@ -524,7 +528,7 @@ fun DLavieModernApp(initialPostId: String? = null) {
                                     // Tidak ada URL download — buka browser ke halaman release
                                     try {
                                         // PRIVACY: Don't expose GitHub repo URL. Use DLavie proxy instead.
-                                        val fallbackUrl = currentInfo?.apkUrl?.takeIf { it.isNotBlank() } ?: (DLAVIE_PROXY_URL + "?f=launcher-latest")
+                                        val fallbackUrl = currentInfo?.apkUrl?.takeIf { it.isNotBlank() } ?: (LAUNCHER_APK_URL)
                                         val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUrl))
                                         browserIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                                         context.startActivity(browserIntent)
