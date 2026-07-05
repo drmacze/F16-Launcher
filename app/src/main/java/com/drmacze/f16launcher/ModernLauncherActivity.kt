@@ -1990,243 +1990,53 @@ fun HomeScreen(
                 buttonEnabled  = ttButtonEnabled,
                 onButtonClick  = ttButtonClick,
                 onClick        = ttCardClick,
-                // Phase 4: long-press haptic + shared element key (morphs to detail cover).
                 onLongClick    = { /* haptic-only acknowledgment */ },
                 sharedContentKey = "game-cover"
             )
-            // Inline download progress (kalau sedang unduh dari tombol "Dapatkan")
-            AnimatedVisibility(
-                visible = dlProgress >= 0f && dlProgress < 2f,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    LinearProgressIndicator(
-                        progress = { dlProgress },
-                        modifier = Modifier.fillMaxWidth(),
-                        color = DLavieGlass.AuroraCyan,
-                        trackColor = DLavieGlass.AuroraCyan.copy(0.15f)
-                    )
-                    Text(
-                        "Mengunduh APK… ${(dlProgress * 100).toInt()}%",
-                        color = SoftText, fontSize = 10.sp, modifier = Modifier.align(Alignment.End)
-                    )
-                }
-            }
-            AnimatedVisibility(
-                visible = dlError.isNotEmpty(),
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(Icons.Rounded.ErrorOutline, null, tint = DangerRed, modifier = Modifier.size(13.dp))
-                    Text(dlError, color = DangerRed, fontSize = 11.sp)
-                }
-            }
+            // v7.3.8: HAPUS inline download progress + error — install ONLY di GameHub
         }
         } // end if (setupState == LOADING) else { ... }
 
-        // ── Main action card (state-aware) ────────────────────────────────────
-        // This is the install/play CTA — kept because it handles NEED_GAME / NEED_DATA / READY states.
-        AnimatedContent(
-            targetState    = setupState,
-            label          = "setup_state",
-            transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) }
-        ) { state ->
-            when (state) {
-
-                // Loading — TapTap-style shimmer skeletons + Lottie loading (Phase 3)
-                SetupState.LOADING -> Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+        // v7.3.8: HAPUS entire AnimatedContent setup states (NEED_GAME/NEED_DATA/READY)
+        // Install ONLY di GameHub. Beranda = info + rating + link ke GameHub.
+        // Kalau game belum terinstall: card bilang "Buka GameHub untuk install"
+        // Kalau game sudah terinstall: card bilang "Main" (launch game)
+        if (!gameInstalled && setupState != SetupState.LOADING) {
+            // Simple info card — NO download button, NO install button
+            GlassCard(borderColor = GlassStroke) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // v3.0 Phase 3: Lottie loading animation (monochrome white ring)
-                    LottieLoading(size = 56.dp)
-                    TTGameCardSkeleton()
-                    TTGameCardSkeleton()
-                    TTGameCardSkeleton()
-                }
-
-                // Step 1: Game APK belum terinstall — info card only, NO download button.
-                // Installation flow only happens in GameHub via GameActionPanel.
-                // v7.2.3: Removed download box per user request — "proses install hanya ada di gamehub"
-                SetupState.NEED_GAME -> GlassCard(borderColor = CandyBlue.copy(0.5f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Box(
-                            Modifier.size(48.dp)
-                                .background(CandyBlue.copy(0.15f), RoundedCornerShape(14.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.SportsEsports, null, tint = CandyCyan, modifier = Modifier.size(26.dp))
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text("FIFA 16 Belum Terinstall", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                            Text("Buka GameHub untuk mulai instalasi.", color = SoftText, fontSize = 12.sp)                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "Semua proses instalasi (APK, data, mod) sekarang terpusat di GameHub. " +
-                        "Tap tombol di bawah untuk membuka GameHub dan mulai.",                        color = SoftText, fontSize = 13.sp, lineHeight = 18.sp
-                    )
-                    Spacer(Modifier.height(14.dp))
-
-                    // Navigate to GameHub button (NO download)
-                    Button(
-                        onClick  = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onNav(Page.GameHub)
-                        },
-                        enabled  = !maintenanceBlocked,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        shape    = RoundedCornerShape(18.dp),
-                        colors   = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor   = Carbon
-                        )
-                    ) {
-                        Icon(Icons.Rounded.SportsEsports, null, modifier = Modifier.size(22.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Buka GameHub", fontSize = 15.sp, fontWeight = FontWeight.Black)                    }
-
-                    AnimatedVisibility(visible = maintenanceBlocked) {
-                        Row(
-                            Modifier.padding(top = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(Icons.Rounded.Warning, null, tint = AmberWarn, modifier = Modifier.size(14.dp))
-                            Text(
-                                "Instalasi diblokir saat maintenance mode aktif.",
-                                color = AmberWarn, fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
-
-                // Step 2: Game terinstall, data belum siap
-                SetupState.NEED_DATA -> GlassCard(borderColor = AmberWarn.copy(0.5f)) {
-                    StepIndicator(currentStep = 2, totalSteps = 2)
-                    Spacer(Modifier.height(14.dp))
-
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Box(
-                            Modifier.size(48.dp)
-                                .background(NeonGreen.copy(0.12f), RoundedCornerShape(14.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.CheckCircle, null, tint = NeonGreen, modifier = Modifier.size(26.dp))
-                        }
-                        Column {
-                            Text("Game Terinstall!", color = NeonGreen, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                            Text("Satu langkah lagi untuk mulai bermain.", color = SoftText, fontSize = 12.sp)
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    GlassInfoBox(
-                        icon  = Icons.Rounded.Storage,
-                        color = AmberWarn,
-                        text  = "Data game belum tersedia. Buka FIFA 16 — game akan otomatis mengunduh OBB dan data saat pertama kali dibuka."
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    Button(
-                        onClick  = { if (!maintenanceBlocked) launchGame(context) },
-                        enabled  = !maintenanceBlocked,
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        shape    = RoundedCornerShape(18.dp),
-                        colors   = ButtonDefaults.buttonColors(
-                            containerColor = if (maintenanceBlocked) Surface2 else AmberWarn,
-                            contentColor   = if (maintenanceBlocked) SoftText else Color(0xFF1A0F00),
-                            disabledContainerColor = Surface2,
-                            disabledContentColor   = SoftText
-                        )
-                    ) {
-                        if (maintenanceBlocked) {
-                            Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(22.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(t.blockedMaintenance, fontSize = 15.sp, fontWeight = FontWeight.Black)
-                        } else {
-                            Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Buka FIFA 16 & Siapkan Data", fontSize = 15.sp, fontWeight = FontWeight.Black)
-                        }
-                    }
-                }
-
-                // Ready: semua siap!
-                SetupState.READY -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    // Play button with glow
                     Box(
-                        modifier = Modifier.fillMaxWidth().scale(pulseScale),
+                        Modifier.size(40.dp)
+                            .background(Color.White.copy(0.08f), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            Modifier.fillMaxWidth().height(64.dp)
-                                .background(NeonGreen.copy(alpha = glowAlpha), RoundedCornerShape(24.dp))
-                        )
-                        Button(
-                            onClick  = { if (!maintenanceBlocked) launchGame(context) },
-                            enabled  = !maintenanceBlocked,
-                            modifier = Modifier.fillMaxWidth().height(64.dp),
-                            shape    = RoundedCornerShape(24.dp),
-                            colors   = ButtonDefaults.buttonColors(
-                                containerColor = if (maintenanceBlocked) Surface2 else NeonGreen,
-                                contentColor   = if (maintenanceBlocked) SoftText else Color(0xFF00150B),
-                                disabledContainerColor = Surface2,
-                                disabledContentColor   = SoftText
-                            )
-                        ) {
-                            if (maintenanceBlocked) {
-                                Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(26.dp))
-                                Spacer(Modifier.width(10.dp))
-                                Text(t.blockedMaintenance, fontSize = 19.sp, fontWeight = FontWeight.Black)
-                            } else {
-                                Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(26.dp))
-                                Spacer(Modifier.width(10.dp))
-                                Text(t.playFifa16, fontSize = 19.sp, fontWeight = FontWeight.Black)
-                            }
-                        }
+                        Icon(Icons.Rounded.SportsEsports, null, tint = Color.White, modifier = Modifier.size(20.dp))
                     }
-
-                    // Update available banner
-                    val ui = updateInfo
-                    AnimatedVisibility(
-                        visible = ui != null && !ui.upToDate,
-                        enter = fadeIn() + expandVertically(),
-                        exit  = fadeOut() + shrinkVertically()
-                    ) {
-                        if (ui != null) GlassCard(borderColor = CandyCyan.copy(0.5f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    Modifier.size(40.dp)
-                                        .background(CandyCyan.copy(0.12f), RoundedCornerShape(12.dp)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Rounded.SystemUpdate, null, tint = CandyCyan, modifier = Modifier.size(20.dp))
-                                }
-                                Spacer(Modifier.width(10.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text("Pembaruan Tersedia", color = CandyCyan, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                    Text("Versi ${ui.latestName} siap diunduh.", color = SoftText, fontSize = 12.sp)
-                                }
-                            }
-                            Spacer(Modifier.height(10.dp))
-                            Button(
-                                onClick  = { onNav(Page.DLC) },
-                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                shape    = RoundedCornerShape(14.dp),
-                                colors   = ButtonDefaults.buttonColors(containerColor = CandyCyan, contentColor = Color(0xFF00111D))
-                            ) {
-                                Icon(Icons.Rounded.CloudSync, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Lihat & Terapkan Update", fontWeight = FontWeight.Black)
-                            }
-                        }
+                    Column(Modifier.weight(1f)) {
+                        Text(t.gameHub, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                        Text("Go to GameHub to install", color = SoftText, fontSize = 11.sp)
                     }
+                    Icon(Icons.Rounded.ChevronRight, null, tint = SubText, modifier = Modifier.size(18.dp).clickable { onNav(Page.GameHub) })
                 }
+            }
+        } else if (gameInstalled && setupState == SetupState.READY) {
+            // Game ready — Play button
+            Button(
+                onClick  = { if (!maintenanceBlocked) launchGame(context) },
+                enabled  = !maintenanceBlocked,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape    = RoundedCornerShape(18.dp),
+                colors   = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor   = PureBlack
+                )
+            ) {
+                Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(t.play, fontSize = 15.sp, fontWeight = FontWeight.Black)
             }
         }
 
