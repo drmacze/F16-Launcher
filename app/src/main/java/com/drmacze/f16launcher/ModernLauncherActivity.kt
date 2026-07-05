@@ -574,8 +574,10 @@ fun DLavieModernApp(initialPostId: String? = null) {
                 }
 
                 when {
-                    // ── Belum login → redirect ke guided login ──
-                    !api.loggedIn() -> {
+                    // ── Belum login DAN bukan guest → redirect ke guided login ──
+                    // v7.2.5: Fix guest redirect loop — guest tidak punya token,
+                    // tapi isGuest() return true. Jangan redirect guest ke login.
+                    !api.loggedIn() && !api.isGuest() -> {
                         LaunchedEffect(Unit) {
                             context.startActivity(
                                 Intent(context, DLavieGuidedActivity::class.java)
