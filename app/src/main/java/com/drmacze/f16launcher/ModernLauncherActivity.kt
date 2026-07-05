@@ -8768,12 +8768,4 @@ private fun GameListItem(game: GameItem, onClick: () -> Unit) {
     }
 }
 
-data class GameItem(
-    val title: String,
-    val subtitle: String,
-    val packageName: String,
-    val mainActivity: String,
-    val coverGradient: List<Color>,
-    val coverText: String,
-    val coverImageRes: Int? = null  // v7.0.3: real cover image (nullable — fallback to gradient + text)
-)
+// GameItem moved to GameItem.kt (v7.3.7)
