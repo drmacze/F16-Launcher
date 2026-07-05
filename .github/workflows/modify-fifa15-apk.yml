@@ -61,11 +61,13 @@ jobs:
             exit 1
           fi
           echo "Found apksigner: $APKSIGNER"
-          "$APKSIGNER" --version
+          # apksigner --version may exit non-zero in some wrapper scripts — tolerate it
+          "$APKSIGNER" --version 2>&1 || true
           # Make it available in PATH
           echo "$(dirname "$APKSIGNER")" >> $GITHUB_PATH
-          # Verify
-          which apksigner && apksigner --version
+          # Verify it can run (test with --help which exits 0)
+          "$APKSIGNER" --help 2>&1 | head -3
+          echo "✅ apksigner ready: $APKSIGNER"
 
       - name: Download source APK
         shell: bash
