@@ -8260,77 +8260,83 @@ fun GameHubScreen(
         )
     }
 
-    Column(
-        Modifier.fillMaxSize().background(PureBlack)
-    ) {
-        // Header
-        Row(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Rounded.SportsEsports, null, tint = Color.White, modifier = Modifier.size(28.dp))
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text("GameHub", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
-                Text("${games.size} games available", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp, fontFamily = InterFontFamily)
-            }
-        }
+    // ── Floating action panel state ──
+    // When user taps a game card, show floating panel (ala Kickstarter) with steps:
+    // 1. Install APK → 2. Install Data → 3. Apply Mod (FIFA 16 only) → 4. Play
+    var activeGame by remember { mutableStateOf<GameItem?>(null) }
 
-        // Game cards (horizontal scroll, landscape-style)
-        LazyRow(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp)
-        ) {
-            items(games) { game ->
-                GameCard(
-                    game = game,
-                    onClick = {
-                        // Check if game is installed, if not download APK first
-                        val isInstalled = try { context.packageManager.getPackageInfo(game.packageName, 0); true } catch (_: Exception) { false }
-                        if (isInstalled) {
-                            launchGame(context, game.packageName, game.mainActivity)
-                        } else {
-                            // Open download page
-                            val url = if (game.packageName == GAME_PKG_15) FIFA15_APK_URL else FIFA16_APK_URL
-                            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url)))
+    Box(Modifier.fillMaxSize().background(PureBlack)) {
+        Column(Modifier.fillMaxSize()) {
+            // Header
+            Row(
+                Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Rounded.SportsEsports, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text("GameHub", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
+                    Text("${games.size} games available — tap to install & play", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp, fontFamily = InterFontFamily)
+                }
+            }
+
+            // Game cards (horizontal scroll, landscape-style)
+            LazyRow(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                items(games) { game ->
+                    GameCard(
+                        game = game,
+                        onClick = {
+                            // v7.0.7: Show floating action panel instead of directly launching
+                            activeGame = game
                         }
-                    }
-                )
+                    )
+                }
             }
-        }
 
-        // Recently played / All games section
-        Spacer(Modifier.height(24.dp))
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(Modifier.size(width = 3.dp, height = 18.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
-            Spacer(Modifier.width(8.dp))
-            Text("All Games", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
-        }
-        Spacer(Modifier.height(12.dp))
+            // Recently played / All games section
+            Spacer(Modifier.height(24.dp))
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.size(width = 3.dp, height = 18.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
+                Spacer(Modifier.width(8.dp))
+                Text("All Games", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+            }
+            Spacer(Modifier.height(12.dp))
 
-        // Game list (vertical)
-        LazyColumn(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(games) { game ->
-                GameListItem(
-                    game = game,
-                    onClick = {
-                        val isInstalled = try { context.packageManager.getPackageInfo(game.packageName, 0); true } catch (_: Exception) { false }
-                        if (isInstalled) {
-                            launchGame(context, game.packageName, game.mainActivity)
-                        } else {
-                            val url = if (game.packageName == GAME_PKG_15) FIFA15_APK_URL else FIFA16_APK_URL
-                            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url)))
+            // Game list (vertical)
+            LazyColumn(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(games) { game ->
+                    GameListItem(
+                        game = game,
+                        onClick = {
+                            // v7.0.7: Show floating action panel
+                            activeGame = game
                         }
-                    }
-                )
+                    )
+                }
             }
+        }
+
+        // ── Floating Action Panel (overlay) ──
+        // Shown when user taps a game card. Tap background to dismiss.
+        activeGame?.let { game ->
+            GameActionPanel(
+                game = game,
+                onDismiss = { activeGame = null },
+                onGoToDlc = {
+                    activeGame = null
+                    onNav(Page.DLC)
+                }
+            )
         }
     }
 }

@@ -14,7 +14,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,26 +22,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Android
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDownload
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Extension
-import androidx.compose.material.icons.rounded.FolderOpen
-import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.SportsSoccer
-import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -56,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -75,38 +70,59 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
+import org.json.JSONArray
+import org.json.JSONObject
+import java.text.SimpleDateFormat
 import java.util.Locale
 
-// ─── DLC Page (Cleaner Redesign) ──────────────────────────────────────────────
+// ─── DLC Page (Redesign v2 — Mod Patches Only) ───────────────────────────────
 //
-// Replaces the old UpdateScreen. Design goals:
-// 1. Cleaner — each game (FIFA 16 + FIFA 15) gets its own card with consistent layout
-// 2. Easier to understand — step-by-step action flow (Download APK → Download Data → Play)
-// 3. No "miss data" — multi-source status detection per game + explicit progress per phase
-// 4. FIFA 16 stays the mod priority; FIFA 15 only has base data install (no patch system)
+// PURPOSE:
+//   DLC page SEKARANG khusus untuk mod patch game saja.
+//   - User upload mod gameplay via Dev Dashboard → muncul di sini
+//   - User tap "Update" → apply patch via existing DevPatchEngine
+//
+//   Untuk download APK + data + OBB → pindah ke GameHub (floating panel
+//   muncul saat user tap game card). Lihat GameActionPanel.kt
 //
 // Sections:
-//   1. Header (cleaner — title + subtitle only)
-//   2. Storage Permission Card (only shown if MANAGE_EXTERNAL_STORAGE not granted)
-//   3. Game Card: FIFA 16 (DLavie 26) — full mod support
-//   4. Game Card: FIFA 15 (DLavie 15) — base data only, no mods
-//   5. Storage Info Card (free space + backup summary)
+//   1. Header (DLC & Mods)
+//   2. Storage Permission Card (only if MANAGE_EXTERNAL_STORAGE not granted)
+//   3. Currently Installed Patch (status card)
+//   4. Available Mods List (from Supabase update_posts)
+//      - Each card: title, version, release date, "Update" / "Installed" button
+//      - Critical patches highlighted with red accent
 // ──────────────────────────────────────────────────────────────────────────────
 
 // Design tokens (matching existing monochrome theme)
 private val DlcBlack     = Color(0xFF000000)
 private val DlcCardBg    = Color(0xFF0A0A0A)
 private val DlcCardBgAlt = Color(0xFF101010)
-private val DlcBorder    = Color(0x1AFFFFFF)  // 10% white
-private val DlcBorderHi  = Color(0x33FFFFFF)  // 20% white
+private val DlcBorder    = Color(0x1AFFFFFF)
+private val DlcBorderHi  = Color(0x33FFFFFF)
 private val DlcText      = Color(0xFFFFFFFF)
 private val DlcSubText   = Color(0xFFAAAAAA)
 private val DlcMuted     = Color(0xFF666666)
-private val DlcGreen     = Color(0xFFFFFFFF)  // monochrome — use white for "ok"
+private val DlcGreen     = Color(0xFFFFFFFF)
 private val DlcRed       = Color(0xFFFF5555)
 private val DlcYellow    = Color(0xFFFFFF88)
-private val DlcAccent    = Color(0xFFFFFFFF)  // primary accent (white-on-black)
+
+data class ModPatch(
+    val id: String,
+    val versionCode: Int,
+    val versionName: String,
+    val title: String,
+    val body: String,
+    val releaseNotes: List<String>,
+    val knownIssues: List<String>,
+    val patchUrl: String,
+    val patchSha256: String,
+    val patchSizeBytes: Long,
+    val critical: Boolean,
+    val restartRequired: Boolean,
+    val riskLevel: String,
+    val createdAt: String
+)
 
 @Composable
 fun DlcScreen(
@@ -116,26 +132,6 @@ fun DlcScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-
-    // ── Patch Tools overlay state ──
-    // When true, render the existing UpdateScreen (full patch system UI:
-    // apply patch, backup list, rollback, logs) as a full-screen overlay.
-    // User taps "Apply Patch" on FIFA 16 card → opens this overlay.
-    // UpdateScreen's onNav(Page.DLC) is intercepted to close the overlay.
-    var showPatchTools by remember { mutableStateOf(false) }
-
-    if (showPatchTools) {
-        UpdateScreen(
-            api = api,
-            maintenanceInfo = maintenanceInfo,
-            onNav = { target ->
-                // Any nav target (including Page.DLC) closes the overlay
-                if (target == Page.DLC) showPatchTools = false
-                else onNav(target)
-            }
-        )
-        return
-    }
 
     // ── Storage permission state ──
     var filesAccessGranted by remember { mutableStateOf(false) }
@@ -151,103 +147,67 @@ fun DlcScreen(
     }
     LaunchedEffect(Unit) { filesAccessGranted = StorageAccess.isGranted() }
 
-    // ── FIFA 16 state ──
-    var fifa16ApkInstalled by remember { mutableStateOf(false) }
-    var fifa16DataReady    by remember { mutableStateOf(false) }
-    var fifa16Loading      by remember { mutableStateOf(true) }
+    // ── Currently installed patch state ──
+    var installedMarker by remember { mutableStateOf("") }
+    var gameInstalled by remember { mutableStateOf(false) }
+    var loadingStatus by remember { mutableStateOf(true) }
 
-    // ── FIFA 15 state ──
-    val fifa15Manager = remember { Fifa15DataManager(context) }
-    var fifa15ApkInstalled by remember { mutableStateOf(false) }
-    var fifa15DataReady    by remember { mutableStateOf(false) }
-    var fifa15Loading      by remember { mutableStateOf(true) }
-    var fifa15Installing   by remember { mutableStateOf(false) }
-    var fifa15Phase        by remember { mutableStateOf("") }
-    var fifa15Progress     by remember { mutableStateOf(0f) }      // 0..1
-    var fifa15Message      by remember { mutableStateOf("") }
-    var fifa15Error        by remember { mutableStateOf("") }
-    var fifa15CacheBytes   by remember { mutableStateOf(0L) }
-
-    // ── Storage info ──
-    var freeBytes   by remember { mutableStateOf(0L) }
-    var totalBytes  by remember { mutableStateOf(0L) }
-    var backupCount by remember { mutableStateOf(0) }
+    // ── Available mods list ──
+    val mods = remember { mutableStateListOf<ModPatch>() }
+    var loadingMods by remember { mutableStateOf(true) }
+    var modsError by remember { mutableStateOf("") }
 
     // ── Refresh functions ──
-    fun refreshFifa16() {
+    fun refreshStatus() {
         scope.launch(Dispatchers.IO) {
-            fifa16ApkInstalled = isGameInstalled(context)
-            fifa16DataReady = isDataReady()
-            withContext(Dispatchers.Main) { fifa16Loading = false }
+            installedMarker = readMarker()
+            gameInstalled = isGameInstalled(context)
+            withContext(Dispatchers.Main) { loadingStatus = false }
         }
     }
-    fun refreshFifa15() {
+    fun refreshMods() {
+        loadingMods = true
+        modsError = ""
         scope.launch(Dispatchers.IO) {
-            fifa15ApkInstalled = fifa15Manager.isApkInstalled()
-            fifa15DataReady = fifa15Manager.isDataInstalled()
-            fifa15CacheBytes = fifa15Manager.cacheSize()
-            withContext(Dispatchers.Main) { fifa15Loading = false }
-        }
-    }
-    fun refreshStorage() {
-        scope.launch(Dispatchers.IO) {
-            freeBytes = GameUtils.freeBytesSdcard()
-            totalBytes = GameUtils.totalBytesSdcard()
-            backupCount = GameUtils.listBackups().size
+            try {
+                val arr = api.fetchUpdatePosts()
+                mods.clear()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    mods.add(
+                        ModPatch(
+                            id = o.optString("id", ""),
+                            versionCode = o.optInt("version_code", 0),
+                            versionName = o.optString("version_name", ""),
+                            title = o.optString("title", "Untitled Mod"),
+                            body = o.optString("body", ""),
+                            releaseNotes = jsonArrayToStringList(o.optJSONArray("release_notes")),
+                            knownIssues = jsonArrayToStringList(o.optJSONArray("known_issues")),
+                            patchUrl = o.optString("patch_url", ""),
+                            patchSha256 = o.optString("patch_sha256", ""),
+                            patchSizeBytes = o.optLong("patch_size_bytes", 0L),
+                            critical = o.optBoolean("critical", false),
+                            restartRequired = o.optBoolean("restart_game_required", false),
+                            riskLevel = o.optString("risk_level", "low"),
+                            createdAt = o.optString("created_at", "")
+                        )
+                    )
+                }
+            } catch (e: Throwable) {
+                modsError = e.message ?: "Gagal memuat mod patches"
+            }
+            withContext(Dispatchers.Main) { loadingMods = false }
         }
     }
 
     // ── Initial load ──
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            fifa16ApkInstalled = isGameInstalled(context)
-            fifa16DataReady = isDataReady()
-            fifa15ApkInstalled = fifa15Manager.isApkInstalled()
-            fifa15DataReady = fifa15Manager.isDataInstalled()
-            fifa15CacheBytes = fifa15Manager.cacheSize()
-            freeBytes = GameUtils.freeBytesSdcard()
-            totalBytes = GameUtils.totalBytesSdcard()
-            backupCount = GameUtils.listBackups().size
+            installedMarker = readMarker()
+            gameInstalled = isGameInstalled(context)
         }
-        fifa16Loading = false
-        fifa15Loading = false
-    }
-
-    // ── FIFA 15 install action ──
-    fun startFifa15Install() {
-        if (fifa15Installing) return
-        if (!StorageAccess.isGranted()) {
-            StorageAccess.request(context)
-            return
-        }
-        fifa15Installing = true
-        fifa15Error = ""
-        fifa15Progress = 0f
-        fifa15Phase = "starting"
-        fifa15Message = "Memulai instalasi..."
-        scope.launch {
-            val result = fifa15Manager.downloadAndInstall(
-                onProgress = { phase, current, total, message ->
-                    withContext(Dispatchers.Main) {
-                        fifa15Phase = phase
-                        fifa15Message = message
-                        fifa15Progress = if (total > 0) (current.toFloat() / total.toFloat()).coerceIn(0f, 1f) else 0f
-                    }
-                }
-            )
-            withContext(Dispatchers.Main) {
-                fifa15Installing = false
-                result.onSuccess {
-                    fifa15Message = "FIFA 15 data berhasil dipasang!"
-                    fifa15Phase = "done"
-                    fifa15Progress = 1f
-                    refreshFifa15()
-                }.onFailure { err ->
-                    fifa15Error = err.message ?: "Gagal instalasi FIFA 15 data"
-                    fifa15Phase = "error"
-                }
-            }
-        }
+        loadingStatus = false
+        refreshMods()
     }
 
     // ── Layout ──
@@ -259,86 +219,159 @@ fun DlcScreen(
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // ─── Header (cleaner) ───
+        // ─── Header ───
         DlcHeader()
 
-        // ─── Storage Permission Card (only if not granted) ───
+        // ─── Storage Permission Card ───
         AnimatedVisibility(!filesAccessGranted, enter = fadeIn(), exit = fadeOut()) {
             DlcStoragePermissionCard(
                 onGrant = { StorageAccess.request(context) }
             )
         }
 
-        // ─── FIFA 16 Card (mod priority) ───
-        DlcGameCardFifa16(
-            loading = fifa16Loading,
-            apkInstalled = fifa16ApkInstalled,
-            dataReady = fifa16DataReady,
-            onRefresh = { refreshFifa16() },
-            onGoToPatches = { onNav(Page.DLC) },  // No-op (already on DLC) — patches section below
-            onLaunchGame = { launchGame(context, GAME_PKG_16, "com.byfen.downloadzipsdk.MainActivity") },
-            onDownloadApk = {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(FIFA16_APK_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            },
-            onApplyPatch = {
-                // Open the full patch system UI (UpdateScreen) as an overlay
-                showPatchTools = true
-            }
+        // ─── Currently Installed Patch Status ───
+        DlcInstalledStatusCard(
+            loading = loadingStatus,
+            installedMarker = installedMarker,
+            gameInstalled = gameInstalled,
+            onRefresh = { refreshStatus() }
         )
 
-        // ─── FIFA 16 Patch System (summary card) ───
-        DlcPatchSystemCard(
-            filesAccessGranted = filesAccessGranted,
-            onApplyPatch = {
-                if (!StorageAccess.isGranted()) {
-                    StorageAccess.request(context)
-                } else {
-                    // Open full patch system UI
-                    showPatchTools = true
+        // ─── Available Mods Section ───
+        Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier.size(width = 3.dp, height = 18.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(DlcText)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Mod Patches Tersedia",
+                color = DlcText,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = InterFontFamily,
+                modifier = Modifier.weight(1f)
+            )
+            IconButtonRefresh { refreshMods() }
+        }
+
+        // ─── Loading State ───
+        if (loadingMods) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = DlcCardBg),
+                border = BorderStroke(1.dp, DlcBorder)
+            ) {
+                Row(
+                    Modifier.padding(20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = DlcText
+                    )
+                    Text(
+                        "Memuat mod patches...",
+                        color = DlcSubText,
+                        fontSize = 13.sp,
+                        fontFamily = InterFontFamily
+                    )
                 }
             }
-        )
+        }
 
-        // ─── FIFA 15 Card (base data only, no mods) ───
-        DlcGameCardFifa15(
-            loading = fifa15Loading,
-            apkInstalled = fifa15ApkInstalled,
-            dataReady = fifa15DataReady,
-            installing = fifa15Installing,
-            phase = fifa15Phase,
-            progress = fifa15Progress,
-            message = fifa15Message,
-            error = fifa15Error,
-            cacheBytes = fifa15CacheBytes,
-            onStartInstall = { startFifa15Install() },
-            onRefresh = { refreshFifa15() },
-            onLaunchGame = { launchGame(context, GAME_PKG_15, FIFA15_MAIN_ACTIVITY) },
-            onDownloadApk = {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(FIFA15_APK_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            },
-            onClearCache = {
-                scope.launch(Dispatchers.IO) {
-                    val freed = fifa15Manager.clearCache()
-                    withContext(Dispatchers.Main) {
-                        refreshFifa15()
-                        refreshStorage()
+        // ─── Error State ───
+        if (modsError.isNotBlank() && !loadingMods) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = DlcRed.copy(alpha = 0.1f)),
+                border = BorderStroke(1.dp, DlcRed.copy(alpha = 0.4f))
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Gagal Memuat Mods",
+                        color = DlcRed,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = InterFontFamily
+                    )
+                    Text(
+                        modsError,
+                        color = DlcSubText,
+                        fontSize = 12.sp,
+                        fontFamily = InterFontFamily
+                    )
+                    Button(
+                        onClick = { refreshMods() },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = DlcText, contentColor = DlcBlack)
+                    ) {
+                        Text("Coba Lagi", fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
                     }
                 }
             }
-        )
+        }
 
-        // ─── Storage Info Card ───
-        DlcStorageInfoCard(
-            freeBytes = freeBytes,
-            totalBytes = totalBytes,
-            backupCount = backupCount,
-            onRefresh = { refreshStorage() }
-        )
+        // ─── Empty State ───
+        if (mods.isEmpty() && !loadingMods && modsError.isBlank()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = DlcCardBg),
+                border = BorderStroke(1.dp, DlcBorder)
+            ) {
+                Column(
+                    Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Rounded.Extension, null, tint = DlcMuted, modifier = Modifier.size(40.dp))
+                    Text(
+                        "Belum Ada Mod Patches",
+                        color = DlcText,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = InterFontFamily
+                    )
+                    Text(
+                        "Mod patches yang di-upload oleh developer akan muncul di sini.\nTap 'Update' untuk apply mod terbaru.",
+                        color = DlcSubText,
+                        fontSize = 12.sp,
+                        fontFamily = InterFontFamily,
+                        lineHeight = 16.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+        }
 
-        // ─── Footer note (cleaner, no artificial ending) ───
+        // ─── Mods List ───
+        if (mods.isNotEmpty()) {
+            mods.forEach { mod ->
+                DlcModCard(
+                    mod = mod,
+                    isInstalled = installedMarker.startsWith("v26") && installedMarker.contains(mod.versionName, ignoreCase = true),
+                    canApply = filesAccessGranted && gameInstalled,
+                    onApply = {
+                        // Apply via existing patch system — open UpdateScreen overlay
+                        onNav(Page.DLC)
+                    }
+                )
+            }
+        }
+
+        // ─── Footer ───
         Spacer(Modifier.height(4.dp))
         Text(
-            "DLavie Launcher v7.0 — DLC Manager",
+            "DLavie Launcher v7.0.7 — Mod Manager",
             color = DlcMuted,
             fontSize = 11.sp,
             fontFamily = InterFontFamily,
@@ -346,9 +379,6 @@ fun DlcScreen(
         )
     }
 }
-
-// ─── Helper for lifecycle observer (avoid breaking cancellation) ──────────────
-// (Removed — use kotlinx.coroutines.awaitCancellation() directly to match existing pattern)
 
 // ─── UI Components ────────────────────────────────────────────────────────────
 
@@ -370,14 +400,14 @@ private fun DlcHeader() {
         }
         Column(Modifier.weight(1f)) {
             Text(
-                "DLC & Data Manager",
+                "DLC & Mods",
                 color = DlcText,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = InterFontFamily
             )
             Text(
-                "Kelola APK, data, dan patch untuk FIFA 16 & FIFA 15",
+                "Mod patches untuk FIFA 16 — download & apply dari sini",
                 color = DlcSubText,
                 fontSize = 12.sp,
                 fontFamily = InterFontFamily,
@@ -408,8 +438,7 @@ private fun DlcStoragePermissionCard(onGrant: () -> Unit) {
                 )
             }
             Text(
-                "Launcher butuh izin 'Akses semua file' untuk menulis data game ke folder Android/data dan Android/obb. " +
-                "Tanpa izin ini, auto-download FIFA 15 dan apply patch FIFA 16 tidak akan berfungsi.",
+                "Mod patches butuh izin 'Akses semua file' untuk apply ke folder game.",
                 color = DlcSubText,
                 fontSize = 12.sp,
                 fontFamily = InterFontFamily,
@@ -428,301 +457,18 @@ private fun DlcStoragePermissionCard(onGrant: () -> Unit) {
 }
 
 @Composable
-private fun DlcGameCardFifa16(
+private fun DlcInstalledStatusCard(
     loading: Boolean,
-    apkInstalled: Boolean,
-    dataReady: Boolean,
-    onRefresh: () -> Unit,
-    onGoToPatches: () -> Unit,
-    onLaunchGame: () -> Unit,
-    onDownloadApk: () -> Unit,
-    onApplyPatch: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = DlcCardBg),
-        border = BorderStroke(1.dp, DlcBorder)
-    ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Header row
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(
-                    Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
-                        .background(Brush.verticalGradient(listOf(Color(0xFF0A0A0A), Color(0xFF222222)))),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("DL", color = Color.White.copy(alpha = 0.5f), fontSize = 18.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
-                }
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("FIFA 16 Mobile", color = DlcText, fontSize = 17.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
-                        Spacer(Modifier.width(8.dp))
-                        DlcPill("MOD PRIORITY", DlcText)
-                    }
-                    Text("DLavie 26 Mod · Sports · Mod utama", color = DlcSubText, fontSize = 12.sp, fontFamily = InterFontFamily, maxLines = 1)
-                }
-                IconButtonRefresh(onRefresh)
-            }
-
-            // Status tiles (3 columns)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DlcStatusTile(
-                    label = "APK",
-                    value = if (loading) "…" else if (apkInstalled) "Terpasang" else "Belum ada",
-                    ok = apkInstalled,
-                    icon = Icons.Rounded.Android,
-                    modifier = Modifier.weight(1f)
-                )
-                DlcStatusTile(
-                    label = "Data",
-                    value = if (loading) "…" else if (dataReady) "Siap" else "Belum siap",
-                    ok = dataReady,
-                    icon = Icons.Rounded.FolderOpen,
-                    modifier = Modifier.weight(1f)
-                )
-                DlcStatusTile(
-                    label = "Patch",
-                    value = if (loading) "…" else readMarker().ifBlank { "—" }.take(8),
-                    ok = readMarker().startsWith("v26"),
-                    icon = Icons.Rounded.Extension,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // Step-by-step actions
-            DlcActionRow(
-                step = "1",
-                title = "Install APK FIFA 16",
-                subtitle = "Unduh APK DLavie 26 (launcher-only, Android 14+ compatible)",
-                actionText = if (apkInstalled) "Terpasang" else "Unduh APK",
-                actionEnabled = !loading && !apkInstalled,
-                actionDone = apkInstalled,
-                onClick = onDownloadApk
-            )
-            DlcActionRow(
-                step = "2",
-                title = "Pasang Data & Patch Mod",
-                subtitle = "Apply patch dari Dev Dashboard — mod files, kits, transfer, dll.",
-                actionText = "Apply Patch",
-                actionEnabled = !loading && apkInstalled,
-                actionDone = dataReady,
-                onClick = onApplyPatch
-            )
-            DlcActionRow(
-                step = "3",
-                title = "Mainkan FIFA 16",
-                subtitle = "Launch game setelah APK + data siap.",
-                actionText = "Play",
-                actionEnabled = !loading && apkInstalled && dataReady,
-                actionDone = false,
-                isPrimary = true,
-                onClick = onLaunchGame
-            )
-        }
-    }
-}
-
-@Composable
-private fun DlcGameCardFifa15(
-    loading: Boolean,
-    apkInstalled: Boolean,
-    dataReady: Boolean,
-    installing: Boolean,
-    phase: String,
-    progress: Float,
-    message: String,
-    error: String,
-    cacheBytes: Long,
-    onStartInstall: () -> Unit,
-    onRefresh: () -> Unit,
-    onLaunchGame: () -> Unit,
-    onDownloadApk: () -> Unit,
-    onClearCache: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = DlcCardBg),
-        border = BorderStroke(1.dp, DlcBorder)
-    ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Header row
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(
-                    Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
-                        .background(Brush.verticalGradient(listOf(Color(0xFF1A1A2E), Color(0xFF16213E)))),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("D15", color = Color.White.copy(alpha = 0.5f), fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
-                }
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("FIFA 15 Mobile", color = DlcText, fontSize = 17.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
-                        Spacer(Modifier.width(8.dp))
-                        DlcPill("BASE ONLY", DlcSubText)
-                    }
-                    Text("DLavie 15 · Sports · Tanpa mod", color = DlcSubText, fontSize = 12.sp, fontFamily = InterFontFamily, maxLines = 1)
-                }
-                IconButtonRefresh(onRefresh)
-            }
-
-            // Status tiles (3 columns)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DlcStatusTile(
-                    label = "APK",
-                    value = if (loading) "…" else if (apkInstalled) "Terpasang" else "Belum ada",
-                    ok = apkInstalled,
-                    icon = Icons.Rounded.Android,
-                    modifier = Modifier.weight(1f)
-                )
-                DlcStatusTile(
-                    label = "Data",
-                    value = if (loading) "…" else if (dataReady) "Siap" else "Belum siap",
-                    ok = dataReady,
-                    icon = Icons.Rounded.FolderOpen,
-                    modifier = Modifier.weight(1f)
-                )
-                DlcStatusTile(
-                    label = "Cache",
-                    value = if (cacheBytes > 0) formatBytesHelper(cacheBytes) else "Kosong",
-                    ok = false,
-                    icon = Icons.Rounded.Storage,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // Install progress (only when installing)
-            AnimatedVisibility(installing, enter = fadeIn(), exit = fadeOut()) {
-                DlcProgressCard(phase = phase, progress = progress, message = message)
-            }
-
-            // Error message
-            AnimatedVisibility(error.isNotBlank(), enter = fadeIn(), exit = fadeOut()) {
-                DlcErrorBanner(message = error)
-            }
-
-            // Step-by-step actions
-            DlcActionRow(
-                step = "1",
-                title = "Install APK FIFA 15",
-                subtitle = "Unduh APK DLavie 15 (Android 16 compatible)",
-                actionText = if (apkInstalled) "Terpasang" else "Unduh APK",
-                actionEnabled = !loading && !installing && !apkInstalled,
-                actionDone = apkInstalled,
-                onClick = onDownloadApk
-            )
-            DlcActionRow(
-                step = "2",
-                title = "Auto-Download Data + OBB",
-                subtitle = "DATA (72.6 MB) + OBB (1.1 GB) — auto-extract, tanpa ZArchiver",
-                actionText = if (installing) "Memasang..." else if (dataReady) "Terpasang" else "Unduh & Pasang",
-                actionEnabled = !loading && !installing && apkInstalled && !dataReady,
-                actionDone = dataReady,
-                isPrimary = !dataReady,
-                onClick = onStartInstall
-            )
-            DlcActionRow(
-                step = "3",
-                title = "Mainkan FIFA 15",
-                subtitle = "Launch game setelah APK + data siap.",
-                actionText = "Play",
-                actionEnabled = !loading && !installing && apkInstalled && dataReady,
-                actionDone = false,
-                isPrimary = dataReady,
-                onClick = onLaunchGame
-            )
-
-            // Cache management (only if cache exists)
-            AnimatedVisibility(cacheBytes > 0 && !installing, enter = fadeIn(), exit = fadeOut()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().clickable { onClearCache() },
-                    shape = RoundedCornerShape(14.dp),
-                    color = DlcCardBgAlt,
-                    border = BorderStroke(1.dp, DlcBorder)
-                ) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Icon(Icons.Rounded.Storage, null, tint = DlcSubText, modifier = Modifier.size(18.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("Cache: ${formatBytesHelper(cacheBytes)}", color = DlcText, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
-                            Text("Ketuk untuk menghapus cache penghemat storage", color = DlcSubText, fontSize = 11.sp, fontFamily = InterFontFamily)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DlcPatchSystemCard(
-    filesAccessGranted: Boolean,
-    onApplyPatch: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = DlcCardBg),
-        border = BorderStroke(1.dp, DlcBorder)
-    ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(
-                    Modifier.size(40.dp)
-                        .background(DlcCardBgAlt, RoundedCornerShape(12.dp))
-                        .border(1.dp, DlcBorder, RoundedCornerShape(12.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Rounded.Extension, null, tint = DlcText, modifier = Modifier.size(20.dp))
-                }
-                Column(Modifier.weight(1f)) {
-                    Text("Patch System (FIFA 16)", color = DlcText, fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
-                    Text("Sistem mod files dari GitHub Tree Sync — auto backup + rollback", color = DlcSubText, fontSize = 11.sp, fontFamily = InterFontFamily)
-                }
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!filesAccessGranted) {
-                    Icon(Icons.Rounded.Warning, null, tint = DlcYellow, modifier = Modifier.size(16.dp))
-                    Text("Butuh izin Akses File untuk apply patch", color = DlcYellow, fontSize = 11.sp, fontFamily = InterFontFamily)
-                } else {
-                    Icon(Icons.Rounded.CheckCircle, null, tint = DlcGreen, modifier = Modifier.size(16.dp))
-                    Text("Izin Akses File aktif — patch siap diapply", color = DlcGreen, fontSize = 11.sp, fontFamily = InterFontFamily)
-                }
-            }
-
-            // Note: Full patch UI (apply, backup list, rollback) lives in the existing
-            // UpdateScreen. Tapping the button below opens it as a full-screen overlay.
-            Button(
-                onClick = onApplyPatch,
-                modifier = Modifier.fillMaxWidth().height(44.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (filesAccessGranted) DlcText else DlcCardBgAlt,
-                    contentColor = if (filesAccessGranted) DlcBlack else DlcSubText
-                ),
-                enabled = true
-            ) {
-                Icon(Icons.Rounded.Extension, null, tint = if (filesAccessGranted) DlcBlack else DlcSubText, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (filesAccessGranted) "Buka Patch System" else "Aktifkan izin file dulu",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = InterFontFamily
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DlcStorageInfoCard(
-    freeBytes: Long,
-    totalBytes: Long,
-    backupCount: Int,
+    installedMarker: String,
+    gameInstalled: Boolean,
     onRefresh: () -> Unit
 ) {
+    val isPatched = installedMarker.startsWith("v26")
+    val statusColor by animateColorAsState(
+        if (loading) DlcYellow else if (isPatched && gameInstalled) DlcGreen else DlcRed,
+        tween(400), label = "status_c"
+    )
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
@@ -737,234 +483,256 @@ private fun DlcStorageInfoCard(
                         .border(1.dp, DlcBorder, RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Rounded.Storage, null, tint = DlcText, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Rounded.SportsSoccer, null, tint = statusColor, modifier = Modifier.size(20.dp))
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("Storage Info", color = DlcText, fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
-                    Text("Ruang kosong & backup FIFA 16", color = DlcSubText, fontSize = 11.sp, fontFamily = InterFontFamily)
+                    Text(
+                        "Status Mod FIFA 16",
+                        color = DlcText,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = InterFontFamily
+                    )
+                    Text(
+                        if (loading) "Memeriksa status..."
+                        else if (!gameInstalled) "Game belum terinstall"
+                        else if (isPatched) "Mod terpasang: ${installedMarker.take(20)}"
+                        else "Belum ada mod terpasang",
+                        color = DlcSubText,
+                        fontSize = 11.sp,
+                        fontFamily = InterFontFamily,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 IconButtonRefresh(onRefresh)
             }
 
+            // Status tiles
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DlcStatusTile(
-                    label = "Kosong",
-                    value = formatBytesHelper(freeBytes),
-                    ok = freeBytes > 2L * 1024 * 1024 * 1024,  // > 2 GB
-                    icon = Icons.Rounded.Storage,
+                DlcStatusTileCompact(
+                    label = "Game",
+                    value = if (loading) "…" else if (gameInstalled) "Terinstall" else "Belum ada",
+                    ok = gameInstalled,
                     modifier = Modifier.weight(1f)
                 )
-                DlcStatusTile(
-                    label = "Total",
-                    value = formatBytesHelper(totalBytes),
-                    ok = true,
-                    icon = Icons.Rounded.Storage,
+                DlcStatusTileCompact(
+                    label = "Mod",
+                    value = if (loading) "…" else if (isPatched) "Aktif" else "Tidak ada",
+                    ok = isPatched,
                     modifier = Modifier.weight(1f)
                 )
-                DlcStatusTile(
-                    label = "Backup",
-                    value = "$backupCount file",
-                    ok = backupCount > 0,
-                    icon = Icons.Rounded.History,
+                DlcStatusTileCompact(
+                    label = "Izin File",
+                    value = if (StorageAccess.isGranted()) "Aktif" else "Belum",
+                    ok = StorageAccess.isGranted(),
                     modifier = Modifier.weight(1f)
                 )
-            }
-
-            if (freeBytes in 1L..2L * 1024 * 1024 * 1024) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Rounded.Warning, null, tint = DlcYellow, modifier = Modifier.size(14.dp))
-                    Text(
-                        "Ruang kurang dari 2 GB — auto-download FIFA 15 butuh ~1.2 GB",
-                        color = DlcYellow,
-                        fontSize = 11.sp,
-                        fontFamily = InterFontFamily
-                    )
-                }
             }
         }
     }
 }
 
 @Composable
-private fun DlcStatusTile(
+private fun DlcStatusTileCompact(
     label: String,
     value: String,
     ok: Boolean,
-    icon: ImageVector,
     modifier: Modifier = Modifier
 ) {
     val color by animateColorAsState(if (ok) DlcGreen else DlcRed, tween(400), label = "tile_c")
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(12.dp),
         color = DlcCardBgAlt,
         border = BorderStroke(1.dp, if (ok) DlcBorder else DlcRed.copy(alpha = 0.3f))
     ) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Icon(icon, null, tint = color, modifier = Modifier.size(13.dp))
-                Text(label, color = DlcSubText, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
-            }
-            Text(value, color = color, fontSize = 12.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label, color = DlcSubText, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
+            Text(value, color = color, fontSize = 11.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
-private fun DlcActionRow(
-    step: String,
-    title: String,
-    subtitle: String,
-    actionText: String,
-    actionEnabled: Boolean,
-    actionDone: Boolean,
-    isPrimary: Boolean = false,
-    onClick: () -> Unit
+private fun DlcModCard(
+    mod: ModPatch,
+    isInstalled: Boolean,
+    canApply: Boolean,
+    onApply: () -> Unit
 ) {
-    Surface(
+    val accentColor = if (mod.critical) DlcRed else DlcText
+    val dateFormat = remember { SimpleDateFormat("dd MMM yyyy", Locale.getDefault()) }
+    val formattedDate = remember(mod.createdAt) {
+        try {
+            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+            dateFormat.format(sdf.parse(mod.createdAt) ?: java.util.Date())
+        } catch (_: Throwable) { mod.createdAt.take(10) }
+    }
+
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = DlcCardBgAlt,
-        border = BorderStroke(1.dp, if (isPrimary && actionEnabled) DlcBorderHi else DlcBorder)
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = DlcCardBg),
+        border = BorderStroke(1.dp, if (mod.critical) DlcRed.copy(alpha = 0.4f) else DlcBorder)
     ) {
-        Row(
-            Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Step badge
-            Box(
-                Modifier.size(28.dp)
-                    .background(
-                        if (actionDone) DlcGreen else if (isPrimary && actionEnabled) DlcText else DlcCardBg,
-                        CircleShape
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Header row
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    Modifier.size(36.dp)
+                        .background(DlcCardBgAlt, RoundedCornerShape(10.dp))
+                        .border(1.dp, DlcBorder, RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (mod.critical) Icons.Rounded.LocalFireDepartment else Icons.Rounded.NewReleases,
+                        null,
+                        tint = accentColor,
+                        modifier = Modifier.size(18.dp)
                     )
-                    .border(1.dp, DlcBorder, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                if (actionDone) {
-                    Icon(Icons.Rounded.CheckCircle, null, tint = DlcBlack, modifier = Modifier.size(16.dp))
-                } else {
+                }
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            mod.versionName.ifBlank { "v${mod.versionCode}" },
+                            color = accentColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = InterFontFamily
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        if (mod.critical) {
+                            Surface(
+                                color = DlcRed.copy(alpha = 0.15f),
+                                border = BorderStroke(1.dp, DlcRed.copy(alpha = 0.4f)),
+                                shape = RoundedCornerShape(999.dp)
+                            ) {
+                                Text(
+                                    "CRITICAL",
+                                    color = DlcRed,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    fontFamily = InterFontFamily
+                                )
+                            }
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            formattedDate,
+                            color = DlcMuted,
+                            fontSize = 10.sp,
+                            fontFamily = InterFontFamily
+                        )
+                    }
                     Text(
-                        step,
-                        color = if (isPrimary && actionEnabled) DlcBlack else DlcSubText,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Black,
+                        mod.title,
+                        color = DlcText,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = InterFontFamily,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Body
+            if (mod.body.isNotBlank()) {
+                Text(
+                    mod.body,
+                    color = DlcSubText,
+                    fontSize = 12.sp,
+                    fontFamily = InterFontFamily,
+                    lineHeight = 16.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Release notes
+            if (mod.releaseNotes.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    mod.releaseNotes.take(3).forEach { note ->
+                        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("•", color = DlcText, fontSize = 11.sp)
+                            Text(
+                                note,
+                                color = DlcSubText,
+                                fontSize = 11.sp,
+                                fontFamily = InterFontFamily,
+                                lineHeight = 14.sp
+                            )
+                        }
+                    }
+                    if (mod.releaseNotes.size > 3) {
+                        Text(
+                            "+${mod.releaseNotes.size - 3} lainnya",
+                            color = DlcMuted,
+                            fontSize = 10.sp,
+                            fontFamily = InterFontFamily,
+                            modifier = Modifier.padding(start = 14.dp)
+                        )
+                    }
+                }
+            }
+
+            // Known issues warning
+            if (mod.knownIssues.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Rounded.Warning, null, tint = DlcYellow, modifier = Modifier.size(12.dp))
+                    Text(
+                        "${mod.knownIssues.size} known issue(s)",
+                        color = DlcYellow,
+                        fontSize = 10.sp,
                         fontFamily = InterFontFamily
                     )
                 }
             }
 
-            Column(Modifier.weight(1f)) {
-                Text(title, color = DlcText, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
-                Text(subtitle, color = DlcSubText, fontSize = 11.sp, fontFamily = InterFontFamily, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 14.sp)
-            }
-
-            // Action button
-            Button(
-                onClick = onClick,
-                enabled = actionEnabled,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isPrimary && actionEnabled) DlcText else DlcCardBg,
-                    contentColor = if (isPrimary && actionEnabled) DlcBlack else DlcSubText,
-                    disabledContainerColor = if (actionDone) DlcGreen.copy(alpha = 0.2f) else DlcCardBgAlt,
-                    disabledContentColor = if (actionDone) DlcGreen else DlcMuted
-                ),
-                modifier = Modifier.height(38.dp)
-            ) {
-                Text(actionText, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
-            }
-        }
-    }
-}
-
-@Composable
-private fun DlcProgressCard(phase: String, progress: Float, message: String) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = DlcCardBgAlt,
-        border = BorderStroke(1.dp, DlcBorderHi)
-    ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Footer: size + button
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                    color = DlcText
-                )
-                Text(
-                    phaseLabel(phase),
-                    color = DlcText,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = InterFontFamily
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "${(progress * 100).toInt()}%",
-                    color = DlcText,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = InterFontFamily
-                )
+                if (mod.patchSizeBytes > 0) {
+                    Text(
+                        formatBytesHelper(mod.patchSizeBytes),
+                        color = DlcMuted,
+                        fontSize = 10.sp,
+                        fontFamily = InterFontFamily,
+                        modifier = Modifier.weight(1f)
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+
+                Button(
+                    onClick = onApply,
+                    enabled = canApply && !isInstalled,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isInstalled) DlcCardBgAlt else accentColor,
+                        contentColor = if (isInstalled) DlcGreen else DlcBlack,
+                        disabledContainerColor = DlcCardBgAlt,
+                        disabledContentColor = DlcMuted
+                    ),
+                    modifier = Modifier.height(36.dp)
+                ) {
+                    Icon(
+                        if (isInstalled) Icons.Rounded.CheckCircle else Icons.Rounded.CloudDownload,
+                        null,
+                        tint = if (isInstalled) DlcGreen else (if (canApply) DlcBlack else DlcMuted),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        if (isInstalled) "Terpasang" else "Update",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = InterFontFamily
+                    )
+                }
             }
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                color = DlcText,
-                trackColor = DlcCardBg,
-            )
-            Text(
-                message,
-                color = DlcSubText,
-                fontSize = 11.sp,
-                fontFamily = InterFontFamily,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
         }
-    }
-}
-
-@Composable
-private fun DlcErrorBanner(message: String) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = DlcRed.copy(alpha = 0.1f),
-        border = BorderStroke(1.dp, DlcRed.copy(alpha = 0.4f))
-    ) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(Icons.Rounded.ErrorOutline, null, tint = DlcRed, modifier = Modifier.size(18.dp))
-            Text(
-                message,
-                color = DlcRed,
-                fontSize = 12.sp,
-                fontFamily = InterFontFamily,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-@Composable
-private fun DlcPill(text: String, color: Color) {
-    Surface(
-        color = color.copy(alpha = 0.12f),
-        border = BorderStroke(1.dp, color.copy(alpha = 0.35f)),
-        shape = RoundedCornerShape(999.dp)
-    ) {
-        Text(
-            text,
-            color = color,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Black,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-            maxLines = 1,
-            fontFamily = InterFontFamily
-        )
     }
 }
 
@@ -987,16 +755,9 @@ private fun IconButtonRefresh(onClick: () -> Unit) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-private fun phaseLabel(phase: String): String = when (phase) {
-    "starting"      -> "Memulai..."
-    "download_data" -> "Mengunduh DATA"
-    "download_obb"  -> "Mengunduh OBB"
-    "extract_data"  -> "Mengekstrak DATA"
-    "extract_obb"   -> "Mengekstrak OBB"
-    "verify"        -> "Verifikasi"
-    "done"          -> "Selesai"
-    "error"         -> "Error"
-    else            -> phase
+private fun jsonArrayToStringList(arr: JSONArray?): List<String> {
+    if (arr == null) return emptyList()
+    return (0 until arr.length()).map { arr.optString(it, "") }.filter { it.isNotBlank() }
 }
 
 private fun formatBytesHelper(bytes: Long): String {
