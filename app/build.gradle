@@ -15,14 +15,16 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 36
-        versionCode 151
+        versionCode 152
+<<<<<<< HEAD
         versionName "7.3.5-direct-github-apk"
+        versionCode 152
         versionName "7.3.5-direct-github-apk"
+        versionCode 152
         versionName "7.3.5-direct-github-apk"
-        versionCode 151
-        versionName "7.3.5-direct-github-apk"
-        versionCode 151
-        versionName "7.3.5-direct-github-apk"
+=======
+        versionName "7.2.9-beranda-lihat-game-detail-redesign"
+>>>>>>> 98072bd (feat(v7.2.9): Beranda 'Lihat' button + GameDetail App Store style redesign)
         buildConfigField "String", "SUPABASE_URL", '"https://lvmucsxbmadtsgrxuwmo.supabase.co"'
         buildConfigField "String", "SUPABASE_ANON_KEY", '"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2bXVjc3hibWFkdHNncnh1d21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODUyODksImV4cCI6MjA5ODU2MTI4OX0.y-1sE6uYTn4Wbter6g6NozY6uojzD5x9YVeYif-5nJs"'
         buildConfigField "String", "SUPABASE_PUB_KEY", '"sb_publishable_aYFlbWVJMErOHwPsli33QQ_INJD9mhx"'
