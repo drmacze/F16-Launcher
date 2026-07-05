@@ -86,21 +86,23 @@ fun DLavieTopBar(
     onSearchClick: () -> Unit,
     onBellClick: () -> Unit,
     onProfileClick: () -> Unit,
+    onLanguageClick: () -> Unit = {},  // v7.0.8: language toggle
     hasUnreadNotif: Boolean = false,
     profileInitial: String = "DL",
+    currentLangFlag: String = "🇬🇧",  // v7.0.8: flag emoji dari LanguageManager
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         // ── Left: Hamburger ──
         Box(
             modifier = Modifier
-                .size(44.dp)
+                .size(40.dp)
                 .clip(CircleShape)
                 .background(Color.White.copy(alpha = 0.05f))
                 .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)), CircleShape)
@@ -111,7 +113,7 @@ fun DLavieTopBar(
                 Icons.Rounded.Menu,
                 contentDescription = "Menu",
                 tint = Color.White,
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier.size(20.dp)
             )
         }
 
@@ -119,36 +121,54 @@ fun DLavieTopBar(
         Row(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 12.dp)
-                .height(44.dp)
-                .clip(RoundedCornerShape(22.dp))
+                .padding(horizontal = 8.dp)
+                .height(40.dp)
+                .clip(RoundedCornerShape(20.dp))
                 .background(Color.White.copy(alpha = 0.06f))
-                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)), RoundedCornerShape(22.dp))
+                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)), RoundedCornerShape(20.dp))
                 .clickable { onSearchClick() }
-                .padding(horizontal = 14.dp),
+                .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Icon(
                 Icons.Rounded.Search,
-                contentDescription = "Cari",
+                contentDescription = "Search",
                 tint = SoftText,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(16.dp)
             )
             Text(
-                "Cari game, komunitas, update…",
+                "Search…",
                 color = SubText,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
 
-        // ── Right: Bell + Profile ──
+        // ── Right: Language toggle + Bell + Profile ──
+        // v7.0.8: Language toggle (globe + flag emoji)
         Box(
             modifier = Modifier
-                .size(44.dp)
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.05f))
+                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)), CircleShape)
+                .clickable { onLanguageClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                currentLangFlag,
+                fontSize = 18.sp
+            )
+        }
+
+        Spacer(Modifier.width(6.dp))
+
+        Box(
+            modifier = Modifier
+                .size(40.dp)
                 .clip(CircleShape)
                 .background(Color.White.copy(alpha = 0.05f))
                 .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)), CircleShape)
@@ -157,9 +177,9 @@ fun DLavieTopBar(
         ) {
             Icon(
                 Icons.Rounded.Notifications,
-                contentDescription = "Notifikasi",
+                contentDescription = "Notifications",
                 tint = Color.White,
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier.size(20.dp)
             )
             // Tiny unread dot
             if (hasUnreadNotif) {
@@ -167,19 +187,19 @@ fun DLavieTopBar(
                     Modifier
                         .align(Alignment.TopEnd)
                         .padding(8.dp)
-                        .size(8.dp)
+                        .size(7.dp)
                         .background(Color.White, CircleShape)
                         .border(BorderStroke(1.5.dp, PureBlack), CircleShape)
                 )
             }
         }
 
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(6.dp))
 
         DLavieLogoCover(
-            size = 44.dp,
+            size = 40.dp,
             text = profileInitial,
-            fontSize = 14.sp,
+            fontSize = 13.sp,
             shape = CircleShape,
             borderWidth = 1.dp
         )
@@ -1059,6 +1079,118 @@ fun GuestUpgradeDialog(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+// ─── 8. Language Picker Dialog ───────────────────────────────────────────────
+// v7.0.8: Dialog untuk pilih bahasa. Muncul saat user tap globe icon di top bar.
+// Pakai LanguageManager untuk set + apply locale.
+@Composable
+fun LanguagePickerDialog(
+    currentLangCode: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = PureBlack,
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+        ) {
+            Column(Modifier.padding(24.dp)) {
+                Text(
+                    "Select Language",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = InterFontFamily
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "App will restart to apply language change",
+                    color = SoftText,
+                    fontSize = 11.sp,
+                    fontFamily = InterFontFamily
+                )
+                Spacer(Modifier.height(20.dp))
+
+                // Auto-detect option
+                LanguageRow(
+                    flag = "🌐",
+                    name = "Auto-detect",
+                    nativeName = "Device language",
+                    selected = false,
+                    onClick = {
+                        onSelect("auto")
+                    }
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                // Supported languages
+                LanguageManager.SupportedLanguage.entries.forEach { lang ->
+                    LanguageRow(
+                        flag = lang.flag,
+                        name = lang.displayName,
+                        nativeName = lang.nativeName,
+                        selected = lang.code == currentLangCode,
+                        onClick = {
+                            onSelect(lang.code)
+                        }
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguageRow(
+    flag: String,
+    name: String,
+    nativeName: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.03f),
+        border = if (selected) BorderStroke(1.dp, Color.White.copy(alpha = 0.30f)) else null
+    ) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(flag, fontSize = 22.sp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    name,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = InterFontFamily
+                )
+                Text(
+                    nativeName,
+                    color = SoftText,
+                    fontSize = 11.sp,
+                    fontFamily = InterFontFamily
+                )
+            }
+            if (selected) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Rounded.Check,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }

@@ -6,27 +6,43 @@ import android.os.Build
 import java.util.Locale
 
 /**
- * DLavie Language Manager v2
+ * DLavie Language Manager v3 — Global app with 10 languages.
  *
- * Auto-detects device language on FIRST launch (no toggle needed).
- * User can manually override with language selection in Settings.
+ * Auto-detects device language on FIRST launch.
+ * User can manually override via language toggle in top bar.
  * Once user manually selects a language, that overrides auto-detect.
  *
- * Supported languages:
+ * Supported languages (10):
  * - English (en) — default fallback
- * - Indonesian (id) — auto-detected if device locale is Indonesian
+ * - Indonesian (id)
+ * - Malay (ms)
+ * - Portuguese (pt)
+ * - Spanish (es)
+ * - German (de)
+ * - French (fr)
+ * - Japanese (ja)
+ * - Chinese (zh)
+ * - Arabic (ar)
  *
  * Language preference stored in SharedPreferences "dlavie_lang".
- * Key "language_code": null = auto-detect, "en"/"id" = manual override
+ * Key "language_code": null = auto-detect, "en"/"id"/etc = manual override
  */
 object LanguageManager {
 
     private const val PREFS_NAME = "dlavie_lang"
     private const val KEY_LANGUAGE = "language_code"
 
-    enum class SupportedLanguage(val code: String, val displayName: String, val nativeName: String) {
-        ENGLISH("en", "English", "English"),
-        INDONESIAN("id", "Indonesian", "Bahasa Indonesia"),
+    enum class SupportedLanguage(val code: String, val displayName: String, val nativeName: String, val flag: String) {
+        ENGLISH("en", "English", "English", "🇬🇧"),
+        INDONESIAN("id", "Indonesian", "Bahasa Indonesia", "🇮🇩"),
+        MALAY("ms", "Malay", "Bahasa Melayu", "🇲🇾"),
+        PORTUGUESE("pt", "Portuguese", "Português", "🇧🇷"),
+        SPANISH("es", "Spanish", "Español", "🇪🇸"),
+        GERMAN("de", "German", "Deutsch", "🇩🇪"),
+        FRENCH("fr", "French", "Français", "🇫🇷"),
+        JAPANESE("ja", "Japanese", "日本語", "🇯🇵"),
+        CHINESE("zh", "Chinese", "中文", "🇨🇳"),
+        ARABIC("ar", "Arabic", "العربية", "🇸🇦"),
     }
 
     /**
@@ -56,15 +72,16 @@ object LanguageManager {
     }
 
     /**
-     * Auto-detect device language. Returns "id" if device is Indonesian, else "en".
+     * v3: Auto-detect device language from 10 supported languages.
+     * Falls back to English if device language not supported.
      */
     fun autoDetectLanguage(): String {
         val deviceLang = Locale.getDefault().language
-        return if (deviceLang == "id") {
-            SupportedLanguage.INDONESIAN.code
-        } else {
-            SupportedLanguage.ENGLISH.code
-        }
+        val supportedCodes = SupportedLanguage.entries.map { it.code }
+        // Exact match (e.g., "id" → Indonesian, "pt" → Portuguese)
+        if (deviceLang in supportedCodes) return deviceLang
+        // Fallback: English (global default)
+        return SupportedLanguage.ENGLISH.code
     }
 
     /**

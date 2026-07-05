@@ -1617,6 +1617,12 @@ fun HomeScreen(
     var notifListOpen   by remember { mutableStateOf(false) }
     // v6.8.4: Guest upgrade dialog state — ditampilkan saat guest coba download/rate
     var showGuestDialog by remember { mutableStateOf(false) }
+    // v7.0.8: Language picker state + current flag
+    var showLanguagePicker by remember { mutableStateOf(false) }
+    val currentLangCode = remember { LanguageManager.getCurrentLanguage(context) }
+    val currentLangFlag = remember(currentLangCode) {
+        LanguageManager.SupportedLanguage.entries.find { it.code == currentLangCode }?.flag ?: "🌐"
+    }
     var guestDialogFeature by remember { mutableStateOf("") }
 
     // ── Bug 2: Partial maintenance blocking ──
@@ -1791,14 +1797,17 @@ fun HomeScreen(
         // ── v6.8 Top Bar: hamburger + search + bell + profile ───────────────────
         // Hamburger → Settings overlay. Search → Komunitas (search aktif di sana).
         // Bell → notification category popup (existing logic). Profile → Me tab.
+        // v7.0.8: Language toggle (globe icon) → show language picker dialog.
         Box {
             DLavieTopBar(
-                onMenuClick    = { onOpenSettings() },
-                onSearchClick  = { onNav(Page.Chat) },
-                onBellClick    = { showNotifPopup = true },
-                onProfileClick = { onNav(Page.Me) },
-                hasUnreadNotif = latestNotif != null,
-                profileInitial = "DL"
+                onMenuClick      = { onOpenSettings() },
+                onSearchClick    = { onNav(Page.Chat) },
+                onBellClick      = { showNotifPopup = true },
+                onProfileClick   = { onNav(Page.Me) },
+                onLanguageClick  = { showLanguagePicker = true },
+                hasUnreadNotif   = latestNotif != null,
+                profileInitial   = "DL",
+                currentLangFlag  = currentLangFlag
             )
             // Hidden dropdown — still driven by showNotifPopup state (unchanged logic)
             DropdownMenu(
@@ -2282,6 +2291,24 @@ fun HomeScreen(
                 )
             },
             onDismiss = { showGuestDialog = false }
+        )
+    }
+
+    // v7.0.8: Language picker dialog — tampilkan saat user tap globe icon
+    if (showLanguagePicker) {
+        LanguagePickerDialog(
+            currentLangCode = currentLangCode,
+            onSelect = { selectedCode ->
+                showLanguagePicker = false
+                if (selectedCode == "auto") {
+                    LanguageManager.resetToAutoDetect(context)
+                } else {
+                    LanguageManager.setLanguage(context, selectedCode)
+                }
+                // Recreate activity untuk apply locale change
+                (context as? android.app.Activity)?.recreate()
+            },
+            onDismiss = { showLanguagePicker = false }
         )
     }
 }
