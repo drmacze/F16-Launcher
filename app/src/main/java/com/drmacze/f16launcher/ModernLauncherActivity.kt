@@ -2810,6 +2810,7 @@ fun GlassInfoBox(icon: ImageVector, color: Color, text: String) {
 @Composable
 fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, onNav: (Page) -> Unit) {
     val context       = LocalContext.current
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     // ── Bug 2: Partial maintenance blocking ──
     val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"
     // NOTE: All I/O moved to LaunchedEffect below — don't block main thread during composition.

@@ -882,6 +882,8 @@ private fun DLavieDlcCard(
     onClick: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     Column(
         modifier = Modifier
             .fillMaxWidth()
