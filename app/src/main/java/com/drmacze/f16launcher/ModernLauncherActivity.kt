@@ -328,6 +328,16 @@ enum class Page(val label: String, val navIcon: ImageVector) {
 
 // ─── Activity ─────────────────────────────────────────────────────────────────
 class ModernLauncherActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        // Apply language locale before activity creates
+        val langCode = LanguageManager.getCurrentLanguage(newBase)
+        val locale = java.util.Locale(langCode)
+        java.util.Locale.setDefault(locale)
+        val config = android.content.res.Configuration(newBase.resources.configuration)
+        config.setLocale(locale)
+        super.attachBaseContext(newBase.createConfigurationContext(config))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Pre-create notification channel (idempotent) so the channel is ready
@@ -5015,7 +5025,12 @@ private fun CommentsBottomSheet(
                             contentPadding = PaddingValues(bottom = 8.dp)
                         ) {
                             items(comments, key = { it.id }) { comment ->
-                                CommentRow(comment)
+                                CommentRow(
+                                    comment = comment,
+                                    onReply = { name ->
+                                        commentText = "@$name "
+                                    }
+                                )
                             }
                         }
                     }
@@ -5119,7 +5134,7 @@ private fun CommentsBottomSheet(
 
 // ─── Phase 2 Community: Single comment row ────────────────────────────────────
 @Composable
-private fun CommentRow(comment: CommentItem) {
+private fun CommentRow(comment: CommentItem, onReply: (String) -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Box(
             Modifier.size(32.dp).clip(CircleShape)
@@ -5146,6 +5161,16 @@ private fun CommentRow(comment: CommentItem) {
             }
             Spacer(Modifier.height(2.dp))
             Text(comment.body, color = SoftText, fontSize = 13.sp, lineHeight = 18.sp)
+            // Reply button
+            Text(
+                "Balas",
+                color = SubText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .clickable { onReply(comment.displayName.ifBlank { comment.username }) }
+                    .padding(top = 4.dp)
+            )
         }
     }
 }
@@ -7922,6 +7947,8 @@ fun LanguageSettingsCard(context: android.content.Context) {
                             LanguageManager.setLanguage(context, lang.code)
                             currentLang = lang.code
                             isAuto = false
+                            // Recreate activity to apply language immediately
+                            (context as? android.app.Activity)?.recreate()
                         },
                     color = if (isSelected) TextWhite.copy(alpha = 0.15f) else Surface1,
                     border = BorderStroke(
@@ -7963,6 +7990,8 @@ fun LanguageSettingsCard(context: android.content.Context) {
                         LanguageManager.resetToAutoDetect(context)
                         currentLang = LanguageManager.getCurrentLanguage(context)
                         isAuto = true
+                        // Recreate activity to apply language immediately
+                        (context as? android.app.Activity)?.recreate()
                     },
                 color = Surface1,
                 border = BorderStroke(1.dp, GlassStroke),
