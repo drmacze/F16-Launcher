@@ -197,17 +197,18 @@ fun StarRatingBar(
         for (i in 1..5) {
             val filled = i <= rating.toInt()
             val tint = if (filled) starColor else emptyColor
+            val starModifier = if (interactive && onRatingChange != null) {
+                Modifier.clickable {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onRatingChange(i)
+                }
+            } else {
+                Modifier
+            }
             Box(
                 modifier = Modifier
                     .size(starSize.dp)
-                    .then(
-                        if (interactive && onRatingChange != null) {
-                            Modifier.clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onRatingChange(i)
-                            }
-                        } else Modifier
-                    },
+                    .then(starModifier),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
