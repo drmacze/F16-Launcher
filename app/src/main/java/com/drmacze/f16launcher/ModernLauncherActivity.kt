@@ -4689,6 +4689,7 @@ private fun CreatePostSheet(
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
@@ -7244,6 +7245,7 @@ fun AccountSettingsCard(
     onExpandedSectionChange: (String?) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     var working by remember { mutableStateOf(false) }
     var resultMsg by remember { mutableStateOf("") }
     var isSuccess by remember { mutableStateOf(false) }
