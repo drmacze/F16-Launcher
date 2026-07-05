@@ -103,6 +103,8 @@ import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.PrivacyTip
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -5517,238 +5519,215 @@ fun ProfileScreen(
     ) {
 
         // ════════════════════════════════════════════════════════════════════
-        // v7.4.0: CLEAN MODERN PROFILE — no gimmicks, pure professional
+        // v7.5.0: TOTAL REDESIGN — minimalis, clean, modern
+        // No cover banner. Centered avatar + name + stats text.
+        // Pill tabs with icons. Feed cards. Settings menu items.
         // ════════════════════════════════════════════════════════════════════
         if (profileLoading) {
-            TTGameCardSkeleton()
-        } else {
-            // ── Cover (120dp, FIFA cover art + halftone + dark scrim) ──
-            Box(
-                Modifier.fillMaxWidth().height(120.dp)
-            ) {
-                // FIFA 16 cover as blurred background
-                coil.compose.AsyncImage(
-                    model = R.drawable.fifa16_cover,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-                // Dark scrim for readability
-                Box(
-                    Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(
-                            0f to Color.Black.copy(alpha = 0.4f),
-                            1f to Color.Black.copy(alpha = 0.9f)
-                        )
-                    )
-                )
-                // Settings icon (top-right, clean)
-                Box(
-                    Modifier.align(Alignment.TopEnd).padding(12.dp).size(32.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.4f))
-                        .clickable { onOpenSettings() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Rounded.Settings, contentDescription = t.settings, tint = Color.White, modifier = Modifier.size(16.dp))
-                }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                LottieLoading(size = 48.dp)
             }
+        } else {
 
-            // ── Avatar (clean static, no rotation/glow) ──
-            Box(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp)
-                    .offset(y = (-40).dp)
+            // ── Top bar: "Profile" title + streak + settings ──
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                Text(t.profile, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
                 Row(
-                    verticalAlignment = Alignment.Bottom,
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Avatar
-                    Box(
-                        Modifier.size(80.dp).clickable {
-                            if (api.loggedIn() && !avatarUploading) {
-                                avatarPicker.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
-                            }
-                        }
+                    // Streak icon (fire + number)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        if (avatarUrlState.isNotEmpty()) {
-                            AsyncImage(
-                                model = avatarUrlState,
-                                contentDescription = "Avatar",
-                                modifier = Modifier.fillMaxSize().clip(CircleShape)
-                                    .border(3.dp, PureBlack, CircleShape),
-                                contentScale = ContentScale.Crop
+                        Icon(Icons.Rounded.LocalFireDepartment, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Text("${myBadges.size}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                    // Settings gear
+                    Box(
+                        Modifier.size(36.dp).clip(CircleShape)
+                            .background(Color.White.copy(0.06f))
+                            .clickable { onOpenSettings() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Settings, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+
+            // ── Avatar (centered, 88dp, clean) ──
+            Box(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier.size(88.dp).clickable {
+                        if (api.loggedIn() && !avatarUploading) {
+                            avatarPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
-                        } else {
-                            DLavieLogoCover(
-                                size = 80.dp, text = initial,
-                                fontSize = 28.sp, shape = CircleShape,
-                                borderWidth = 3.dp
-                            )
-                        }
-                        if (avatarUploading) {
-                            Box(
-                                Modifier.fillMaxSize().clip(CircleShape)
-                                    .background(Color.Black.copy(0.6f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-                            }
-                        }
-                        // Camera badge
-                        Box(
-                            Modifier.align(Alignment.BottomEnd).size(22.dp)
-                                .background(Color.White, CircleShape)
-                                .border(2.dp, PureBlack, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.CameraAlt, null, tint = PureBlack, modifier = Modifier.size(10.dp))
                         }
                     }
-                }
-            }
-
-            // ── Name + username + role ──
-            Column(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(
-                        api.displayName().ifEmpty { "DLavie Player" },
-                        fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color.White
-                    )
-                    if (role.equals("admin", true) || role.equals("developer", true)) {
-                        Icon(Icons.Rounded.Verified, null, tint = Color.White, modifier = Modifier.size(14.dp))
-                    }
-                    ModernPill(role.uppercase(), roleBadgeColor(role))
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text("@${api.username().ifEmpty { "unknown" }}", color = SoftText, fontSize = 12.sp)
-                    if (uniqueId > 0) {
-                        Text("· ID: $uniqueId", color = SubText, fontSize = 11.sp)
-                    }
-                }
-                if (bio.isNotBlank()) {
-                    Text(bio, color = SoftText, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
-                }
-            }
-
-            // ── Stats inline (Posts · Followers · Following) ──
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                StatInline(value = myPostsCount, label = t.posts)
-                Box(Modifier.size(1.dp, 24.dp).background(GlassStroke))
-                StatInline(value = followerCount, label = t.followers)
-                Box(Modifier.size(1.dp, 24.dp).background(GlassStroke))
-                StatInline(value = followingCount, label = t.followingCount)
-            }
-
-            // ── Play time (if any) ──
-            if (totalPlayMin > 0 && gameInstalled) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(Icons.Rounded.Schedule, null, tint = SubText, modifier = Modifier.size(13.dp))
-                    Text(
-                        "FIFA 16 · ${if (totalPlayMin >= 60) "${totalPlayMin / 60}h " else ""}${totalPlayMin % 60}m",
-                        color = SubText, fontSize = 11.sp
-                    )
-                }
-            }
-
-            // ── Edit Profile button ──
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Surface(
-                    modifier = Modifier.weight(1f).height(38.dp).clickable { onOpenSettings() },
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color.White.copy(alpha = 0.08f),
-                    border = BorderStroke(1.dp, GlassStrokeHi)
-                ) {
-                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Edit, null, tint = Color.White, modifier = Modifier.size(13.dp))
-                        Spacer(Modifier.width(5.dp))
-                        Text(t.editProfile, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-                Surface(
-                    modifier = Modifier.size(38.dp).clickable { if (gameInstalled) launchGame(context) },
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color.White.copy(alpha = 0.08f),
-                    border = BorderStroke(1.dp, GlassStrokeHi)
-                ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.SportsEsports, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                    }
-                }
-            }
-
-            // ── Badges (horizontal scroll, compact) ──
-            if (myBadges.isNotEmpty()) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    myBadges.take(10).forEach { badge ->
-                        BadgeChip(
-                            icon = badgeIcon(badge.badgeCode),
-                            label = formatBadgeName(badge.badgeCode)
+                    if (avatarUrlState.isNotEmpty()) {
+                        AsyncImage(
+                            model = avatarUrlState,
+                            contentDescription = "Avatar",
+                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        DLavieLogoCover(
+                            size = 88.dp, text = initial,
+                            fontSize = 32.sp, shape = CircleShape
                         )
                     }
+                    if (avatarUploading) {
+                        Box(
+                            Modifier.fillMaxSize().clip(CircleShape)
+                                .background(Color.Black.copy(0.6f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                        }
+                    }
+                    // Camera badge (bottom-right)
+                    Box(
+                        Modifier.align(Alignment.BottomEnd).size(26.dp)
+                            .background(Color.White, CircleShape)
+                            .border(2.dp, PureBlack, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.CameraAlt, null, tint = PureBlack, modifier = Modifier.size(13.dp))
+                    }
                 }
             }
-        }
 
-        // ── Segmented pill tabs ──
-        if (!profileLoading) {
+            // ── Name + verified badge ──
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Surface2)
-                    .padding(3.dp),
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                SegmentedTab(t.myPosts, selectedTab == 0, Modifier.weight(1f)) { selectedTab = 0 }
-                SegmentedTab(t.savedPosts, selectedTab == 1, Modifier.weight(1f)) { selectedTab = 1 }
-                SegmentedTab("Drafts", selectedTab == 2, Modifier.weight(1f)) { selectedTab = 2 }
+                Text(
+                    api.displayName().ifEmpty { "DLavie Player" },
+                    color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black
+                )
+                if (role.equals("admin", true) || role.equals("developer", true)) {
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Rounded.Verified, null, tint = Color.White, modifier = Modifier.size(15.dp))
+                }
             }
-        }
 
-        // ── Content per tab ──
-        if (!profileLoading) {
+            // ── Followers · Following (simple text, centered) ──
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("${followerCount} ${t.followers.lowercase()}", color = SubText, fontSize = 13.sp)
+                Text("  \u00b7  ", color = SubText, fontSize = 13.sp)
+                Text("${followingCount} ${t.followingCount.lowercase()}", color = SubText, fontSize = 13.sp)
+            }
+
+            // ── Bio (optional, centered) ──
+            if (bio.isNotBlank()) {
+                Text(
+                    bio,
+                    color = SoftText, fontSize = 13.sp, lineHeight = 18.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 8.dp)
+                )
+            }
+
+            // ── Edit Profile button (pill, centered, below info) ──
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .height(40.dp)
+                        .clickable { onOpenSettings() },
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color.White.copy(0.08f),
+                    border = BorderStroke(1.dp, Color.White.copy(0.15f))
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 24.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Edit, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(t.editProfile, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // ── Pill tabs (Posts | Saved | Drafts) with icons ──
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                PillTab(
+                    icon = Icons.Rounded.Article,
+                    label = t.myPosts,
+                    selected = selectedTab == 0,
+                    modifier = Modifier.weight(1f)
+                ) { selectedTab = 0 }
+                PillTab(
+                    icon = Icons.Rounded.BookmarkBorder,
+                    label = t.savedPosts,
+                    selected = selectedTab == 1,
+                    modifier = Modifier.weight(1f)
+                ) { selectedTab = 1 }
+                PillTab(
+                    icon = Icons.Rounded.Drafts,
+                    label = "Drafts",
+                    selected = selectedTab == 2,
+                    modifier = Modifier.weight(1f)
+                ) { selectedTab = 2 }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // ── Content per tab ──
             when {
                 postsLoading -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.md)) {
+                    Column(
+                        Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         repeat(2) { TTGameCardSkeleton() }
                     }
                 }
-                selectedTab == 0 && myPosts.isEmpty() -> ProfileEmptyPosts(text = "No posts yet. Create your first post in Community!")
-                selectedTab == 1 && mySavedPosts.isEmpty() -> ProfileEmptyPosts(text = "No saved posts. Tap bookmark on any post to save.")
-                selectedTab == 2 && myDrafts.isEmpty() -> ProfileEmptyPosts(text = "No drafts. Toggle 'Save as Draft' when creating a post.")
+                selectedTab == 0 && myPosts.isEmpty() -> ProfileEmptyPosts(
+                    text = "No posts yet. Create your first post in Community!"
+                )
+                selectedTab == 1 && mySavedPosts.isEmpty() -> ProfileEmptyPosts(
+                    text = "No saved posts. Tap bookmark on any post to save."
+                )
+                selectedTab == 2 && myDrafts.isEmpty() -> ProfileEmptyPosts(
+                    text = "No drafts. Toggle 'Save as Draft' when creating a post."
+                )
                 else -> {
                     val list = when (selectedTab) {
                         0 -> myPosts
                         1 -> mySavedPosts
                         else -> myDrafts
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(TTSpacing.md)) {
+                    Column(
+                        Modifier.padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         list.forEach { post ->
                             ProfilePostCard(
                                 post = post,
@@ -5787,24 +5766,20 @@ fun ProfileScreen(
                     }
                 }
             }
-        }
 
-        // ── Settings + Account + Logout (compact menu items) ──
-        if (!profileLoading) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // Settings entry
-            ProfileMenuItem(
-                icon = Icons.Rounded.Settings,
-                label = t.settings,
-                onClick = { onOpenSettings() }
-            )
-            Spacer(Modifier.height(1.dp))
+            // ── Settings menu (grouped rounded containers) ──
+            // Block 1: Settings + Language
+            SettingsContainer {
+                SettingsRow(icon = Icons.Rounded.Settings, label = t.settings, onClick = { onOpenSettings() })
+                SettingsDivider()
+                SettingsRow(icon = Icons.Rounded.Language, label = t.language, trailingText = LanguageManager.getCurrentLanguageName(context), onClick = { onOpenSettings() })
+            }
 
-            // Language
-            LanguageSettingsCard(context = context)
+            Spacer(Modifier.height(8.dp))
 
-            // Account settings
+            // Block 2: Account
             AccountSettingsCard(
                 api = api,
                 context = context,
@@ -5812,103 +5787,153 @@ fun ProfileScreen(
                 onExpandedSectionChange = onExpandedSectionChange
             )
 
+            Spacer(Modifier.height(8.dp))
+
+            // Block 3: Info (FAQ, Terms, Policy)
+            SettingsContainer {
+                SettingsRow(icon = Icons.Rounded.HelpOutline, label = "FAQ", onClick = { })
+                SettingsDivider()
+                SettingsRow(icon = Icons.Rounded.Description, label = "Terms", onClick = { })
+                SettingsDivider()
+                SettingsRow(icon = Icons.Rounded.PrivacyTip, label = "Privacy Policy", onClick = { })
+            }
+
             // FCM (admin only)
             if (role == "admin" || role == "developer") {
+                Spacer(Modifier.height(8.dp))
                 FcmDiagnosticCard(api = api, context = context)
             }
 
-            // Logout
+            // ── Logout (pill button, bottom) ──
             AnimatedContent(targetState = confirmLogout, label = "logout") { confirm ->
                 if (!confirm) {
-                    OutlinedButton(
-                        onClick = { confirmLogout = true },
-                        modifier = Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 16.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, DangerRed.copy(0.4f)),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = DangerRed)
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+                        horizontalArrangement = Arrangement.Center
                     ) {
-                        Icon(Icons.Rounded.Logout, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(t.logout, color = DangerRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Surface(
+                            modifier = Modifier
+                                .height(44.dp)
+                                .clickable { confirmLogout = true },
+                            shape = RoundedCornerShape(22.dp),
+                            color = Color.Transparent,
+                            border = BorderStroke(1.dp, DangerRed.copy(0.4f))
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 32.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Rounded.Logout, null, tint = DangerRed, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(t.logout, color = DangerRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 } else {
-                    GlassCard(borderColor = DangerRed.copy(0.5f)) {
-                        Text("Logout", color = DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                        Spacer(Modifier.height(4.dp))
-                        Text("You will need to sign in again.", color = SoftText, fontSize = 12.sp)
+                    // Confirmation dialog
+                    SettingsContainer {
+                        Text("Logout", color = DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(16.dp))
+                        Text("You will need to sign in again.", color = SoftText, fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp))
                         Spacer(Modifier.height(12.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(
                                 onClick = { confirmLogout = false },
-                                modifier = Modifier.weight(1f).height(44.dp),
+                                modifier = Modifier.weight(1f).height(42.dp),
                                 shape = RoundedCornerShape(10.dp),
                                 border = BorderStroke(1.dp, GlassStroke),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = SoftText)
                             ) { Text(t.cancel, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
                             Button(
                                 onClick = onLogout,
-                                modifier = Modifier.weight(1f).height(44.dp),
+                                modifier = Modifier.weight(1f).height(42.dp),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = DangerRed, contentColor = Color.White)
-                            ) {
-                                Text(t.logout, fontWeight = FontWeight.Black, fontSize = 12.sp)
-                            }
+                            ) { Text(t.logout, fontWeight = FontWeight.Black, fontSize = 12.sp) }
                         }
                     }
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
 
-// v7.4.0: Helper composables for clean profile
+// v7.5.0: Helper composables
 @Composable
-private fun StatInline(value: Int, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("$value", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
-        Text(label, color = SubText, fontSize = 10.sp)
-    }
-}
-
-@Composable
-private fun SegmentedTab(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Box(
-        modifier
-            .height(34.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) Color.White else Color.Transparent)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            label,
-            color = if (selected) PureBlack else SubText,
-            fontSize = 12.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-        )
-    }
-}
-
-@Composable
-private fun ProfileMenuItem(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun PillTab(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onClick() },
-        color = GlassBase,
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(1.dp, GlassStroke)
+        modifier
+            .height(38.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(19.dp),
+        color = if (selected) Color.White else Color.Transparent,
+        border = if (selected) null else BorderStroke(1.dp, Color.White.copy(0.12f))
     ) {
         Row(
-            Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            Modifier.fillMaxSize().padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(12.dp))
-            Text(label, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-            Icon(Icons.Rounded.ChevronRight, null, tint = SubText, modifier = Modifier.size(18.dp))
+            Icon(icon, null, tint = if (selected) PureBlack else SubText, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(5.dp))
+            Text(
+                label,
+                color = if (selected) PureBlack else SubText,
+                fontSize = 11.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1
+            )
         }
     }
+}
+
+@Composable
+private fun SettingsContainer(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = GlassBase,
+        border = BorderStroke(1.dp, GlassStroke)
+    ) {
+        Column(content = content)
+    }
+}
+
+@Composable
+private fun SettingsRow(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    trailingText: String? = null
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(label, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        if (trailingText != null) {
+            Text(trailingText, color = SubText, fontSize = 12.sp)
+            Spacer(Modifier.width(4.dp))
+        }
+        Icon(Icons.Rounded.ChevronRight, null, tint = SubText, modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
+private fun SettingsDivider() {
+    Box(Modifier.fillMaxWidth().padding(start = 48.dp).height(1.dp).background(GlassStroke))
 }
 
 // ─── Helper composables for the new ProfileScreen ──────────────────────────────
