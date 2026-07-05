@@ -204,16 +204,22 @@ fun GameActionPanel(
     // NOT launcher-latest (that's the DLavie Launcher APK, causes infinite download loop).
     LaunchedEffect(apkDownloadActive, game.packageName) {
         val fileKey = if (game.packageName == GAME_PKG_15) "fifa15-apk" else "fifa16-apk"
+        var installerOpened = false  // v7.3.9: track apakah installer sudah dibuka
         while (apkDownloadActive) {
             val progress = apkDownloader.getProgress(fileKey)
             apkDownloadProgress = progress.progress
             apkDownloadedBytes = progress.downloadedBytes
             apkTotalBytes = progress.totalBytes
-            // Check for completion: if download is done (not active, progress=100),
-            // the completion listener will handle opening installer. But we also
-            // break the polling loop here to prevent stuck state.
-            if (progress.done) {
+            // v7.3.9: FALLBACK — kalau progress.done=true tapi installer belum dibuka,
+            // langsung buka installer (tidak cuma rely ke completionListener yang mungkin
+            // tidak fire di Android 13+ jika receiver registration bermasalah).
+            if (progress.done && !installerOpened && progress.filePath.isNotBlank()) {
+                installerOpened = true
                 apkDownloadActive = false
+                val opened = apkDownloader.openInstaller(File(progress.filePath))
+                if (!opened) {
+                    apkDownloadError = "Gagal membuka installer. Tap Download APK untuk retry."
+                }
                 break
             }
             if (progress.error != null && !progress.active) {

@@ -164,10 +164,17 @@ class ApkDownloader(private val context: Context) {
             .commit()  // sync flush
 
         // Register receiver once
+        // CRITICAL FIX: Gunakan RECEIVER_EXPORTED (bukan RECEIVER_NOT_EXPORTED).
+        // DownloadManager adalah system service yang berbeda UID → ACTION_DOWNLOAD_COMPLETE
+        // adalah broadcast "external". Jika pakai RECEIVER_NOT_EXPORTED, receiver TIDAK
+        // akan menerima broadcast dari DownloadManager di Android 13+ (API 33+).
+        // Akibatnya: download selesai tapi completionListener tidak pernah dipanggil →
+        // openInstaller tidak pernah dijalankan → popup install tidak muncul.
         if (!receiverRegistered) {
             val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(completionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                // RECEIVER_EXPORTED karena DownloadManager = external system service
+                context.registerReceiver(completionReceiver, filter, Context.RECEIVER_EXPORTED)
             } else {
                 @Suppress("UnspecifiedRegisterReceiverFlag")
                 context.registerReceiver(completionReceiver, filter)
