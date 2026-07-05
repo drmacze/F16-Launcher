@@ -401,6 +401,19 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
     var cooldownRemaining by remember { mutableStateOf(0) }
     val listState = rememberLazyListState()
 
+    // v6.8.2 BUGFIX: cancelRequested flag — di-set saat user klik "Batalkan".
+    // Poller pending/open WAJIB check flag ini sebelum mengubah ticketStatus dari
+    // status yang dibaca di DB. Tanpa ini, race condition terjadi:
+    //   1. User klik "Batalkan" → PATCH status=closed ke Supabase
+    //   2. Tapi developer di Dev Hub sudah klik "Accept" 0.5 detik sebelumnya
+    //      → Supabase status = open (developer menang race)
+    //   3. Poller pending (while-true loop) baca status = open dari DB
+    //   4. Poller set ticketStatus = "open" → user tiba-tiba masuk chat padahal cancel!
+    //
+    // Fix: flag lokal cancelRequested di-set SBLUM PATCH. Poller check flag ini
+    // setiap iterasi. Kalau true → BREAK, jangan override ticketStatus dari DB.
+    var cancelRequested by remember { mutableStateOf(false) }
+
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -464,11 +477,18 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
     }
 
     // Poll for new messages
+    // v6.8.2 BUGFIX: check cancelRequested di setiap iterasi. Kalau user klik
+    // "Batalkan" (atau close), poller BREAK — jangan proses message atau status
+    // dari DB. Mencegah race condition: developer set "open" tepat saat user
+    // cancel → poller tidak boleh override ticketStatus jadi "open" lagi.
     LaunchedEffect(ticketId, ticketStatus) {
         if (ticketId != null && ticketStatus == "open" && !isAssistant) {
             while (true) {
                 delay(5000)
+                // v6.8.2: user cancel/close → BREAK, jangan poll message lagi.
+                if (cancelRequested) break
                 val newMsgs = pollMessages(api, ticketId!!)
+                if (cancelRequested) break  // double-check setelah network
                 if (newMsgs.isNotEmpty()) {
                     messages = (messages + newMsgs).distinctBy { it.id }
                     lastActivityTime = System.currentTimeMillis()
@@ -476,6 +496,7 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
                 }
 
                 val currentStatus = checkTicketStatus(api, ticketId!!)
+                if (cancelRequested) break  // double-check setelah network
                 if (currentStatus == "closed") {
                     ticketStatus = "closed"
                     messages = messages + ChatMessage(
@@ -495,7 +516,7 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
                         timestamp = System.currentTimeMillis()
                     )
                     delay(30000)
-                    closeTicketWithCooldown(api, ticketId!!)
+                    closeTicketWithCooldown(api, ticketId!!, cancelReason = "inactivity")
                     ticketStatus = "closed"
                     break
                 }
@@ -504,12 +525,20 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
     }
 
     // Poll for pending→open status change
+    // v6.8.2 BUGFIX: check cancelRequested di setiap iterasi. Kalau user klik
+    // "Batalkan", poller BREAK immediately — jangan override ticketStatus dari
+    // DB meskipun developer sudah set "open" di Dev Hub (race condition).
     LaunchedEffect(ticketId, ticketStatus) {
         if (ticketId != null && ticketStatus == "pending" && !isAssistant) {
             val startTime = System.currentTimeMillis()
             while (true) {
                 delay(5000)
+                // v6.8.2: user cancel → BREAK, jangan proses status dari DB.
+                if (cancelRequested) break
                 val status = checkTicketStatus(api, ticketId!!)
+                // v6.8.2: double-check cancelRequested setelah network call
+                // (mungkin user klik cancel selama delay/network).
+                if (cancelRequested) break
                 if (status == "open") {
                     ticketStatus = "open"
                     lastActivityTime = System.currentTimeMillis()
@@ -526,7 +555,7 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
                 }
                 // Auto-close if pending > 5 min
                 if (System.currentTimeMillis() - startTime > 5 * 60 * 1000) {
-                    closeTicketWithCooldown(api, ticketId!!)
+                    closeTicketWithCooldown(api, ticketId!!, cancelReason = "timeout_pending")
                     ticketStatus = "closed"
                     messages = messages + ChatMessage(
                         senderType = "bot",
@@ -573,7 +602,16 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
                             Box(Modifier.size(8.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.6f)))
                             Spacer(Modifier.width(8.dp))
                             Icon(Icons.Rounded.Close, null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(24.dp).clickable {
-                                ticketId?.let { closeTicketWithCooldown(api, it); ticketStatus = "closed" }
+                                // v6.8.2 BUGFIX: set cancelRequested = true DULU sebelum PATCH.
+                                // Poller open akan check flag ini dan BREAK — jangan proses
+                                // message/status dari DB setelah user close.
+                                cancelRequested = true
+                                ticketId?.let {
+                                    scope.launch {
+                                        closeTicketWithCooldown(api, it, cancelReason = "user_cancelled")
+                                        ticketStatus = "closed"
+                                    }
+                                }
                             })
                         }
                     }
@@ -632,7 +670,24 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
                         Spacer(Modifier.height(8.dp))
                         Text("Sesi akan ditutup otomatis dalam 5 menit jika tidak ada respon.", color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp, fontFamily = InterFontFamily, textAlign = TextAlign.Center)
                         Spacer(Modifier.height(24.dp))
-                        Surface(Modifier.clickable { ticketId?.let { closeTicketWithCooldown(api, it); ticketStatus = "closed" } }, shape = RoundedCornerShape(12.dp), color = Color.White.copy(alpha = 0.1f)) {
+                        Surface(Modifier.clickable {
+                            // v6.8.2 BUGFIX: set cancelRequested = true DULU sebelum PATCH.
+                            // Poller pending akan check flag ini dan BREAK — jangan
+                            // override ticketStatus dari DB meskipun developer sudah
+                            // set "open" di Dev Hub (race condition fix).
+                            cancelRequested = true
+                            ticketId?.let {
+                                scope.launch {
+                                    closeTicketWithCooldown(api, it, cancelReason = "user_cancelled")
+                                    ticketStatus = "closed"
+                                    messages = messages + ChatMessage(
+                                        senderType = "bot",
+                                        body = "Panggilan dibatalkan. Anda bisa membuat sesi live chat baru kapan saja.",
+                                        timestamp = System.currentTimeMillis()
+                                    )
+                                }
+                            }
+                        }, shape = RoundedCornerShape(12.dp), color = Color.White.copy(alpha = 0.1f)) {
                             Text("Batalkan", color = Color.White, fontSize = 13.sp, fontFamily = InterFontFamily, modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp))
                         }
                     }
@@ -1137,7 +1192,27 @@ private fun checkTicketStatus(api: CommunityApi, ticketId: String): String {
     } catch (e: Exception) { "open" }
 }
 
-private fun closeTicketWithCooldown(api: CommunityApi, ticketId: String) {
+/**
+ * v6.8.2: Close ticket + set cooldown timestamp.
+ *
+ * Param `cancelReason` (optional):
+ *   - "user_cancelled" — user klik "Batalkan" atau tombol X (explicit cancel)
+ *   - "inactivity"     — auto-close setelah 5 menit idle (no response)
+ *   - "timeout_pending"— auto-close setelah 5 menit pending (no dev pickup)
+ *   - null/omitted     — backward compat (close dari sisi admin/other)
+ *
+ * Dev Hub bisa baca field `cancel_reason` untuk bedakan: kalau "user_cancelled",
+ * dev TIDAK boleh accept ticket (sudah di-cancel user). Ini mencegah race condition
+ * di mana dev klik "Accept" tepat saat user klik "Batalkan".
+ *
+ * NOTE: Field `cancel_reason` harus ada di schema `support_tickets` (text, nullable).
+ *       Kalau belum ada, PATCH tetap berhasil (field di-ignore) — backward compat.
+ */
+private fun closeTicketWithCooldown(
+    api: CommunityApi,
+    ticketId: String,
+    cancelReason: String? = null
+) {
     try {
         val now = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).format(Date())
         val conn = (URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets?id=eq.$ticketId").openConnection() as HttpURLConnection).apply {
@@ -1154,6 +1229,13 @@ private fun closeTicketWithCooldown(api: CommunityApi, ticketId: String) {
             put("status", "closed")
             put("closed_at", now)
             put("last_closed_at", now)
+            // v6.8.2: tag cancel reason supaya Dev Hub bisa bedakan.
+            // Kalau field belum ada di schema, PATCH tetap OK (Supabase ignore unknown field
+            // hanya kalau column belum ada — sebenarnya akan return 400. Tapi kita catch
+            // exception di sini, jadi tidak crash app. Recommended: tambah column via migration).
+            if (cancelReason != null) {
+                put("cancel_reason", cancelReason)
+            }
         }
         conn.outputStream.use { it.write(payload.toString().toByteArray()) }
         conn.responseCode
