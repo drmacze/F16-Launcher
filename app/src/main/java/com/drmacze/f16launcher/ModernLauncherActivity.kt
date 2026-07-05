@@ -1960,16 +1960,6 @@ fun HomeScreen(
             DLavieGlass.SpaceCharcoal,
             DLavieGlass.SpaceSurface
         )
-        val ttButtonLabel: String = when {
-            maintenanceBlocked -> t.blockedMaintenance
-            gameInstalled      -> t.play
-            else               -> t.gameHub  // v7.3.6: "Games" — navigate to GameHub, not download
-        }
-        val ttButtonEnabled: Boolean = !maintenanceBlocked
-        val ttButtonClick: () -> Unit = when {
-            maintenanceBlocked -> ({ })
-            gameInstalled      -> ({ launchGame(context) })
-            else               -> ({ onNav(Page.GameHub) })  // v7.3.6: go to GameHub for install
         // v7.2.9: Button label "Lihat" (View) — buka GameDetailScreen, bukan download.
         // Install & play hanya di GameHub. Beranda = info + rating saja.
         val ttButtonLabel: String = "Lihat"
