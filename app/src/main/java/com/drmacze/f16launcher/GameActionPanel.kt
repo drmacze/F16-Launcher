@@ -200,13 +200,22 @@ fun GameActionPanel(
     }
 
     // ── Poll APK download progress ──
+    // CRITICAL: fileKey must match the game — fifa15-apk for FIFA 15, fifa16-apk for FIFA 16.
+    // NOT launcher-latest (that's the DLavie Launcher APK, causes infinite download loop).
     LaunchedEffect(apkDownloadActive, game.packageName) {
-        val fileKey = if (game.packageName == GAME_PKG_15) "fifa15-apk" else "launcher-latest"
+        val fileKey = if (game.packageName == GAME_PKG_15) "fifa15-apk" else "fifa16-apk"
         while (apkDownloadActive) {
             val progress = apkDownloader.getProgress(fileKey)
             apkDownloadProgress = progress.progress
             apkDownloadedBytes = progress.downloadedBytes
             apkTotalBytes = progress.totalBytes
+            // Check for completion: if download is done (not active, progress=100),
+            // the completion listener will handle opening installer. But we also
+            // break the polling loop here to prevent stuck state.
+            if (progress.done) {
+                apkDownloadActive = false
+                break
+            }
             if (progress.error != null && !progress.active) {
                 apkDownloadError = progress.error
                 apkDownloadActive = false
@@ -265,11 +274,14 @@ fun GameActionPanel(
     }
 
     // ── Start in-app APK download ──
+    // CRITICAL: fileKey must be fifa16-apk for FIFA 16 (NOT launcher-latest).
+    // launcher-latest downloads the DLavie Launcher APK → installing it doesn't
+    // install FIFA 16 game → panel keeps asking to install → infinite loop.
     fun startApkDownload() {
         if (apkDownloadActive) return
         apkDownloadError = ""
-        val fileKey = if (game.packageName == GAME_PKG_15) "fifa15-apk" else "launcher-latest"
-        val fileName = if (game.packageName == GAME_PKG_15) "DLavie15.apk" else "DLavie26.apk"
+        val fileKey = if (game.packageName == GAME_PKG_15) "fifa15-apk" else "fifa16-apk"
+        val fileName = if (game.packageName == GAME_PKG_15) "DLavie15.apk" else "DLavie26-FIFA16.apk"
         val label = if (game.packageName == GAME_PKG_15) "FIFA 15 Mobile" else "FIFA 16 Mobile"
         val url = if (game.packageName == GAME_PKG_15) FIFA15_APK_URL else FIFA16_APK_URL
         val started = apkDownloader.startDownload(fileKey, url, fileName, label)

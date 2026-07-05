@@ -250,9 +250,15 @@ import java.net.URL
 //     This protects source code privacy — users cannot trace back to GitHub repos.
 //     The proxy streams files from private backend storage without exposing URLs.
 //     Proxy also supports HTTP Range requests for resume.
+//
+// ⚠️  CRITICAL: FIFA16_APK_URL must point to ?f=fifa16-apk (the FIFA 16 GAME APK),
+//     NOT ?f=launcher-latest (the DLavie Launcher APK). Pointing to launcher-latest
+//     causes infinite download loop because user installs launcher (same package)
+//     instead of FIFA 16 game → FIFA 16 never detected as installed.
 const val GAME_PKG_16       = "com.ea.gp.fifaworld"
 const val DLAVIE_PROXY_URL  = "https://lvmucsxbmadtsgrxuwmo.supabase.co/functions/v1/apk-proxy"
-const val FIFA16_APK_URL    = "${DLAVIE_PROXY_URL}?f=launcher-latest"
+const val FIFA16_APK_URL    = "${DLAVIE_PROXY_URL}?f=fifa16-apk"
+const val LAUNCHER_APK_URL  = "${DLAVIE_PROXY_URL}?f=launcher-latest"  // For launcher self-update only
 const val MARKER_PATH_16    = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
 
 // FIFA 15 (DLavie 15)
@@ -1207,13 +1213,11 @@ fun MainShell(
                                             dlError         = dlError,
                                             startDownload   = { startDownload() },
                                             onOpenSettings  = { showSettings = true },
+                                            // v7.2.3: Game card "Dapatkan" → navigate to GameHub (not GameDetail)
+                                            // Installation flow only happens in GameHub via GameActionPanel
                                             onGameCardClick = { inst, avg, count, blocked, myR ->
-                                                detailGameInstalled      = inst
-                                                detailAvgRating          = avg
-                                                detailRatingCount        = count
-                                                detailMaintenanceBlocked = blocked
-                                                detailMyRating           = myR
-                                                showGameDetail           = true
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                page = Page.GameHub
                                             }
                                         )
                                     Page.DLC -> DlcScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
@@ -2002,87 +2006,46 @@ fun HomeScreen(
                     TTGameCardSkeleton()
                 }
 
-                // Step 1: Game APK belum terinstall
+                // Step 1: Game APK belum terinstall — info card only, NO download button.
+                // Installation flow only happens in GameHub via GameActionPanel.
+                // v7.2.3: Removed download box per user request — "proses install hanya ada di gamehub"
                 SetupState.NEED_GAME -> GlassCard(borderColor = CandyBlue.copy(0.5f)) {
-                    // Step indicator
-                    StepIndicator(currentStep = 1, totalSteps = 2)
-                    Spacer(Modifier.height(14.dp))
-
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Box(
                             Modifier.size(48.dp)
                                 .background(CandyBlue.copy(0.15f), RoundedCornerShape(14.dp)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.CloudDownload, null, tint = CandyCyan, modifier = Modifier.size(26.dp))
+                            Icon(Icons.Rounded.SportsEsports, null, tint = CandyCyan, modifier = Modifier.size(26.dp))
                         }
-                        Column {
-                            Text(t.installFifa, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                            Text(t.gameNotFound, color = SoftText, fontSize = 12.sp)
-                        }
+                        Column(Modifier.weight(1f)) {
+                            Text("FIFA 16 Belum Terinstall", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                            Text("Buka GameHub untuk mulai instalasi.", color = SoftText, fontSize = 12.sp)                        }
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        t.downloadOnce,
-                        color = SoftText, fontSize = 13.sp, lineHeight = 18.sp
+                        "Semua proses instalasi (APK, data, mod) sekarang terpusat di GameHub. " +
+                        "Tap tombol di bawah untuk membuka GameHub dan mulai.",                        color = SoftText, fontSize = 13.sp, lineHeight = 18.sp
                     )
                     Spacer(Modifier.height(14.dp))
 
-                    // Download button with inline progress
+                    // Navigate to GameHub button (NO download)
                     Button(
                         onClick  = {
-                            // v6.8.4: Guest restriction — download APK requires login (dialog, not toast)
-                            if (api.isGuest()) {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                guestDialogFeature = "download APK FIFA 16"
-                                showGuestDialog = true
-                                return@Button
-                            }
-                            if (dlProgress < 0f || dlProgress >= 2f) {
-                                // Phase 4: light haptic on download trigger.
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                startDownload()
-                            }
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onNav(Page.GameHub)
                         },
-                        enabled  = !maintenanceBlocked && (dlProgress < 0f || dlProgress >= 2f),
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        enabled  = !maintenanceBlocked,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape    = RoundedCornerShape(18.dp),
                         colors   = ButtonDefaults.buttonColors(
-                            // v3.0 monochrome — default: white bg + black text (inverted premium)
-                            containerColor = when {
-                                maintenanceBlocked -> Surface2
-                                dlProgress >= 2f -> NeonGreen
-                                dlProgress >= 0f -> Color.White.copy(0.5f)   // dimmed while downloading
-                                else             -> Color.White              // premium inverted
-                            },
-                            contentColor   = if (maintenanceBlocked) SoftText else if (dlProgress >= 2f) Color(0xFF00150B) else Carbon,
-                            disabledContainerColor = if (maintenanceBlocked) Surface2 else Color.White.copy(0.3f),
-                            disabledContentColor   = if (maintenanceBlocked) SoftText else Carbon.copy(0.6f)
+                            containerColor = Color.White,
+                            contentColor   = Carbon
                         )
                     ) {
-                        when {
-                            maintenanceBlocked -> {
-                                Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(22.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text(t.blockedMaintenance, fontSize = 15.sp, fontWeight = FontWeight.Black)
-                            }
-                            dlProgress >= 2f -> {
-                                Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(22.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Selesai — Instal Sekarang", fontSize = 15.sp, fontWeight = FontWeight.Black)
-                            }
-                            dlProgress >= 0f -> {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = CandyCyan, strokeWidth = 2.dp)
-                                Spacer(Modifier.width(10.dp))
-                                Text("Mengunduh… ${(dlProgress * 100).toInt()}%", fontSize = 15.sp, fontWeight = FontWeight.Black)
-                            }
-                            else -> {
-                                Icon(Icons.Rounded.CloudDownload, null, modifier = Modifier.size(22.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text(t.downloadFifa, fontSize = 15.sp, fontWeight = FontWeight.Black)
-                            }
-                        }
-                    }
+                        Icon(Icons.Rounded.SportsEsports, null, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Buka GameHub", fontSize = 15.sp, fontWeight = FontWeight.Black)                    }
 
                     AnimatedVisibility(visible = maintenanceBlocked) {
                         Row(
@@ -2092,34 +2055,9 @@ fun HomeScreen(
                         ) {
                             Icon(Icons.Rounded.Warning, null, tint = AmberWarn, modifier = Modifier.size(14.dp))
                             Text(
-                                "Download APK diblokir saat maintenance mode aktif (scope: partial).",
+                                "Instalasi diblokir saat maintenance mode aktif.",
                                 color = AmberWarn, fontSize = 12.sp
                             )
-                        }
-                    }
-
-                    AnimatedVisibility(visible = dlProgress >= 0f && dlProgress < 2f) {
-                        Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            LinearProgressIndicator(
-                                progress   = { dlProgress },
-                                modifier   = Modifier.fillMaxWidth(),
-                                color      = CandyCyan,
-                                trackColor = CandyCyan.copy(0.15f)
-                            )
-                            Text(
-                                "${(dlProgress * 34f).toInt()} MB dari 34 MB — ${(dlProgress * 100).toInt()}% selesai",
-                                color = SoftText, fontSize = 11.sp, modifier = Modifier.align(Alignment.End)
-                            )
-                        }
-                    }
-                    AnimatedVisibility(visible = dlError.isNotEmpty()) {
-                        Row(
-                            Modifier.padding(top = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(Icons.Rounded.ErrorOutline, null, tint = DangerRed, modifier = Modifier.size(14.dp))
-                            Text(dlError, color = DangerRed, fontSize = 12.sp)
                         }
                     }
                 }
@@ -7946,7 +7884,9 @@ fun launchGame(context: android.content.Context, gamePackage: String = GAME_PKG_
             context.startActivity(fallbackIntent)
         } else {
             // PRIVACY: Don't expose GitHub repo URL. Use DLavie proxy instead.
-            val proxyUrl = if (gamePackage == GAME_PKG_15) (DLAVIE_PROXY_URL + "?f=fifa15-apk") else (DLAVIE_PROXY_URL + "?f=launcher-latest")
+            // CRITICAL: FIFA 16 → fifa16-apk (game APK), FIFA 15 → fifa15-apk (game APK)
+            // NOT launcher-latest (that's the DLavie Launcher itself!)
+            val proxyUrl = if (gamePackage == GAME_PKG_15) (DLAVIE_PROXY_URL + "?f=fifa15-apk") else (DLAVIE_PROXY_URL + "?f=fifa16-apk")
             context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(proxyUrl)))
         }
     }
