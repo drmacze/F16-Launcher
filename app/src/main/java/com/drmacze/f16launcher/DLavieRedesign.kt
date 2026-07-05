@@ -24,7 +24,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Search
@@ -223,14 +225,21 @@ fun StarRatingBar(
 }
 
 // ─── 3. Hero Carousel ─────────────────────────────────────────────────────────
-// Full-width image cards, swipeable, dots indicator below, 5-star overlay.
+// Full-width image cards, swipeable, dots indicator below.
+// v6.8.1: BANNER ONLY — no rating overlay (user request). Banners are promotional,
+// not game cards. Rating lives only in game library (GameDetailScreen).
+//
+// Slide types:
+//   - Image slide  (imageRes != null): full-width cover image + scrim + text
+//   - Promo slide  (imageRes == null): gradient + large icon + halftone + text
+//     (used for Komunitas/Update/DLC promos — non-empty visual)
 data class HeroSlide(
     val title: String,
     val subtitle: String,
-    val rating: Float,           // 0..5
-    val ratingCount: Int,
-    val imageRes: Int?,          // local drawable resource for cover image
-    val tag: String = "OFFICIAL"
+    val imageRes: Int?,          // local drawable resource for cover image (nullable)
+    val tag: String = "OFFICIAL",
+    val promoIcon: ImageVector? = null,  // for non-image slides — large icon visual
+    val promoGradient: List<Color> = listOf(PureBlack, Surface2, Carbon)
 )
 
 @Composable
@@ -268,7 +277,7 @@ fun DLavieHeroCarousel(
             )
         }
 
-        // Dots indicator — centered, 5dp below the carousel
+        // Dots indicator — centered, 10dp below the carousel
         Row(
             Modifier
                 .fillMaxWidth()
@@ -310,8 +319,9 @@ private fun DLavieHeroSlide(
             .border(BorderStroke(1.dp, GlassStroke), RoundedCornerShape(20.dp))
             .clickable { onClick() }
     ) {
-        // ── Full-width background image (or fallback gradient) ──
+        // ── Background: full-width image OR promo gradient ──
         if (slide.imageRes != null) {
+            // Image slide — real cover image (e.g. dlavie_game_logo for FIFA 16)
             coil.compose.AsyncImage(
                 model = slide.imageRes,
                 contentDescription = slide.title,
@@ -319,26 +329,58 @@ private fun DLavieHeroSlide(
                 modifier = Modifier.fillMaxSize()
             )
         } else {
+            // Promo slide — gradient + halftone + large icon (NOT empty)
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(
-                        Brush.linearGradient(
-                            listOf(PureBlack, Surface2, Carbon)
+                    .background(Brush.linearGradient(slide.promoGradient))
+            )
+            // Halftone dots overlay (denser for promo — visual texture)
+            HalftoneBackground(
+                modifier = Modifier.fillMaxSize(),
+                dotSize = 2.2f,
+                spacing = 16f,
+                alpha = 0.55f
+            )
+            // Large promo icon centered-right (visual focal point)
+            slide.promoIcon?.let { icon ->
+                Box(
+                    Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Soft glow ring behind icon
+                    Box(
+                        Modifier
+                            .size(120.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.06f))
+                            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.20f)), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            icon,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.size(64.dp)
                         )
-                    )
+                    }
+                }
+            }
+        }
+
+        // ── Halftone dots overlay for image slides (subtle, brand motif) ──
+        if (slide.imageRes != null) {
+            HalftoneBackground(
+                modifier = Modifier.fillMaxSize(),
+                dotSize = 1.8f,
+                spacing = 20f,
+                alpha = 0.35f
             )
         }
 
-        // ── Halftone dots overlay (subtle brand motif) ──
-        HalftoneBackground(
-            modifier = Modifier.fillMaxSize(),
-            dotSize = 1.8f,
-            spacing = 20f,
-            alpha = 0.35f
-        )
-
-        // ── Bottom-to-top scrim for text readability ──
+        // ── Bottom-to-top scrim for text readability (both slide types) ──
         Box(
             Modifier
                 .fillMaxSize()
@@ -351,7 +393,7 @@ private fun DLavieHeroSlide(
                 )
         )
 
-        // ── Top-right: OFFICIAL tag ──
+        // ── Top-right: tag badge ──
         Surface(
             color = Color.Black.copy(alpha = 0.55f),
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
@@ -370,7 +412,7 @@ private fun DLavieHeroSlide(
             )
         }
 
-        // ── Bottom content: title + subtitle + 5-star rating ──
+        // ── Bottom content: title + subtitle (NO rating — banner only) ──
         Column(
             Modifier
                 .align(Alignment.BottomStart)
@@ -393,29 +435,6 @@ private fun DLavieHeroSlide(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(Modifier.height(8.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                StarRatingBar(
-                    rating = slide.rating,
-                    starSize = 14,
-                    starColor = Color.White,
-                    emptyColor = Color.White.copy(alpha = 0.30f)
-                )
-                Text(
-                    String.format("%.1f", slide.rating),
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "• ${slide.ratingCount} ratings",
-                    color = SubText,
-                    fontSize = 11.sp
-                )
-            }
         }
     }
 }
@@ -639,50 +658,64 @@ fun DLavieBottomNav(
     }
 }
 
-// ─── 6. Discover Screen (5th tab placeholder) ─────────────────────────────────
-// Simple "Jelajahi" page — full-width image cards list + featured carousel.
-// Static content (no Supabase) — visual showcase of new design.
+// ─── 6. Discover Screen — FIFA 16 DLC Library ────────────────────────────────
+// v6.8.1: Tab "Jelajahi" adalah tempat DLC data FIFA 16.
+// User akan tambah beberapa mod data (Season 2016, World Cup 2026, dll).
+// Saat ini hanya 1 DLC tersedia (FIFA 16 Mobile — Season 2016).
+// Tap card → masuk ke library game (GameDetailScreen via onGameCardClick).
+//
+// NO dummy/simulation — hanya DLC yang benar-benar available.
 @Composable
 fun DiscoverScreen(
     onNav: (Page) -> Unit,
     onGameCardClick: () -> Unit = {}
 ) {
-    // Static slides for featured carousel
-    val heroSlides = remember {
+    // v6.8.1: Real DLC list — FIFA 16 mod data variants.
+    // Hanya Season 2016 yang tersedia saat ini. User bisa tambah more later
+    // (World Cup 2026, Euro 2024, dll) — tinggal tambah entry ke list ini.
+    // Tiap entry: (title, subtitle, edition tag)
+    val dlcList = remember {
         listOf(
-            HeroSlide(
-                title = "FIFA 16 Mobile",
-                subtitle = "DLavie 26 Mod — Play offline, always updated",
-                rating = 4.7f,
-                ratingCount = 1250,
+            DLavieDlcItem(
+                title    = "FIFA 16 Mobile — Season 2016",
+                subtitle = "Mod Football · DLavie 26 Edition",
+                edition  = "SEASON 2016",
                 imageRes = R.drawable.dlavie_game_logo,
-                tag = "OFFICIAL"
-            ),
-            HeroSlide(
-                title = "Komunitas DLavie",
-                subtitle = "Berbagi patch, tips, dan diskusi dengan ribuan pemain",
-                rating = 4.5f,
-                ratingCount = 820,
-                imageRes = null,
-                tag = "KOMUNITAS"
-            ),
-            HeroSlide(
-                title = "Update Terbaru",
-                subtitle = "Patch v6.7.0 — perbaikan bug & peningkatan performa",
-                rating = 4.8f,
-                ratingCount = 412,
-                imageRes = null,
-                tag = "UPDATE"
+                status   = "TERSEDIA"
             )
+            // Reserved slots for future DLC (DO NOT add until real data ready —
+            // user explicitly said: "tidak suka fitur dummy/simulasi"):
+            //   - FIFA 16 Mobile — World Cup 2026 Edition
+            //   - FIFA 16 Mobile — Euro 2024 Edition
+            //   - FIFA 16 Mobile — Ultimate Team Edition
         )
     }
 
-    // Static list of full-width cards
-    val cards = remember {
+    // Featured banner carousel — promotional slides (NO rating, banner only)
+    val heroSlides = remember {
         listOf(
-            Triple("FIFA 16 Mobile — Season 2026", "Olahraga · Mod Football", 4.7f),
-            Triple("DLavie Assistant", "Live chat dengan developer", 4.5f),
-            Triple("Patch Engine v3", "DevPatchEngine untuk FIFA 16", 4.6f)
+            HeroSlide(
+                title    = "FIFA 16 Mobile",
+                subtitle = "DLavie 26 Mod — Play offline, Always update, More improvement",
+                imageRes = R.drawable.dlavie_game_logo,
+                tag      = "OFFICIAL"
+            ),
+            HeroSlide(
+                title         = "DLC Library",
+                subtitle      = "Pilih mod data FIFA 16 sesuai season favoritmu",
+                imageRes      = null,
+                tag           = "DLC",
+                promoIcon     = Icons.Rounded.Explore,
+                promoGradient = listOf(PureBlack, Surface2, Carbon)
+            ),
+            HeroSlide(
+                title         = "Komunitas DLavie",
+                subtitle      = "Berbagi patch, tips, dan diskusi dengan ribuan pemain",
+                imageRes      = null,
+                tag           = "KOMUNITAS",
+                promoIcon     = Icons.Rounded.Forum,
+                promoGradient = listOf(Surface3, Carbon, PureBlack)
+            )
         )
     }
 
@@ -713,53 +746,220 @@ fun DiscoverScreen(
             )
         }
 
-        // ── Featured carousel ──
+        // ── Featured banner carousel (no rating — banner only) ──
         DLavieHeroCarousel(
             slides = heroSlides,
             onSlideClick = { slide ->
                 when (slide.tag) {
                     "OFFICIAL" -> onGameCardClick()
+                    "DLC" -> { /* scroll ke DLC list di bawah */ }
                     "KOMUNITAS" -> onNav(Page.Chat)
-                    "UPDATE" -> onNav(Page.Update)
                 }
             }
         )
 
-        // ── Section: Trending ──
+        // ── Section: DLC Library ──
         Row(
             Modifier.fillMaxWidth().padding(top = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Trending Sekarang",
+                "DLC Library",
                 color = Color.White,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Black
             )
             Text(
-                "Lihat semua",
+                "${dlcList.size} data",
                 color = SubText,
                 fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.clickable { onNav(Page.Chat) }
+                fontWeight = FontWeight.Medium
             )
         }
 
-        // ── Vertical list of full-width cards ──
-        cards.forEach { (title, subtitle, rating) ->
-            DLavieFullWidthGameCard(
-                title = title,
-                subtitle = subtitle,
-                rating = rating,
-                ratingCount = (800..1500).random(),
-                imageRes = R.drawable.dlavie_game_logo,
-                ctaLabel = "Lihat",
-                onCtaClick = { onGameCardClick() },
-                onCardClick = { onGameCardClick() }
+        // ── Vertical list of DLC cards ──
+        // v6.8.1: each DLC card → onGameCardClick (masuk ke library game).
+        // Real data only — no dummy/simulation entries.
+        dlcList.forEach { dlc ->
+            DLavieDlcCard(
+                dlc = dlc,
+                onClick = { onGameCardClick() }
             )
+        }
+
+        // Info note about future DLC (no fake cards)
+        Surface(
+            color = GlassBase,
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, GlassStroke),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.Explore,
+                    contentDescription = null,
+                    tint = SubText,
+                    modifier = Modifier.size(20.dp)
+                )
+                Column {
+                    Text(
+                        "More DLC coming soon",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "World Cup 2026, Euro 2024, dan edisi lainnya akan tersedia di sini.",
+                        color = SoftText,
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+// ─── DLC Item data + Card composable ─────────────────────────────────────────
+data class DLavieDlcItem(
+    val title: String,
+    val subtitle: String,
+    val edition: String,
+    val imageRes: Int?,
+    val status: String  // "TERSEDIA", "COMING SOON", etc
+)
+
+@Composable
+private fun DLavieDlcCard(
+    dlc: DLavieDlcItem,
+    onClick: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(GlassBase)
+            .border(BorderStroke(1.dp, GlassStroke), RoundedCornerShape(20.dp))
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            }
+    ) {
+        // ── Image header (16:9-ish) ──
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(170.dp)
+                .background(Surface2)
+        ) {
+            if (dlc.imageRes != null) {
+                coil.compose.AsyncImage(
+                    model = dlc.imageRes,
+                    contentDescription = dlc.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                HalftoneBackground(
+                    modifier = Modifier.fillMaxSize(),
+                    dotSize = 2f,
+                    spacing = 18f,
+                    alpha = 0.5f
+                )
+            }
+
+            // Top-left: edition tag (e.g. "SEASON 2016")
+            Surface(
+                color = Color.Black.copy(alpha = 0.75f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.30f)),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(10.dp)
+            ) {
+                Text(
+                    dlc.edition,
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+
+            // Top-right: status badge
+            Surface(
+                color = Color.White.copy(alpha = 0.10f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                shape = RoundedCornerShape(999.dp),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(10.dp)
+            ) {
+                Text(
+                    dlc.status,
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                )
+            }
+        }
+
+        // ── Content row ──
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    dlc.title,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    dlc.subtitle,
+                    color = SoftText,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(Modifier.width(10.dp))
+
+            // CTA pill — "Masuk Library"
+            Surface(
+                color = Color.White,
+                shape = RoundedCornerShape(999.dp),
+                modifier = Modifier.clickable {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
+                }
+            ) {
+                Text(
+                    "Masuk Library",
+                    color = PureBlack,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                )
+            }
+        }
     }
 }

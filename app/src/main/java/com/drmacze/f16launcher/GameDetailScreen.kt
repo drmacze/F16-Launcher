@@ -45,6 +45,11 @@ fun GameDetailScreen(
     avgRating: Double,
     ratingCount: Int,
     maintenanceBlocked: Boolean = false,
+    // v6.8.1: rating state — pass dari MainShell (Supabase game_ratings.user_id unique).
+    // hasRated=true → Rate button becomes gold checkmark (read-only, tap = no-op).
+    // hasRated=false → Rate button clickable, opens RatingPopup (handled by MainShell).
+    hasRated: Boolean = false,
+    myRating: Int = 0,
     onRate: () -> Unit = {}
 ) {
     val haptic = LocalHapticFeedback.current
@@ -121,19 +126,56 @@ fun GameDetailScreen(
                     Text("$ratingCount ratings", color = SoftText, fontSize = 11.sp)
                 }
 
-                // Rate button
-                OutlinedButton(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onRate()
-                    },
-                    shape = TTShapes.chip,
-                    border = BorderStroke(1.dp, AmberWarn.copy(0.5f)),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AmberWarn)
-                ) {
-                    Icon(Icons.Rounded.StarBorder, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Rate", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                // ── v6.8.1: Rate button — adaptive based on user's rating state ──
+                // Sudah rating (myRating > 0): tampilkan gold checkmark icon (same height
+                //   as Rate button, ~36dp). Tap = no-op (visual cue "sudah dinilai").
+                // Belum rating: tampilkan OutlinedButton "Rate" dengan star icon.
+                //   Tap → onRate() → MainShell shows RatingPopup.
+                // Constraint: 1 rating per akun (Supabase game_ratings.user_id unique,
+                //   upsert merge-duplicates). Tidak bisa rate 2x.
+                if (hasRated) {
+                    // Gold checkmark badge — same height as Rate button (~36dp),
+                    // gold border + gold check icon. Read-only (no clickable action).
+                    Box(
+                        modifier = Modifier
+                            .size(height = 36.dp, width = 88.dp)
+                            .clip(TTShapes.chip)
+                            .background(AmberWarn.copy(alpha = 0.12f))
+                            .border(BorderStroke(1.dp, AmberWarn), TTShapes.chip),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.CheckCircle,
+                                contentDescription = "Sudah dinilai: $myRating bintang",
+                                tint = AmberWarn,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                "Rated",
+                                color = AmberWarn,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onRate()
+                        },
+                        shape = TTShapes.chip,
+                        border = BorderStroke(1.dp, AmberWarn.copy(0.5f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AmberWarn)
+                    ) {
+                        Icon(Icons.Rounded.StarBorder, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Rate", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 

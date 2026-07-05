@@ -791,6 +791,12 @@ fun MainShell(
     var detailAvgRating         by remember { mutableStateOf(0.0) }
     var detailRatingCount       by remember { mutableStateOf(0) }
     var detailMaintenanceBlocked by remember { mutableStateOf(false) }
+    // v6.8.1: lifted myRating state — shared antara HomeScreen & GameDetailScreen
+    // supaya Rate button di detail screen bisa cek "sudah rating atau belum".
+    // 0 = belum rating, 1-5 = sudah rating.
+    var detailMyRating          by remember { mutableStateOf(0) }
+    var showRatingPopup         by remember { mutableStateOf(false) }
+    var ratingSubmitError       by remember { mutableStateOf("") }
 
     // ── Phase 4: Settings overlay state + lifted Profile expand state ──
     // profileExpandedSection di-lift ke MainShell supaya SettingsScreen bisa
@@ -1095,7 +1101,23 @@ fun MainShell(
                                 gameInstalled      = detailGameInstalled,
                                 avgRating          = detailAvgRating,
                                 ratingCount        = detailRatingCount,
-                                maintenanceBlocked = detailMaintenanceBlocked
+                                maintenanceBlocked = detailMaintenanceBlocked,
+                                // v6.8.1: pass myRating supaya Rate button tahu state-nya.
+                                hasRated           = detailMyRating > 0,
+                                myRating           = detailMyRating,
+                                onRate             = {
+                                    // Cek login dulu — rating wajib login (Supabase RLS).
+                                    if (!api.loggedIn()) {
+                                        ratingSubmitError = "Login dulu untuk rate game ini."
+                                        showRatingPopup = true
+                                    } else if (detailMyRating > 0) {
+                                        // Sudah rate — tidak bisa rate lagi. Tombol sudah jadi checkmark
+                                        // (visual cue), jadi seharusnya tidak sampai sini. Tapi kalau
+                                        // somehow terpanggil, silent ignore.
+                                    } else {
+                                        showRatingPopup = true
+                                    }
+                                }
                             )
                         } else {
                             // ── P3A: HorizontalPager replaces AnimatedContent for tab nav ──
@@ -1121,11 +1143,12 @@ fun MainShell(
                                             dlError         = dlError,
                                             startDownload   = { startDownload() },
                                             onOpenSettings  = { showSettings = true },
-                                            onGameCardClick = { inst, avg, count, blocked ->
+                                            onGameCardClick = { inst, avg, count, blocked, myR ->
                                                 detailGameInstalled      = inst
                                                 detailAvgRating          = avg
                                                 detailRatingCount        = count
                                                 detailMaintenanceBlocked = blocked
+                                                detailMyRating           = myR
                                                 showGameDetail           = true
                                             }
                                         )
@@ -1133,9 +1156,10 @@ fun MainShell(
                                             onNav = { page = it },
                                             onGameCardClick = {
                                                 detailGameInstalled      = false
-                                                detailAvgRating          = 4.7
-                                                detailRatingCount        = 1250
+                                                detailAvgRating          = 0.0
+                                                detailRatingCount        = 0
                                                 detailMaintenanceBlocked = false
+                                                detailMyRating           = 0
                                                 showGameDetail           = true
                                             }
                                         )
@@ -1201,6 +1225,40 @@ fun MainShell(
         // ── Floating ChatBot (v6.4) — always visible when logged in ──
         if (!showGameDetail && !showSettings && visitingUserId == null && api.loggedIn()) {
             FloatingChatBot(api = api)
+        }
+
+        // ── v6.8.1: Rating popup (lifted to MainShell — dipakai dari GameDetailScreen) ──
+        // Setelah submit: refresh avg/count + myRating (Supabase upsert merge-duplicates).
+        if (showRatingPopup) {
+            RatingPopup(
+                currentRating = detailMyRating,
+                submitError = ratingSubmitError,
+                onDismiss = {
+                    showRatingPopup = false
+                    ratingSubmitError = ""
+                },
+                onSubmit = { rating, review ->
+                    scope.launch {
+                        val ok = withContext(Dispatchers.IO) {
+                            runCatching {
+                                api.submitRating(rating, review)
+                                // Refresh stats + my rating after submit
+                                val stats = api.fetchRatingStats()
+                                detailAvgRating   = stats.optDouble("avg", 0.0)
+                                detailRatingCount = stats.optInt("count", 0)
+                                detailMyRating    = rating
+                                true
+                            }.getOrDefault(false)
+                        }
+                        if (ok) {
+                            ratingSubmitError = ""
+                            showRatingPopup = false
+                        } else {
+                            ratingSubmitError = "Gagal kirim rating. Coba lagi nanti."
+                        }
+                    }
+                }
+            )
         }
 
         // ── Notification banner overlay (slides down from the top) ──
@@ -1428,7 +1486,8 @@ fun HomeScreen(
     // ── v6.8 redesign: hamburger menu opens Settings ──
     onOpenSettings: () -> Unit = {},
     // ── Phase 2: tap TTGameCard → navigate ke GameDetailScreen ──
-    onGameCardClick: (gameInstalled: Boolean, avgRating: Double, ratingCount: Int, maintenanceBlocked: Boolean) -> Unit = { _, _, _, _ -> }
+    // v6.8.1: tambah myR param supaya MainShell bisa pass rating state ke GameDetailScreen
+    onGameCardClick: (gameInstalled: Boolean, avgRating: Double, ratingCount: Int, maintenanceBlocked: Boolean, myRating: Int) -> Unit = { _, _, _, _, _ -> }
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
@@ -1458,11 +1517,11 @@ fun HomeScreen(
     var latestNotif      by remember { mutableStateOf<NotifCampaign?>(null) }
 
     // ── NEW: Rating state (game_ratings table, real data from Supabase) ──
+    // v6.8.1: showRatingPopup + ratingSubmitError dipindah ke MainShell (dipakai
+    // dari GameDetailScreen, bukan dari HomeScreen lagi).
     var avgRating      by remember { mutableStateOf(0.0) }   // 1-5 scale
     var ratingCount    by remember { mutableStateOf(0) }
     var myRating       by remember { mutableStateOf(0) }     // 1-5, or 0 if not rated
-    var showRatingPopup by remember { mutableStateOf(false) }
-    var ratingSubmitError by remember { mutableStateOf("") }
 
     // ── NEW: Notification category popup state ──
     var showNotifPopup  by remember { mutableStateOf(false) }
@@ -1693,39 +1752,39 @@ fun HomeScreen(
         // ── v6.8 Hero Carousel (full-width image + dots + 5-star rating) ────────
         // Replaces single decorative hero banner. Swipeable, auto-scroll 5s,
         // dots indicator below, 5-star rating overlay on each slide.
-        // Slide 1: FIFA 16 Mobile (real rating data dari Supabase).
-        // Slides 2-3: static highlight slides (Komunitas & Update promos).
+        // v6.8.1: Banner slides — NO rating (banner is promotional, not a game card).
+        // Slide 1: FIFA 16 Mobile cover image (dlavie_game_logo).
+        // Slide 2: Komunitas promo — large Forum icon + halftone + gradient.
+        // Slide 3: Update promo — large CloudSync icon + halftone + gradient.
         val heroSlides = listOf(
             HeroSlide(
-                title       = "FIFA 16 Mobile",
-                subtitle    = "DLavie 26 Mod — Play offline, Always update, More improvement",
-                rating      = avgRating.toFloat(),
-                ratingCount = ratingCount,
-                imageRes    = R.drawable.dlavie_game_logo,
-                tag         = "OFFICIAL"
+                title    = "FIFA 16 Mobile",
+                subtitle = "DLavie 26 Mod — Play offline, Always update, More improvement",
+                imageRes = R.drawable.dlavie_game_logo,
+                tag      = "OFFICIAL"
             ),
             HeroSlide(
-                title       = "Komunitas DLavie",
-                subtitle    = "Berbagi patch, tips, dan diskusi dengan ribuan pemain",
-                rating      = 4.5f,
-                ratingCount = 820,
-                imageRes    = null,
-                tag         = "KOMUNITAS"
+                title         = "Komunitas DLavie",
+                subtitle      = "Berbagi patch, tips, dan diskusi dengan ribuan pemain",
+                imageRes      = null,
+                tag           = "KOMUNITAS",
+                promoIcon     = Icons.Rounded.Forum,
+                promoGradient = listOf(PureBlack, Surface2, Carbon)
             ),
             HeroSlide(
-                title       = "Update v6.7.0",
-                subtitle    = "Patch terbaru — perbaikan bug & peningkatan performa",
-                rating      = 4.8f,
-                ratingCount = 412,
-                imageRes    = null,
-                tag         = "UPDATE"
+                title         = "Update v6.7.0",
+                subtitle      = "Patch terbaru — perbaikan bug & peningkatan performa",
+                imageRes      = null,
+                tag           = "UPDATE",
+                promoIcon     = Icons.Rounded.CloudSync,
+                promoGradient = listOf(Surface3, Carbon, PureBlack)
             )
         )
         DLavieHeroCarousel(
             slides = heroSlides,
             onSlideClick = { slide ->
                 when (slide.tag) {
-                    "OFFICIAL" -> onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked)
+                    "OFFICIAL" -> onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked, myRating)
                     "KOMUNITAS" -> onNav(Page.Chat)
                     "UPDATE" -> onNav(Page.Update)
                 }
@@ -1763,8 +1822,9 @@ fun HomeScreen(
             else               -> ({ if (dlProgress < 0f) startDownload() })
         }
         // Phase 2: tap card body → navigate ke GameDetailScreen (pass state ke MainShell)
+        // v6.8.1: tambah myRating supaya Rate button di detail screen tahu state-nya.
         val ttCardClick: () -> Unit = {
-            onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked)
+            onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked, myRating)
         }
 
         if (setupState == SetupState.LOADING) {
@@ -2100,36 +2160,6 @@ fun HomeScreen(
                     .edit()
                     .putBoolean("has_seen_onboarding_v6", true)
                     .apply()
-            }
-        )
-    }
-
-    // ── Rating popup (Play Store style, 5 stars + optional review) ──────────────
-    if (showRatingPopup) {
-        RatingPopup(
-            currentRating = myRating,
-            submitError = ratingSubmitError,
-            onDismiss = { showRatingPopup = false },
-            onSubmit = { rating, review ->
-                scope.launch {
-                    val ok = withContext(Dispatchers.IO) {
-                        runCatching {
-                            api.submitRating(rating, review)
-                            // Refresh stats + my rating after submit
-                            val stats = api.fetchRatingStats()
-                            avgRating   = stats.optDouble("avg", 0.0)
-                            ratingCount = stats.optInt("count", 0)
-                            myRating    = rating
-                            true
-                        }.getOrDefault(false)
-                    }
-                    if (ok) {
-                        ratingSubmitError = ""
-                        showRatingPopup = false
-                    } else {
-                        ratingSubmitError = "Gagal kirim rating. Coba lagi nanti."
-                    }
-                }
             }
         )
     }
