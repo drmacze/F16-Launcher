@@ -142,6 +142,7 @@ import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.PersonRemove
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -199,6 +200,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
@@ -1277,13 +1279,16 @@ fun MainShell(
             )
         }
 
-        // ── v6.8 redesign: Bottom navigation (fixed bar, 5 icons) replaces FloatingNav pill ──
+        // ── v7.0.9 redesign: FloatingNav pill (PS5-style with elevated center play button) ──
         // Tetap accessible dari Home (tidak tampil saat GameDetail/Settings/Visit aktif).
         if (!showGameDetail && !showSettings && visitingUserId == null) {
-            DLavieBottomNav(
+            FloatingNav(
                 page     = page,
                 onPage   = { page = it },
-                modifier = Modifier.align(Alignment.BottomCenter)
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 16.dp)  // floating above bottom edge
             )
         }
 
@@ -1424,84 +1429,125 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
     val pages = Page.values().toList()
     val centerPage = Page.GameHub
 
-    Box(modifier = modifier.widthIn(max = 600.dp).padding(horizontal = 16.dp)) {
-        // Main pill bar
+    // ─── Layout per screenshot IMG_4449 ───────────────────────────────────────
+    // • Pill-shaped navbar (rounded rectangle, full radius)
+    // • White background with subtle shadow elevation
+    // • 4 side buttons (2 left + 2 right) — icon + small label below
+    // • Center button: solid BLACK circle, ELEVATED (overlaps top edge of navbar),
+    //   with white PLAY/TRIANGLE icon (PS-style)
+    // • Center button has its own shadow for depth
+    Box(
+        modifier = modifier
+            .widthIn(max = 600.dp)
+            .padding(horizontal = 16.dp)
+    ) {
+        // ── Main pill bar ────────────────────────────────────────────────────
         Surface(
             shape = RoundedCornerShape(999.dp),
             color = Color.White,
-            shadowElevation = 12.dp,
+            shadowElevation = 16.dp,
             tonalElevation = 0.dp
         ) {
             Row(
-                Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                Modifier
+                    .height(64.dp)
+                    .padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(0.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left side: Home + DLC
-                pages.filter { it != centerPage }.forEach { item ->
-                    val selected = page == item
-                    val iconTint by animateColorAsState(
-                        if (selected) Color.Black else Color.Gray,
-                        tween(300), label = "nav_tint_${item.label}"
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .clip(RoundedCornerShape(999.dp))
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onPage(item)
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                item.navIcon,
-                                contentDescription = item.label,
-                                tint = iconTint,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Text(
-                                item.label,
-                                fontSize = 9.sp,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                color = iconTint,
-                                maxLines = 1
-                            )
-                        }
+                // ── Left side: first 2 non-center pages (Home, DLC) ──
+                pages.filter { it != centerPage }.take(2).forEach { item ->
+                    NavSideButton(item, page == item) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onPage(item)
                     }
                 }
 
-                // Center: floating black button (PS5 stick)
-                Spacer(Modifier.width(52.dp)) // space for floating button
+                // ── Spacer for elevated center button ──
+                Spacer(Modifier.width(64.dp))
+
+                // ── Right side: remaining 2 non-center pages (Chat, Me) ──
+                pages.filter { it != centerPage }.drop(2).forEach { item ->
+                    NavSideButton(item, page == item) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onPage(item)
+                    }
+                }
             }
         }
 
-        // Floating center button (overlaps the bar)
+        // ── Elevated center button (overlaps top edge of pill bar) ────────────
+        // Per screenshot: solid black circle, white triangle/play icon, raised
+        // so half of it sits above the navbar (creates "floating" effect).
         Box(
             Modifier
                 .align(Alignment.Center)
-                .size(56.dp)
-                .offset(y = (-4).dp)
+                .size(64.dp)
+                .offset(y = (-22).dp)  // elevate: half above navbar top edge
+                .shadow(
+                    elevation = 20.dp,
+                    shape = CircleShape,
+                    ambientColor = Color.Black.copy(alpha = 0.4f),
+                    spotColor = Color.Black.copy(alpha = 0.6f)
+                )
                 .clip(CircleShape)
                 .background(Color.Black)
-                .border(3.dp, Color.White, CircleShape)
+                .border(3.dp, Color.White, CircleShape)  // white ring separator
                 .clickable {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onPage(centerPage)
                 },
             contentAlignment = Alignment.Center
         ) {
+            // PS-style PLAY TRIANGLE icon (white on black)
             Icon(
-                Icons.Rounded.SportsEsports,
+                Icons.Rounded.PlayArrow,
                 contentDescription = "GameHub",
                 tint = Color.White,
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(34.dp)
+            )
+        }
+    }
+}
+
+/** Side button for floating navbar: icon + small label below. */
+@Composable
+private fun NavSideButton(item: Page, selected: Boolean, onClick: () -> Unit) {
+    val iconTint by animateColorAsState(
+        if (selected) Color.Black else Color.Gray,
+        tween(300), label = "nav_tint_${item.label}"
+    )
+    val labelColor by animateColorAsState(
+        if (selected) Color.Black else Color.Gray.copy(alpha = 0.7f),
+        tween(300), label = "nav_label_${item.label}"
+    )
+
+    Box(
+        modifier = Modifier
+            .width(72.dp)
+            .height(52.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                item.navIcon,
+                contentDescription = item.label,
+                tint = iconTint,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                item.label,
+                fontSize = 9.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                color = labelColor,
+                maxLines = 1,
+                fontFamily = InterFontFamily
             )
         }
     }
