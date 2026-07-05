@@ -374,17 +374,18 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var inputText by remember { mutableStateOf("") }
     var ticketId by remember { mutableStateOf<String?>(null) }
+    var ticketStatus by remember { mutableStateOf("loading") }
     var sending by remember { mutableStateOf(false) }
     var adminOnline by remember { mutableStateOf(false) }
     var lastActivityTime by remember { mutableStateOf(System.currentTimeMillis()) }
     var inactivityWarningSent by remember { mutableStateOf(false) }
+    var cooldownRemaining by remember { mutableStateOf(0) }
     val listState = rememberLazyListState()
 
-    // Image picker for attachments
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        if (uri != null && ticketId != null) {
+        if (uri != null && ticketId != null && ticketStatus == "open") {
             scope.launch {
                 sending = true
                 uploadAndSendImage(api, ticketId!!, uri, context)
@@ -394,35 +395,67 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
         }
     }
 
-    // Initialize: create ticket + check admin online status
+    // Initialize: check existing open ticket OR cooldown OR create new
     LaunchedEffect(Unit) {
         if (!isAssistant) {
-            // Check if admin is online (active within 5 min)
+            val existingTicket = findOpenTicket(api)
+            if (existingTicket != null) {
+                ticketId = existingTicket
+                ticketStatus = "open"
+                val history = pollMessages(api, existingTicket)
+                messages = history
+                lastActivityTime = System.currentTimeMillis()
+                adminOnline = checkAdminOnline(api)
+                if (!adminOnline) {
+                    messages = messages + ChatMessage(
+                        senderType = "bot",
+                        body = "Saat ini tim kami offline. Mohon tunggu sampai tim kami merespon.",
+                        timestamp = System.currentTimeMillis()
+                    )
+                }
+                return@LaunchedEffect
+            }
+
+            val cooldownEnd = checkCooldown(api)
+            if (cooldownEnd > 0) {
+                val remaining = ((cooldownEnd - System.currentTimeMillis()) / 1000).toInt()
+                if (remaining > 0) {
+                    ticketStatus = "cooldown"
+                    cooldownRemaining = remaining
+                    return@LaunchedEffect
+                }
+            }
+
             adminOnline = checkAdminOnline(api)
+            ticketId = createTicket(api, "live_chat")
+            ticketStatus = "open"
+            lastActivityTime = System.currentTimeMillis()
             if (!adminOnline) {
                 messages = messages + ChatMessage(
                     senderType = "bot",
-                    body = "Saat ini tim kami offline. Mohon tunggu sampai tim kami merespon. 🙏",
+                    body = "Saat ini tim kami offline. Mohon tunggu sampai tim kami merespon.",
                     timestamp = System.currentTimeMillis()
                 )
             }
+            messages = messages + ChatMessage(
+                senderType = "bot",
+                body = "Sesi live chat dimulai. Tim developer akan segera merespon. Ketik pesan Anda di bawah ini.",
+                timestamp = System.currentTimeMillis()
+            )
         } else {
-            // Assistant mode
+            ticketId = createTicket(api, "assistant")
+            ticketStatus = "open"
             messages = messages + ChatMessage(
                 senderType = "bot",
                 body = "Halo! Saya DLavie Assistant. Saya bisa membantu seputar DLavie Launcher dan FIFA 16. Apa yang bisa saya bantu?",
                 timestamp = System.currentTimeMillis()
             )
         }
-
-        // Create ticket
-        ticketId = createTicket(api, if (isAssistant) "assistant" else "live_chat")
-        lastActivityTime = System.currentTimeMillis()
     }
 
-    // Poll for new messages (every 5 seconds for live chat)
-    LaunchedEffect(ticketId) {
-        if (ticketId != null && !isAssistant) {
+    // Poll for new messages
+    LaunchedEffect(ticketId, ticketStatus) {
+        if (ticketId != null && ticketStatus == "open" && !isAssistant) {
             while (true) {
                 delay(5000)
                 val newMsgs = pollMessages(api, ticketId!!)
@@ -432,22 +465,42 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
                     inactivityWarningSent = false
                 }
 
-                // Auto-close check: 5 min inactivity
+                val currentStatus = checkTicketStatus(api, ticketId!!)
+                if (currentStatus == "closed") {
+                    ticketStatus = "closed"
+                    messages = messages + ChatMessage(
+                        senderType = "bot",
+                        body = "Sesi ini telah ditutup oleh admin. Untuk memulai sesi baru, tunggu 1 jam.",
+                        timestamp = System.currentTimeMillis()
+                    )
+                    break
+                }
+
                 val idleTime = System.currentTimeMillis() - lastActivityTime
                 if (idleTime > 5 * 60 * 1000 && !inactivityWarningSent) {
                     inactivityWarningSent = true
                     messages = messages + ChatMessage(
                         senderType = "bot",
-                        body = "Apakah kamu masih disini? jika tidak, live chat akan kami tutup. Terima kasih atas masukan dan bantuanmu agar DLavie tetap berkembang 🙏",
+                        body = "Apakah kamu masih disini? jika tidak, live chat akan kami tutup. Terima kasih atas masukan dan bantuanmu agar DLavie tetap berkembang",
                         timestamp = System.currentTimeMillis()
                     )
-                    // Auto-close after 30 more seconds
                     delay(30000)
-                    closeTicket(api, ticketId!!)
-                    onClose()
+                    closeTicketWithCooldown(api, ticketId!!)
+                    ticketStatus = "closed"
                     break
                 }
             }
+        }
+    }
+
+    // Cooldown countdown
+    LaunchedEffect(ticketStatus) {
+        if (ticketStatus == "cooldown") {
+            while (cooldownRemaining > 0) {
+                delay(1000)
+                cooldownRemaining--
+            }
+            ticketStatus = "loading"
         }
     }
 
@@ -459,120 +512,89 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
         ) {
             Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
                 // Header
-                Surface(
-                    Modifier.fillMaxWidth(),
-                    color = Color.White.copy(alpha = 0.05f)
-                ) {
-                    Row(
-                        Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                Surface(Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.05f)) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.ArrowBack, null, tint = Color.White, modifier = Modifier.size(24.dp).clickable { onBack() })
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
+                            Text(if (isAssistant) "DLavie Assistant" else "Live Chat", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
                             Text(
-                                if (isAssistant) "DLavie Assistant" else "Live Chat",
-                                color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily
+                                when (ticketStatus) { "open" -> "Chat langsung dengan developer"; "closed" -> "Sesi ditutup"; "cooldown" -> "Cooldown aktif"; else -> "Memuat..." },
+                                color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp, fontFamily = InterFontFamily
                             )
-                            Text("Chat langsung dengan developer", color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp, fontFamily = InterFontFamily)
                         }
-                        // Close session button
-                        Icon(
-                            Icons.Rounded.Close,
-                            null,
-                            tint = Color.White.copy(alpha = 0.5f),
-                            modifier = Modifier.size(24.dp).clickable {
-                                ticketId?.let { closeTicket(api, it) }
-                                onClose()
-                            }
-                        )
+                        if (ticketStatus == "open") {
+                            Box(Modifier.size(8.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.6f)))
+                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.Rounded.Close, null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(24.dp).clickable {
+                                ticketId?.let { closeTicketWithCooldown(api, it); ticketStatus = "closed" }
+                            })
+                        }
                     }
                 }
 
-                // Messages list
-                LazyColumn(
-                    Modifier.weight(1f).padding(horizontal = 12.dp),
-                    state = listState,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(messages) { msg ->
-                        ChatBubble(msg)
-                    }
-                }
-
-                // Input bar
-                Surface(
-                    Modifier.fillMaxWidth(),
-                    color = Color.White.copy(alpha = 0.05f)
-                ) {
-                    Row(
-                        Modifier.padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Attachment icon
-                        Icon(
-                            Icons.Rounded.AttachFile,
-                            null,
-                            tint = Color.White.copy(alpha = 0.5f),
-                            modifier = Modifier.size(24.dp).clickable {
-                                imagePicker.launch("image/*")
+                if (ticketStatus == "cooldown") {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Rounded.Schedule, null, tint = Color.White.copy(alpha = 0.3f), modifier = Modifier.size(48.dp))
+                            Spacer(Modifier.height(16.dp))
+                            Text("Cooldown Active", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                            Spacer(Modifier.height(8.dp))
+                            val mins = cooldownRemaining / 60
+                            val secs = cooldownRemaining % 60
+                            Text("Tunggu ${mins}:${if (secs < 10) "0" else ""}${secs} untuk sesi baru", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp, fontFamily = InterFontFamily)
+                            Spacer(Modifier.height(24.dp))
+                            Surface(Modifier.clickable { onClose() }, shape = RoundedCornerShape(12.dp), color = Color.White.copy(alpha = 0.1f)) {
+                                Text("Tutup", color = Color.White, fontSize = 14.sp, fontFamily = InterFontFamily, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
                             }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        // Text input
-                        TextField(
-                            value = inputText,
-                            onValueChange = { inputText = it },
-                            placeholder = { Text("Ketik pesan...", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                cursorColor = Color.White
-                            ),
-                            modifier = Modifier.weight(1f),
-                            maxLines = 3
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        // Send button
-                        Surface(
-                            Modifier.size(36.dp).clickable(enabled = inputText.isNotBlank() && !sending) {
-                                if (inputText.isNotBlank() && ticketId != null) {
-                                    val text = inputText
-                                    inputText = ""
-                                    sending = true
-                                    scope.launch {
-                                        sendMessage(api, ticketId!!, text)
-                                        messages = messages + ChatMessage(
-                                            id = UUID.randomUUID().toString(),
-                                            senderType = "user",
-                                            body = text,
-                                            timestamp = System.currentTimeMillis()
-                                        )
-                                        lastActivityTime = System.currentTimeMillis()
-                                        inactivityWarningSent = false
+                        }
+                    }
+                } else {
+                    LazyColumn(Modifier.weight(1f).padding(horizontal = 12.dp), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(messages) { msg -> ChatBubble(msg) }
+                    }
 
-                                        // If assistant mode → call AI Edge Function
-                                        if (isAssistant) {
-                                            val aiResponse = callAIAssistant(text, messages.map { mapOf("role" to it.senderType, "text" to it.body) })
-                                            messages = messages + ChatMessage(
-                                                id = UUID.randomUUID().toString(),
-                                                senderType = "bot",
-                                                body = aiResponse,
-                                                timestamp = System.currentTimeMillis()
-                                            )
+                    if (ticketStatus == "open") {
+                        Surface(Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.05f)) {
+                            Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.AttachFile, null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(24.dp).clickable { imagePicker.launch("image/*") })
+                                Spacer(Modifier.width(8.dp))
+                                TextField(value = inputText, onValueChange = { inputText = it }, placeholder = { Text("Ketik pesan...", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
+                                    colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White, cursorColor = Color.White),
+                                    modifier = Modifier.weight(1f), maxLines = 3)
+                                Spacer(Modifier.width(8.dp))
+                                Surface(Modifier.size(36.dp).clickable(enabled = inputText.isNotBlank() && !sending) {
+                                    if (inputText.isNotBlank() && ticketId != null) {
+                                        val text = inputText; inputText = ""; sending = true
+                                        scope.launch {
+                                            sendMessage(api, ticketId!!, text)
+                                            messages = messages + ChatMessage(id = UUID.randomUUID().toString(), senderType = "user", body = text, timestamp = System.currentTimeMillis())
+                                            lastActivityTime = System.currentTimeMillis(); inactivityWarningSent = false
+                                            if (isAssistant) {
+                                                val aiResponse = callAIAssistant(text, messages.map { mapOf("role" to it.senderType, "text" to it.body) })
+                                                messages = messages + ChatMessage(id = UUID.randomUUID().toString(), senderType = "bot", body = aiResponse, timestamp = System.currentTimeMillis())
+                                            }
+                                            sending = false
                                         }
-
-                                        sending = false
+                                    }
+                                }, shape = CircleShape, color = if (inputText.isNotBlank()) Color.White else Color.White.copy(alpha = 0.2f)) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        if (sending) { CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(18.dp), strokeWidth = 2.dp) }
+                                        else { Icon(Icons.Rounded.Send, null, tint = Color.Black, modifier = Modifier.size(18.dp)) }
                                     }
                                 }
-                            },
-                            shape = CircleShape,
-                            color = if (inputText.isNotBlank()) Color.White else Color.White.copy(alpha = 0.2f)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Rounded.Send, null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    } else if (ticketStatus == "closed") {
+                        Surface(Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.03f)) {
+                            Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Sesi ini telah ditutup", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp, fontFamily = InterFontFamily)
+                                Spacer(Modifier.height(4.dp))
+                                Text("Tunggu 1 jam untuk membuat sesi live chat baru", color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp, fontFamily = InterFontFamily)
+                                Spacer(Modifier.height(12.dp))
+                                Surface(Modifier.clickable { onClose() }, shape = RoundedCornerShape(12.dp), color = Color.White) {
+                                    Text("Tutup", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp))
+                                }
                             }
                         }
                     }
@@ -582,9 +604,6 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
     }
 }
 
-// ─── Chat Bubble ────────────────────────────────────────────────────────────
-
-@Composable
 private fun ChatBubble(msg: ChatMessage) {
     val isUser = msg.senderType == "user"
     val alignment = if (isUser) Alignment.End else Alignment.Start
@@ -958,5 +977,93 @@ private suspend fun callAIAssistant(message: String, history: List<Map<String, S
             Log.e("DLavieChat", "callAIAssistant failed", e)
             "Maaf, terjadi kesalahan. Silakan coba lagi atau hubungi developer via Live Chat."
         }
+    }
+}
+
+// ─── New helper functions for session management ────────────────────────────
+
+private suspend fun findOpenTicket(api: CommunityApi): String? {
+    return withContext(Dispatchers.IO) {
+        try {
+            val conn = (URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets?user_id=eq.${api.userId()}&status=eq.open&category=eq.live_chat&order=created_at.desc&limit=1&select=id").openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15000
+                readTimeout = 15000
+                setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+                setRequestProperty("Authorization", "Bearer ${api.token()}")
+            }
+            if (conn.responseCode in 200..299) {
+                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                val arr = JSONArray(text)
+                if (arr.length() > 0) arr.getJSONObject(0).optString("id") else null
+            } else { null }
+        } catch (e: Exception) { null }
+    }
+}
+
+private fun checkCooldown(api: CommunityApi): Long {
+    return try {
+        val conn = (URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets?user_id=eq.${api.userId()}&status=eq.closed&category=eq.live_chat&order=closed_at.desc&limit=1&select=closed_at,last_closed_at").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 15000
+            readTimeout = 15000
+            setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+            setRequestProperty("Authorization", "Bearer ${api.token()}")
+        }
+        if (conn.responseCode in 200..299) {
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            val arr = JSONArray(text)
+            if (arr.length() > 0) {
+                val closedAtStr = arr.getJSONObject(0).optString("last_closed_at", arr.getJSONObject(0).optString("closed_at", ""))
+                if (closedAtStr.isNotBlank()) {
+                    val closedTime = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).parse(closedAtStr)?.time ?: return 0
+                    val cooldownEnd = closedTime + 60 * 60 * 1000 // 1 hour
+                    if (cooldownEnd > System.currentTimeMillis()) cooldownEnd else 0
+                } else { 0 }
+            } else { 0 }
+        } else { 0 }
+    } catch (e: Exception) { 0 }
+}
+
+private fun checkTicketStatus(api: CommunityApi, ticketId: String): String {
+    return try {
+        val conn = (URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets?id=eq.$ticketId&select=status").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10000
+            readTimeout = 10000
+            setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+            setRequestProperty("Authorization", "Bearer ${api.token()}")
+        }
+        if (conn.responseCode in 200..299) {
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            val arr = JSONArray(text)
+            if (arr.length() > 0) arr.getJSONObject(0).optString("status", "open") else "open"
+        } else { "open" }
+    } catch (e: Exception) { "open" }
+}
+
+private fun closeTicketWithCooldown(api: CommunityApi, ticketId: String) {
+    try {
+        val now = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).format(Date())
+        val conn = (URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets?id=eq.$ticketId").openConnection() as HttpURLConnection).apply {
+            requestMethod = "PATCH"
+            connectTimeout = 15000
+            readTimeout = 15000
+            doOutput = true
+            setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+            setRequestProperty("Authorization", "Bearer ${api.token()}")
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Prefer", "return=minimal")
+        }
+        val payload = JSONObject().apply {
+            put("status", "closed")
+            put("closed_at", now)
+            put("last_closed_at", now)
+        }
+        conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+        conn.responseCode
+        conn.disconnect()
+    } catch (e: Exception) {
+        Log.e("DLavieChat", "closeTicketWithCooldown failed", e)
     }
 }
