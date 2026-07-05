@@ -222,12 +222,8 @@ fun DlcScreen(
         // ─── Header ───
         DlcHeader()
 
-        // ─── Storage Permission Card ───
-        AnimatedVisibility(!filesAccessGranted, enter = fadeIn(), exit = fadeOut()) {
-            DlcStoragePermissionCard(
-                onGrant = { StorageAccess.request(context) }
-            )
-        }
+        // v7.2.4: Removed storage permission card — permission auto-requested saat
+        // user tap "Update" di mod card (per user complaint: "jangan di pisah pisah gitu").
 
         // ─── Currently Installed Patch Status ───
         DlcInstalledStatusCard(
@@ -359,8 +355,13 @@ fun DlcScreen(
                 DlcModCard(
                     mod = mod,
                     isInstalled = installedMarker.startsWith("v26") && installedMarker.contains(mod.versionName, ignoreCase = true),
-                    canApply = filesAccessGranted && gameInstalled,
+                    canApply = gameInstalled,  // permission auto-requested on tap
                     onApply = {
+                        // v7.2.4: Auto-request permission saat tap Update (no separate card)
+                        if (!StorageAccess.isGranted()) {
+                            StorageAccess.request(context)
+                            return@DlcModCard
+                        }
                         // Apply via existing patch system — open UpdateScreen overlay
                         onNav(Page.DLC)
                     }
@@ -418,43 +419,9 @@ private fun DlcHeader() {
     }
 }
 
-@Composable
-private fun DlcStoragePermissionCard(onGrant: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = DlcCardBg),
-        border = BorderStroke(1.dp, DlcRed.copy(alpha = 0.4f))
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Icon(Icons.Rounded.Security, null, tint = DlcRed, modifier = Modifier.size(22.dp))
-                Text(
-                    "Izin Akses File Diperlukan",
-                    color = DlcText,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = InterFontFamily
-                )
-            }
-            Text(
-                "Mod patches butuh izin 'Akses semua file' untuk apply ke folder game.",
-                color = DlcSubText,
-                fontSize = 12.sp,
-                fontFamily = InterFontFamily,
-                lineHeight = 17.sp
-            )
-            Button(
-                onClick = onGrant,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = DlcText, contentColor = DlcBlack)
-            ) {
-                Text("Izinkan Akses File", fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
-            }
-        }
-    }
-}
+// v7.2.4: DlcStoragePermissionCard removed — permission auto-requested saat
+// user tap "Update" di DlcModCard (per user complaint: "jangan di pisah pisah gitu").
+
 
 @Composable
 private fun DlcInstalledStatusCard(
