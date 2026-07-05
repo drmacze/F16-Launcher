@@ -890,13 +890,45 @@ fun MainShell(
                 }
             }.onSuccess { apkFile ->
                 dlProgress = 2f
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    context, "${context.packageName}.files", apkFile)
-                context.startActivity(Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-                })
-            }.onFailure { dlError = it.message ?: "Unduhan gagal. Periksa koneksi internet."; dlProgress = -1f }
+
+                // v7.3.2 FIX: "App not installed" error pada Android 15+
+                // Root cause: signature mismatch — APK baru punya signature beda
+                // dengan versi yang sudah terinstall. Android menolak install.
+                // Fix: kalau game sudah terinstall, uninstall dulu sebelum install baru.
+                val alreadyInstalled = try {
+                    context.packageManager.getPackageInfo(GAME_PACKAGE, 0)
+                    true
+                } catch (_: Exception) {
+                    false
+                }
+
+                if (alreadyInstalled) {
+                    android.util.Log.d("DLavieInstall", "Game sudah terinstall — uninstall dulu untuk avoid signature conflict")
+                    val uninstallIntent = Intent(Intent.ACTION_DELETE).apply {
+                        data = android.net.Uri.parse("package:$GAME_PACKAGE")
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(uninstallIntent)
+                    dlError = "Uninstall the old FIFA 16 first, then tap Get again to install the new version."
+                    dlProgress = -1f
+                } else {
+                    // Game belum terinstall — verify APK + install
+                    android.util.Log.d("DLavieInstall", "Game belum terinstall — langsung install")
+
+                    // Verify APK file valid (minimal size check — < 1MB = probably error page)
+                    if (apkFile.length() < 1_000_000) {
+                        dlError = "Downloaded file too small — server error. Try again."
+                        dlProgress = -1f
+                    } else {
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            context, "${context.packageName}.files", apkFile)
+                        context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "application/vnd.android.package-archive")
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        })
+                    }
+                }
+            }.onFailure { dlError = it.message ?: "Download failed. Check your internet connection."; dlProgress = -1f }
         }
     }
 
