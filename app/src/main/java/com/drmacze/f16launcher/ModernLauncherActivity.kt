@@ -786,7 +786,7 @@ fun MainShell(
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
-    // ── Phase 2 Community: deep-link dari notification tap ──
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     // Jika initialPostId != null, default page = Chat (Komunitas) supaya user
     // langsung lihat feed. Kita juga tampilkan toast singkat untuk konfirmasi.
     var page by remember { mutableStateOf(if (initialPostId != null) Page.Chat else Page.Home) }
@@ -3460,6 +3460,7 @@ fun CommunityScreen(
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
     val haptic  = LocalHapticFeedback.current
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
 
     // 0 = Following, 1 = For You (default to For You so feed is populated for new users)
     var selectedTab by remember { mutableStateOf(1) }
@@ -3625,8 +3626,8 @@ fun CommunityScreen(
                         .thenByDescending { it.createdAt }
                 )
                 posts = filtered
-            } catch (t: Throwable) {
-                errorMsg = t.message ?: t.feedLoadFailed
+            } catch (e: Throwable) {
+                errorMsg = e.message ?: t.feedLoadFailed
                 posts = emptyList()
             } finally {
                 loading = false
@@ -3736,7 +3737,7 @@ fun CommunityScreen(
                     try {
                         withContext(Dispatchers.IO) { api.reportPost(target.id, category, reason) }
                         toast(t.reportSent)
-                    } catch (t: Throwable) {
+                    } catch (e: Throwable) {
                         toast(t.reportFailed)
                     }
                 }
@@ -3967,7 +3968,7 @@ fun CommunityScreen(
                                                     withContext(Dispatchers.IO) {
                                                         if (wasLiked) api.unlikePost(post.id) else api.likePost(post.id)
                                                     }
-                                                } catch (t: Throwable) {
+                                                } catch (e: Throwable) {
                                                     // Revert
                                                     likeState = likeState + (post.id to (wasLiked to curCount))
                                                     toast(t.operationFailed)
@@ -3992,7 +3993,7 @@ fun CommunityScreen(
                                                         if (wasSaved) api.unsavePost(post.id) else api.savePost(post.id)
                                                     }
                                                     toast(if (wasSaved) "Post dihapus dari simpanan." else "Post disimpan.")
-                                                } catch (t: Throwable) {
+                                                } catch (e: Throwable) {
                                                     savedState = savedState + (post.id to wasSaved)
                                                     toast(t.operationFailed)
                                                 }
@@ -4723,7 +4724,7 @@ private fun CreatePostSheet(
                         api.uploadImage(bytes, filename)
                     }
                     imageUrl = url
-                } catch (t: Throwable) {
+                } catch (e: Throwable) {
                     onError(t.imageUploadFailed)
                 } finally {
                     uploading = false
@@ -4932,7 +4933,7 @@ private fun CreatePostSheet(
                                 api.createFeedPost(title, body, imageUrl, type, saveAsDraft)
                             }
                             onPosted()
-                        } catch (t: Throwable) {
+                        } catch (e: Throwable) {
                             onError(t.postCreateFailed)
                         } finally {
                             posting = false
@@ -5034,6 +5035,7 @@ private fun CommentsBottomSheet(
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var comments by remember { mutableStateOf<List<CommentItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -5071,8 +5073,8 @@ private fun CommentsBottomSheet(
                     out
                 }
                 comments = list
-            } catch (t: Throwable) {
-                errorMsg = t.message ?: t.commentsLoadFailed
+            } catch (e: Throwable) {
+                errorMsg = e.message ?: t.commentsLoadFailed
             } finally {
                 loading = false
             }
@@ -5220,7 +5222,7 @@ private fun CommentsBottomSheet(
                                         comments = comments + me
                                         commentText = ""
                                         onCommentAdded()
-                                    } catch (t: Throwable) {
+                                    } catch (e: Throwable) {
                                         toast(t.operationFailed)
                                     } finally {
                                         sending = false
@@ -5511,6 +5513,7 @@ fun ProfileScreen(
 ) {
     val context       = LocalContext.current
     val scope         = rememberCoroutineScope()
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     // ── gameInstalled async (existing behavior) ──
     var gameInstalled by remember { mutableStateOf(false) }
     // profileLoading: true saat initial load, false setelah gameInstalled ter-resolve.
@@ -5568,7 +5571,7 @@ fun ProfileScreen(
                     }
                     avatarUrlState = newUrl
                     toast(t.profilePhotoUpdated)
-                } catch (t: Throwable) {
+                } catch (e: Throwable) {
                     toast(t.photoUploadFailed)
                 } finally {
                     avatarUploading = false
@@ -5970,7 +5973,7 @@ fun ProfileScreen(
                                             toast(t.draftPublished)
                                             publishingId = null
                                             loadTab()
-                                        } catch (t: Throwable) {
+                                        } catch (e: Throwable) {
                                             toast(t.publishFailed)
                                             publishingId = null
                                         }
@@ -5982,7 +5985,7 @@ fun ProfileScreen(
                                             withContext(Dispatchers.IO) { api.deleteFeedPost(post.id) }
                                             toast(t.postDeleted)
                                             loadTab()
-                                        } catch (t: Throwable) {
+                                        } catch (e: Throwable) {
                                             toast(t.deleteFailed)
                                         }
                                     }
@@ -6631,6 +6634,7 @@ fun UserProfileScreen(
     onVisitProfile: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     val scope   = rememberCoroutineScope()
     val haptic  = LocalHapticFeedback.current
 
@@ -6869,7 +6873,7 @@ fun UserProfileScreen(
                                                 else api.followUser(userId)
                                             }
                                             toast(if (prev) "Berhenti mengikuti" else "Mengikuti $displayName")
-                                        } catch (t: Throwable) {
+                                        } catch (e: Throwable) {
                                             // Revert
                                             isFollowing = prev
                                             followerCount += if (prev) 1 else -1
