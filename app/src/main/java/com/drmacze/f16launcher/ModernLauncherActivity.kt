@@ -404,6 +404,7 @@ fun DLavieModernApp(initialPostId: String? = null) {
     var showUpdatePopup by remember { mutableStateOf(false) }
     var updateDownloading by remember { mutableStateOf(false) }
     var updateDownloadProgress by remember { mutableStateOf(0f) }
+    var updateDownloadError by remember { mutableStateOf("") }  // v7.2.8: error state (no browser fallback)
     val updateScope = rememberCoroutineScope()
 
     // ── Staff bypass (Bug 3): admin/developer/moderator/owner skip maintenance entirely ──
@@ -542,23 +543,19 @@ fun DLavieModernApp(initialPostId: String? = null) {
                                         }
                                         updateDownloading = false
                                         if (apkFile != null && apkFile.exists() && apkFile.length() > 0) {
-                                            AppUpdateChecker.installApk(context, apkFile)
+                                            // v7.2.8: installApk return Boolean — kalau gagal, tampilkan error (bukan browser)
+                                            val installed = AppUpdateChecker.installApk(context, apkFile)
+                                            if (!installed) {
+                                                updateDownloadError = "Gagal membuka installer APK. Coba lagi atau download manual dari DLavie Storage."
+                                            }
                                         } else {
-                                            // Download gagal — buka browser sebagai fallback
-                                            try {
-                                                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(currentInfo.apkUrl))
-                                                browserIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                                context.startActivity(browserIntent)
-                                            } catch (_: Throwable) { }
+                                            // Download gagal — tampilkan error (bukan browser)
+                                            updateDownloadError = "Download gagal. Cek koneksi internet dan coba lagi."
                                         }
                                     } catch (e: Throwable) {
                                         updateDownloading = false
-                                        // Error — buka browser sebagai fallback
-                                        try {
-                                            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(currentInfo.apkUrl))
-                                            browserIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                            context.startActivity(browserIntent)
-                                        } catch (_: Throwable) { }
+                                        // v7.2.8: tampilkan error, bukan buka browser
+                                        updateDownloadError = "Error: ${e.message ?: "unknown"}. Coba lagi."
                                     }
                                 }
                             }

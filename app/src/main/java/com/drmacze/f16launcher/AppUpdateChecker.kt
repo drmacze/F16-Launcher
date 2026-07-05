@@ -152,9 +152,11 @@ object AppUpdateChecker {
 
     /**
      * Trigger install APK via ACTION_VIEW + FileProvider.
+     * v7.2.8: Removed browser fallback — kalau FileProvider gagal, return false
+     * (caller handle dengan menampilkan pesan error, bukan buka browser).
      */
-    fun installApk(context: Context, apkFile: File) {
-        try {
+    fun installApk(context: Context, apkFile: File): Boolean {
+        return try {
             val uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.files",
@@ -165,14 +167,10 @@ object AppUpdateChecker {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
             }
             context.startActivity(intent)
-        } catch (_: Throwable) {
-            try {
-                // PRIVACY: Don't expose GitHub repo URL. Use DLavie proxy instead.
-                val proxyUrl = com.drmacze.f16launcher.DLAVIE_PROXY_URL + "?f=launcher-latest"
-                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(proxyUrl))
-                browserIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                context.startActivity(browserIntent)
-            } catch (_: Throwable) { }
+            true
+        } catch (e: Throwable) {
+            android.util.Log.e("DLavie", "installApk: FileProvider failed", e)
+            false
         }
     }
 }
