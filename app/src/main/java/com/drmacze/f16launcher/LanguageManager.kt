@@ -46,21 +46,33 @@ object LanguageManager {
     }
 
     /**
-     * Get current language code. Returns "en" or "id".
+     * Get current language code. Returns one of 10 supported codes.
      *
      * Logic:
      * 1. If user has manually selected a language → use that
-     * 2. Otherwise → auto-detect from device locale
+     * 2. Otherwise → auto-detect from device locale AND save it (so subsequent
+     *    calls after Locale.setDefault() don't re-detect with wrong locale)
+     *
+     * v7.1.2 FIX: Save auto-detected language on first launch. Previously,
+     *   autoDetectLanguage() was called every time getCurrentLanguage() was
+     *   called without saved pref. But after first activity calls
+     *   Locale.setDefault(langCode), subsequent autoDetectLanguage() calls
+     *   would read the OVERRIDDEN locale, not the device locale. This caused
+     *   incorrect detection if device locale was different from the first
+     *   auto-detected code (edge case: process restart with wrong locale).
+     *   Now: detect once → save → all future calls read from prefs.
      */
     fun getCurrentLanguage(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val savedCode = prefs.getString(KEY_LANGUAGE, null)
 
-        // Manual override takes priority
+        // Manual override or previously auto-detected → use that
         if (savedCode != null) return savedCode
 
-        // Auto-detect from device locale (default behavior, no toggle needed)
-        return autoDetectLanguage()
+        // First launch: auto-detect from device locale + save immediately
+        val detected = autoDetectLanguage()
+        prefs.edit().putString(KEY_LANGUAGE, detected).apply()
+        return detected
     }
 
     /**

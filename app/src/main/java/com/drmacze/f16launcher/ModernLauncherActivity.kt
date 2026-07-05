@@ -4281,6 +4281,31 @@ private fun FeedPostCard(
     onVisitProfile: ((String) -> Unit)? = null
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    // v7.1.2: Auto-translation system (like X/Twitter)
+    // Fetch translation for current app language. If available + different from original,
+    // show translated text with "Show original" toggle.
+    val context = LocalContext.current
+    var translation by remember(post.id) { mutableStateOf<JSONObject?>(null) }
+    var showOriginal by remember(post.id) { mutableStateOf(false) }
+    var translationLoaded by remember(post.id) { mutableStateOf(false) }
+    LaunchedEffect(post.id) {
+        val langCode = LanguageManager.getCurrentLanguage(context)
+        if (langCode.isNotBlank()) {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val trans = CommunityApi(context).getPostTranslation(post.id, langCode)
+                    if (trans != null) {
+                        // Only show translation if it's different from original
+                        val transBody = trans.optString("translated_body", "")
+                        if (transBody.isNotBlank() && transBody != post.body) {
+                            translation = trans
+                        }
+                    }
+                }
+            }
+            translationLoaded = true
+        }
+    }
     // Like bounce: scale up briefly when liked toggles
     val likeScale by animateFloatAsState(
         targetValue = if (liked) 1.15f else 1f,
@@ -4358,9 +4383,14 @@ private fun FeedPostCard(
                     Spacer(Modifier.height(TTSpacing.sm))
                 }
 
-                // Title (bold white, 15sp)
+                // v7.1.2: Title — show translation if available + not showing original
+                val displayTitle = if (translation != null && !showOriginal) {
+                    translation!!.optString("translated_title", post.title)
+                } else {
+                    post.title
+                }
                 Text(
-                    post.title,
+                    displayTitle,
                     color = Color.White,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
@@ -4368,16 +4398,33 @@ private fun FeedPostCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                // Body preview (gray, 13sp, 2 lines)
-                if (post.body.isNotBlank()) {
+                // v7.1.2: Body — show translation if available + not showing original
+                val displayBody = if (translation != null && !showOriginal) {
+                    translation!!.optString("translated_body", post.body)
+                } else {
+                    post.body
+                }
+                if (displayBody.isNotBlank()) {
                     Spacer(Modifier.height(TTSpacing.xs))
                     Text(
-                        post.body,
+                        displayBody,
                         color = SoftText,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // v7.1.2: "Show original" / "Show translation" toggle (like X/Twitter)
+                if (translation != null) {
+                    Spacer(Modifier.height(TTSpacing.xs))
+                    Text(
+                        if (showOriginal) "Show translation" else "Show original",
+                        color = CandyCyan,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { showOriginal = !showOriginal }
                     )
                 }
 
