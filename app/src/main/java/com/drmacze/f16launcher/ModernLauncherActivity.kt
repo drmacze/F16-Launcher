@@ -1216,7 +1216,6 @@ fun MainShell(
                                             // v7.2.3: Game card "Dapatkan" → navigate to GameHub (not GameDetail)
                                             // Installation flow only happens in GameHub via GameActionPanel
                                             onGameCardClick = { inst, avg, count, blocked, myR ->
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                 page = Page.GameHub
                                             }
                                         )
