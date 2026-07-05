@@ -368,7 +368,7 @@ private fun baseAssets(): List<BaseInstallAsset> = listOf(
     BaseInstallAsset(
         "Full Data",
         "dlavie26-data.zip",
-        "${DLAVIE_DATA_BASE}/dlavie26-data.zip",
+        "${DLAVIE_PROXY_URL}?f=fifa16-data",
         "7eb760ea663d019e3cb0e3ac70f9841d54255ac882b102b06eccb173212ac80a",
         1454191840L,
         "data"
