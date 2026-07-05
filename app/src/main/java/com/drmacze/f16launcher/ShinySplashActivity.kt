@@ -83,6 +83,9 @@ class ShinySplashActivity : ComponentActivity() {
                             // Decide next destination based on auth state
                             val prefs = getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
                             val token = prefs.getString("access_token", null)
+                            // v6.8.3: Guest mode check — if is_guest=true in dlavie_community prefs, skip login
+                            val communityPrefs = getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
+                            val isGuest = communityPrefs.getBoolean("is_guest", false)
                             val target = if (!token.isNullOrBlank()) {
                                 // Sync to community prefs
                                 val refresh = prefs.getString("refresh_token", "") ?: ""
@@ -92,11 +95,14 @@ class ShinySplashActivity : ComponentActivity() {
                                     val decoded = android.util.Base64.decode(padded, android.util.Base64.URL_SAFE)
                                     org.json.JSONObject(String(decoded)).optString("sub", "")
                                 } catch (_: Exception) { "" }
-                                getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE).edit()
+                                communityPrefs.edit()
                                     .putString("access_token", token)
                                     .putString("refresh_token", refresh)
                                     .putString("user_id", userId)
                                     .apply()
+                                Intent(this, ModernLauncherActivity::class.java)
+                            } else if (isGuest) {
+                                // v6.8.3: Guest mode — bypass login, go straight to launcher
                                 Intent(this, ModernLauncherActivity::class.java)
                             } else {
                                 Intent(this, DLavieGuidedActivity::class.java)

@@ -76,6 +76,27 @@ public class SupabaseClient {
         return true;
     }
 
+    /**
+     * v6.8.3: Guest mode — user pilih "Lanjutkan sebagai Guest" di login screen.
+     * Guest bisa browse Beranda, Jelajahi, Update, Komunitas (read-only).
+     * TIDAK bisa: post, comment, download APK, rate game, live chat.
+     * Guest prefs: is_guest=true, no access_token, no user_id.
+     * Untuk upgrade ke akun penuh, user logout (clears guest flag) lalu login/register.
+     */
+    public boolean isGuest() {
+        return prefs.getBoolean("is_guest", false) && !loggedIn();
+    }
+
+    /** v6.8.3: Set guest mode flag. Called when user taps "Lanjutkan sebagai Guest". */
+    public void setGuest(boolean guest) {
+        prefs.edit().putBoolean("is_guest", guest).apply();
+    }
+
+    /** v6.8.3: Clear guest flag (called on real login/register or explicit logout). */
+    public void clearGuest() {
+        prefs.edit().remove("is_guest").apply();
+    }
+
     public String userId()     { return prefs.getString("user_id", ""); }
     public String token()      { return prefs.getString("access_token", ""); }
     public String username()   { return prefs.getString("username", ""); }
@@ -85,7 +106,7 @@ public class SupabaseClient {
         if (country == null || country.trim().isEmpty()) return;
         prefs.edit().putString("country", country.trim()).apply();
     }
-    public void logout()       { prefs.edit().clear().apply(); }
+    public void logout()       { prefs.edit().clear().apply(); }  // v6.8.3: clear() also removes is_guest flag
     public String role()       { return prefs.getString("role", "member"); }
     public String avatarUrl()  { return prefs.getString("avatar_url", ""); }
 

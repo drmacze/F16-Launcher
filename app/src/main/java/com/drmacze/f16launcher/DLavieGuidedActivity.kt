@@ -242,8 +242,12 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Mode: "login" | "register" | "forgot"
-    var mode by remember { mutableStateOf("login") }
+    // v6.8.3 Grok-style redesign: initial screen shows auth options stacked vertically.
+    // Mode: "chooser" | "login" | "register" | "forgot" | "email_form"
+    //   - "chooser": Google + Email + Guest buttons (default)
+    //   - "login" / "register": expanded email/password form
+    //   - "forgot": reset password form
+    var mode by remember { mutableStateOf("chooser") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -255,33 +259,58 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
     var message by remember { mutableStateOf("") }
     var isSuccess by remember { mutableStateOf(false) }
 
-    // v4.0 monochrome login remake — halftone bg + DLavie text logo + star,
-    // glass card, white inverted CTA button, inline error/success message.
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xFF000000))   // v4.0 pure-black base
+            .background(Color(0xFF000000))   // pure-black base
     ) {
-        // Halftone particle background (subtle, monochrome)
+        // ── Background: black → dark gray vertical gradient + halftone particle matrix ──
+        // v6.8.3: gradient adds depth (pure black top → #1A1A1A bottom), halftone dots
+        // overlay adds the "matrix titik titik putih" texture requested by user.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color(0xFF000000),
+                        0.5f to Color(0xFF0A0A0A),
+                        1f to Color(0xFF1A1A1A)
+                    )
+                )
+        )
+        // Halftone particle matrix — dense white dots, varying opacity (radial vignette)
         HalftoneBackground(
             modifier = Modifier.fillMaxSize(),
-            dotSize = 2.5f,
-            spacing = 24f,
+            dotSize = 2.8f,
+            spacing = 22f,
             baseColor = HalftoneBright,
-            alpha = 0.55f
+            alpha = 0.75f
+        )
+        // Subtle top spotlight (white radial glow behind logo)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(280.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.10f),
+                            Color.Transparent
+                        )
+                    )
+                )
         )
 
         Column(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(horizontal = 24.dp)
+                .padding(top = 80.dp, bottom = 40.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(60.dp))
-
-            // ── Logo: "DLavie" text + star icon (sama seperti splash screen) ──
+            // ── Logo: "DLavie 26" text + star icon (centered top) ──
             Row(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
@@ -289,340 +318,551 @@ private fun GuidedLoginScreen(onLoggedIn: (AuthSession) -> Unit) {
                 Text(
                     "DLavie",
                     color = Color.White,
-                    fontSize = 36.sp,
+                    fontSize = 42.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = GuideFont,
-                    letterSpacing = (-1).sp
+                    letterSpacing = (-1.5).sp
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "26",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 42.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = GuideFont,
+                    letterSpacing = (-1.5).sp
                 )
                 Spacer(Modifier.width(4.dp))
                 Icon(
                     Icons.Rounded.Star,
                     null,
-                    tint = Color.White.copy(0.8f),
-                    modifier = Modifier.size(20.dp)
+                    tint = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.size(22.dp)
                 )
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
                 when (mode) {
-                    "login"    -> "Masuk untuk lanjut"
-                    "register" -> "Buat akun baru"
+                    "chooser"  -> "FIFA 16 Mobile Mod Hub"
+                    "login"    -> "Masuk dengan akun DLavie"
+                    "register" -> "Buat akun DLavie baru"
                     "forgot"   -> "Reset password via email"
-                    else        -> "FIFA 16 Mobile 2026 Mod Hub"
+                    else       -> "FIFA 16 Mobile Mod Hub"
                 },
-                color = GuideMuted, fontSize = 13.sp, fontFamily = GuideFont
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 13.sp,
+                fontFamily = GuideFont
             )
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(48.dp))
 
-            // ── Glass Card (subtle white border) ──
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = Color(0xF0111111),                  // v4.0 near-opaque dark glass
-                shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.dp, Color.White.copy(0.08f))
-            ) {
-                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-
-                    // ── Tab switcher (Masuk | Daftar) — hidden in forgot mode ──
-                    if (mode != "forgot") {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF0A0A0A), RoundedCornerShape(12.dp))
-                                .padding(4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            // Login tab
-                            Box(
-                                Modifier
-                                    .weight(1f)
-                                    .height(40.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (mode == "login") Color.White else Color.Transparent)
-                                    .clickable { mode = "login"; message = "" },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    "Masuk",
-                                    color = if (mode == "login") Color.Black else GuideMuted,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = GuideFont
-                                )
+            // ── Mode: CHOOSER (default — Grok-style stacked auth buttons) ──
+            if (mode == "chooser") {
+                // 1. Google Sign-In button (primary, white bg)
+                AuthProviderButton(
+                    label = "Lanjutkan dengan Google",
+                    icon = { GoogleIcon() },
+                    containerColor = Color.White,
+                    contentColor = Color.Black,
+                    onClick = {
+                        // v6.8.3: launch Supabase OAuth Google via Custom Tabs
+                        scope.launch {
+                            working = true; message = ""
+                            val result = withContext(Dispatchers.IO) {
+                                startGoogleOAuth(context)
                             }
-                            // Register tab
-                            Box(
-                                Modifier
-                                    .weight(1f)
-                                    .height(40.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (mode == "register") Color.White else Color.Transparent)
-                                    .clickable { mode = "register"; message = "" },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    "Daftar",
-                                    color = if (mode == "register") Color.Black else GuideMuted,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = GuideFont
-                                )
+                            working = false
+                            if (result.startsWith("OK:")) {
+                                message = "Membuka Google login di browser..."
+                                isSuccess = true
+                            } else {
+                                message = result
+                                isSuccess = false
                             }
                         }
-                    }
+                    },
+                    enabled = !working
+                )
+                Spacer(Modifier.height(12.dp))
 
-                    // ── Forgot password mode ── hint text
-                    if (mode == "forgot") {
-                        Text(
-                            "Masukkan email akunmu. Kami akan kirim link reset password ke email tersebut.",
-                            color = GuideMuted, fontSize = 12.sp, fontFamily = GuideFont, lineHeight = 17.sp
+                // 2. Email button (secondary, dark glass)
+                AuthProviderButton(
+                    label = "Lanjutkan dengan Email",
+                    icon = {
+                        Icon(
+                            Icons.Rounded.Email,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
                         )
-                    }
+                    },
+                    containerColor = Color(0xFF1A1A1A),
+                    contentColor = Color.White,
+                    borderColor = Color.White.copy(alpha = 0.12f),
+                    onClick = { mode = "login"; message = "" },
+                    enabled = !working
+                )
+                Spacer(Modifier.height(12.dp))
 
-                    // ── Email field (always shown) ──
-                    AuthField(
-                        value = email,
-                        onValueChange = { email = it.trim() },
-                        label = "Email",
-                        leadingIcon = {
-                            Icon(
-                                Icons.Rounded.Email,
-                                contentDescription = null,
-                                tint = GuideMuted,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    )
-
-                    // ── Password field (login + register only) ──
-                    if (mode != "forgot") {
-                        AuthField(
-                            value = password,
-                            onValueChange = { password = it },
-                            label = "Password",
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Rounded.Lock,
-                                    contentDescription = null,
-                                    tint = GuideMuted,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            isPassword = !showPass,
-                            trailingLabel = if (showPass) "Sembunyikan" else "Tampilkan",
-                            onTrailing = { showPass = !showPass }
+                // 3. Guest button (tertiary, subtle — text only with border)
+                AuthProviderButton(
+                    label = "Lanjutkan sebagai Guest",
+                    icon = {
+                        Icon(
+                            Icons.Rounded.Person,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.6f),
+                            modifier = Modifier.size(20.dp)
                         )
-                    }
-
-                    // ── Register-only fields ──
-                    if (mode == "register") {
-                        AuthField(
-                            value = confirmPassword,
-                            onValueChange = { confirmPassword = it },
-                            label = "Konfirmasi Password",
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Rounded.Lock,
-                                    contentDescription = null,
-                                    tint = GuideMuted,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            isPassword = !showPass
+                    },
+                    containerColor = Color.Transparent,
+                    contentColor = Color.White.copy(alpha = 0.7f),
+                    borderColor = Color.White.copy(alpha = 0.08f),
+                    onClick = {
+                        // v6.8.3: set guest mode → go to launcher
+                        val api = CommunityApi(context)
+                        api.setGuest(true)
+                        message = "Mode guest aktif"
+                        isSuccess = true
+                        // Navigate to launcher (no session, just guest flag)
+                        context.startActivity(
+                            Intent(context, ModernLauncherActivity::class.java)
+                                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
                         )
-                        AuthField(
-                            value = username,
-                            onValueChange = { raw ->
-                                username = raw.trim().lowercase().filter { c -> c.isLetterOrDigit() || c == '_' }.take(24)
-                            },
-                            label = "Username (3-24, a-z 0-9 _)",
-                            leadingIcon = {
-                                Text(
-                                    "@",
-                                    color = GuideMuted,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = GuideFont
-                                )
-                            }
-                        )
-                        AuthField(
-                            value = displayName,
-                            onValueChange = { displayName = it.take(40) },
-                            label = "Display Name (2-40)",
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Rounded.Person,
-                                    contentDescription = null,
-                                    tint = GuideMuted,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        )
-                        CountryPickerDropdown(
-                            selected = country,
-                            onSelect = { country = it }
-                        )
-                    }
+                    },
+                    enabled = !working
+                )
 
-                    // ── Forgot password link (login mode only) ──
-                    if (mode == "login") {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            Text(
-                                "Lupa password?",
-                                color = GuideMuted,
-                                fontSize = 12.sp,
-                                fontFamily = GuideFont,
-                                modifier = Modifier.clickable {
-                                    mode = "forgot"; message = ""; email = ""
-                                }
-                            )
-                        }
-                    }
-
-                    // ── Back to login link (forgot mode only) ──
-                    if (mode == "forgot") {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Start
-                        ) {
-                            Text(
-                                "← Kembali ke Login",
-                                color = GuideMuted,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = GuideFont,
-                                modifier = Modifier.clickable {
-                                    mode = "login"; message = ""; email = ""
-                                }
-                            )
-                        }
-                    }
-
-                    // ── Error / success message (inline, subtle background) ──
-                    AnimatedVisibility(visible = message.isNotBlank()) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    (if (isSuccess) GuideGreen else GuideRed).copy(alpha = 0.10f),
-                                    RoundedCornerShape(10.dp)
-                                )
-                                .border(
-                                    1.dp,
-                                    (if (isSuccess) GuideGreen else GuideRed).copy(alpha = 0.28f),
-                                    RoundedCornerShape(10.dp)
-                                )
-                                .padding(10.dp)
-                        ) {
-                            Text(
-                                message,
-                                color = if (isSuccess) GuideGreen else GuideRed,
-                                fontSize = 12.sp,
-                                fontFamily = GuideFont,
-                                lineHeight = 16.sp
-                            )
-                        }
-                    }
-
-                    // ── CTA button (full width, white inverted) ──
-                    val canSubmit = when (mode) {
-                        "forgot"  -> !working && email.isNotBlank() && email.contains("@")
-                        "login"   -> !working && email.isNotBlank() && password.length >= 6
-                        "register"-> !working && email.isNotBlank() && email.contains("@") &&
-                                     password.length >= 6 && password == confirmPassword &&
-                                     username.matches(Regex("[a-zA-Z0-9_]{3,24}")) &&
-                                     displayName.trim().length >= 2
-                        else -> false
-                    }
-
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                working = true; message = ""
-                                val result = withContext(Dispatchers.IO) {
-                                    when (mode) {
-                                        "login"    -> loginWithPassword(context, email, password)
-                                        "register" -> registerWithUsernamePassword(context, email, password, username.trim(), displayName.trim(), country)
-                                        "forgot"   -> {
-                                            try {
-                                                val msg = AuthManager.requestPasswordReset(email)
-                                                AuthResult(null, msg)
-                                            } catch (e: Exception) {
-                                                AuthResult(null, "Error: ${e.message ?: "gagal kirim email"}")
-                                            }
-                                        }
-                                        else -> AuthResult(null, "Mode tidak dikenal")
-                                    }
-                                }
-                                working = false
-                                isSuccess = result.session != null || result.message.startsWith("OK")
-                                message = result.message
-                                // Fire telemetry for login / register events
-                                if (result.session != null) {
-                                    when (mode) {
-                                        "login"    -> Telemetry.track(context, Telemetry.EVT_LOGIN,    mapOf("email" to email.trim()))
-                                        "register" -> Telemetry.track(context, Telemetry.EVT_REGISTER, mapOf("email" to email.trim(), "username" to username.trim(), "country" to country))
-                                    }
-                                }
-                                result.session?.let(onLoggedIn)
-
-                                // If forgot password success, switch back to login
-                                if (mode == "forgot" && isSuccess) {
-                                    kotlinx.coroutines.delay(2500)
-                                    mode = "login"
-                                    password = ""
-                                    message = ""
-                                }
-                            }
-                        },
-                        enabled = canSubmit,
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = Color.Black,
-                            disabledContainerColor = Color.White.copy(0.2f),
-                            disabledContentColor = GuideMuted
-                        )
-                    ) {
-                        if (working) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = Color.Black,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Text(
-                            when {
-                                working -> "Memproses..."
-                                mode == "login"    -> "Masuk"
-                                mode == "register" -> "Daftar"
-                                mode == "forgot"   -> "Kirim Link Reset"
-                                else -> "→"
-                            },
-                            fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont
-                        )
-                    }
-                }
+                // Guest mode notice
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Guest mode: browse only. Untuk post, komentar, download APK, dan rate game, perlu akun DLavie.",
+                    color = Color.White.copy(alpha = 0.3f),
+                    fontSize = 10.sp,
+                    fontFamily = GuideFont,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 14.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
             }
 
-            Spacer(Modifier.height(16.dp))
+            // ── Mode: LOGIN / REGISTER / FORGOT (email form) ──
+            if (mode != "chooser") {
+                // Glass Card containing form
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0xF0111111),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(0.08f))
+                ) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
+                        // Tab switcher (Masuk | Daftar) — hidden in forgot mode
+                        if (mode != "forgot") {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF0A0A0A), RoundedCornerShape(10.dp))
+                                    .padding(4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Box(
+                                    Modifier
+                                        .weight(1f)
+                                        .height(38.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (mode == "login") Color.White else Color.Transparent)
+                                        .clickable { mode = "login"; message = "" },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "Masuk",
+                                        color = if (mode == "login") Color.Black else GuideMuted,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = GuideFont
+                                    )
+                                }
+                                Box(
+                                    Modifier
+                                        .weight(1f)
+                                        .height(38.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (mode == "register") Color.White else Color.Transparent)
+                                        .clickable { mode = "register"; message = "" },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "Daftar",
+                                        color = if (mode == "register") Color.Black else GuideMuted,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = GuideFont
+                                    )
+                                }
+                            }
+                        }
+
+                        if (mode == "forgot") {
+                            Text(
+                                "Masukkan email akunmu. Kami akan kirim link reset password ke email tersebut.",
+                                color = GuideMuted, fontSize = 12.sp, fontFamily = GuideFont, lineHeight = 17.sp
+                            )
+                        }
+
+                        AuthField(
+                            value = email,
+                            onValueChange = { email = it.trim() },
+                            label = "Email",
+                            leadingIcon = {
+                                Icon(Icons.Rounded.Email, null, tint = GuideMuted, modifier = Modifier.size(18.dp))
+                            }
+                        )
+
+                        if (mode != "forgot") {
+                            AuthField(
+                                value = password,
+                                onValueChange = { password = it },
+                                label = "Password",
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Lock, null, tint = GuideMuted, modifier = Modifier.size(18.dp))
+                                },
+                                isPassword = !showPass,
+                                trailingLabel = if (showPass) "Sembunyikan" else "Tampilkan",
+                                onTrailing = { showPass = !showPass }
+                            )
+                        }
+
+                        if (mode == "register") {
+                            AuthField(
+                                value = confirmPassword,
+                                onValueChange = { confirmPassword = it },
+                                label = "Konfirmasi Password",
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Lock, null, tint = GuideMuted, modifier = Modifier.size(18.dp))
+                                },
+                                isPassword = !showPass
+                            )
+                            AuthField(
+                                value = username,
+                                onValueChange = { raw ->
+                                    username = raw.trim().lowercase().filter { c -> c.isLetterOrDigit() || c == '_' }.take(24)
+                                },
+                                label = "Username (3-24, a-z 0-9 _)",
+                                leadingIcon = {
+                                    Text("@", color = GuideMuted, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont)
+                                }
+                            )
+                            AuthField(
+                                value = displayName,
+                                onValueChange = { displayName = it.take(40) },
+                                label = "Display Name (2-40)",
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Person, null, tint = GuideMuted, modifier = Modifier.size(18.dp))
+                                }
+                            )
+                            CountryPickerDropdown(selected = country, onSelect = { country = it })
+                        }
+
+                        if (mode == "login") {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                Text(
+                                    "Lupa password?",
+                                    color = GuideMuted,
+                                    fontSize = 12.sp,
+                                    fontFamily = GuideFont,
+                                    modifier = Modifier.clickable { mode = "forgot"; message = ""; email = "" }
+                                )
+                            }
+                        }
+
+                        if (mode == "forgot") {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                                Text(
+                                    "← Kembali ke Login",
+                                    color = GuideMuted,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = GuideFont,
+                                    modifier = Modifier.clickable { mode = "login"; message = ""; email = "" }
+                                )
+                            }
+                        }
+
+                        AnimatedVisibility(visible = message.isNotBlank()) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        (if (isSuccess) GuideGreen else GuideRed).copy(alpha = 0.10f),
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        (if (isSuccess) GuideGreen else GuideRed).copy(alpha = 0.28f),
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .padding(10.dp)
+                            ) {
+                                Text(
+                                    message,
+                                    color = if (isSuccess) GuideGreen else GuideRed,
+                                    fontSize = 12.sp,
+                                    fontFamily = GuideFont,
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+
+                        val canSubmit = when (mode) {
+                            "forgot"  -> !working && email.isNotBlank() && email.contains("@")
+                            "login"   -> !working && email.isNotBlank() && password.length >= 6
+                            "register"-> !working && email.isNotBlank() && email.contains("@") &&
+                                         password.length >= 6 && password == confirmPassword &&
+                                         username.matches(Regex("[a-zA-Z0-9_]{3,24}")) &&
+                                         displayName.trim().length >= 2
+                            else -> false
+                        }
+
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    working = true; message = ""
+                                    val result = withContext(Dispatchers.IO) {
+                                        when (mode) {
+                                            "login"    -> loginWithPassword(context, email, password)
+                                            "register" -> registerWithUsernamePassword(context, email, password, username.trim(), displayName.trim(), country)
+                                            "forgot"   -> {
+                                                try {
+                                                    val msg = AuthManager.requestPasswordReset(email)
+                                                    AuthResult(null, msg)
+                                                } catch (e: Exception) {
+                                                    AuthResult(null, "Error: ${e.message ?: "gagal kirim email"}")
+                                                }
+                                            }
+                                            else -> AuthResult(null, "Mode tidak dikenal")
+                                        }
+                                    }
+                                    working = false
+                                    isSuccess = result.session != null || result.message.startsWith("OK")
+                                    message = result.message
+                                    // v6.8.3: clear guest flag on successful login/register
+                                    if (result.session != null) {
+                                        val api = CommunityApi(context)
+                                        api.clearGuest()
+                                        when (mode) {
+                                            "login"    -> Telemetry.track(context, Telemetry.EVT_LOGIN,    mapOf("email" to email.trim()))
+                                            "register" -> Telemetry.track(context, Telemetry.EVT_REGISTER, mapOf("email" to email.trim(), "username" to username.trim(), "country" to country))
+                                        }
+                                    }
+                                    result.session?.let(onLoggedIn)
+
+                                    if (mode == "forgot" && isSuccess) {
+                                        kotlinx.coroutines.delay(2500)
+                                        mode = "login"
+                                        password = ""
+                                        message = ""
+                                    }
+                                }
+                            },
+                            enabled = canSubmit,
+                            modifier = Modifier.fillMaxWidth().height(50.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White,
+                                contentColor = Color.Black,
+                                disabledContainerColor = Color.White.copy(0.2f),
+                                disabledContentColor = GuideMuted
+                            )
+                        ) {
+                            if (working) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.Black, strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(
+                                when {
+                                    working -> "Memproses..."
+                                    mode == "login"    -> "Masuk"
+                                    mode == "register" -> "Daftar"
+                                    mode == "forgot"   -> "Kirim Link Reset"
+                                    else -> "→"
+                                },
+                                fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont
+                            )
+                        }
+                    }
+                }
+
+                // Back to chooser link
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "← Kembali",
+                    color = GuideMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = GuideFont,
+                    modifier = Modifier.clickable {
+                        mode = "chooser"; message = ""; email = ""; password = ""
+                    }
+                )
+            }
+
+            // ── Legal text (bottom) ──
+            Spacer(Modifier.height(32.dp))
             Text(
-                when (mode) {
-                    "login"    -> "Belum punya akun? Tap Daftar."
-                    "register" -> "Sudah punya akun? Tap Masuk."
-                    "forgot"   -> "Link reset hanya berlaku 1 jam."
-                    else -> ""
-                },
-                color = GuideMuted, fontSize = 12.sp, textAlign = TextAlign.Center, fontFamily = GuideFont
+                "Dengan melanjutkan, Anda menyetujui Ketentuan Layanan dan Kebijakan Privasi DLavie.",
+                color = Color.White.copy(alpha = 0.25f),
+                fontSize = 10.sp,
+                fontFamily = GuideFont,
+                textAlign = TextAlign.Center,
+                lineHeight = 14.sp,
+                modifier = Modifier.padding(horizontal = 24.dp)
             )
-            Spacer(Modifier.height(40.dp))
         }
+
+        // ── Working overlay (top-center spinner) ──
+        if (working && mode == "chooser") {
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 60.dp)
+                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                    Text("Memuat...", color = Color.White, fontSize = 12.sp, fontFamily = GuideFont)
+                }
+            }
+        }
+    }
+}
+
+// ─── v6.8.3: Auth provider button (Grok-style stacked) ──────────────────────
+@Composable
+private fun AuthProviderButton(
+    label: String,
+    icon: @Composable () -> Unit,
+    containerColor: Color,
+    contentColor: Color,
+    borderColor: Color? = null,
+    onClick: () -> Unit,
+    enabled: Boolean = true
+) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clickable(enabled = enabled) {
+                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                onClick()
+            },
+        shape = RoundedCornerShape(14.dp),
+        color = containerColor,
+        border = if (borderColor != null) BorderStroke(1.dp, borderColor) else null
+    ) {
+        Row(
+            Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            icon()
+            Spacer(Modifier.width(12.dp))
+            Text(
+                label,
+                color = contentColor,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = GuideFont
+            )
+        }
+    }
+}
+
+// ─── v6.8.3: Google "G" logo icon (multicolor, matches Google brand) ────────
+// Note: This is the official Google G logo colors. Even though the app is
+// monochrome, the Google G icon itself uses Google's brand colors for brand
+// recognition (standard practice — same as TapTap, Steam, Discord, etc.).
+@Composable
+private fun GoogleIcon() {
+    val s = 20.dp
+    Box(Modifier.size(s), contentAlignment = Alignment.Center) {
+        // White "G" on white button — but Google G is multicolor. We'll draw
+        // a simple white "G" text since the button bg is already white (Google
+        // brand on white = use the colored G; on dark = use white G).
+        // For our white button: use the multicolor Google G via Canvas.
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            val w = this.size.width
+            val h = this.size.height
+            val cx = w / 2f
+            val cy = h / 2f
+            val r = minOf(w, h) * 0.42f
+
+            // Draw 4 colored arcs (Google brand colors):
+            // Top: Blue (#4285F4), Right: Red (#EA4335), Bottom: Yellow (#FBBC05), Left: Green (#34A853)
+            // Actually Google G is: Blue top-left, Red top-right, Yellow bottom-right, Green bottom-left
+            // But simpler: draw the "G" shape as 4 arcs.
+            val stroke = r * 0.32f
+
+            // Simplified: draw a white circle ring with "G" cutout — actually just draw the multicolor G
+            // Use drawArc for each quadrant
+            val colors = listOf(
+                Color(0xFFEA4335),  // red - top-right
+                Color(0xFFFBBC05),  // yellow - bottom-right
+                Color(0xFF34A853),  // green - bottom-left
+                Color(0xFF4285F4)   // blue - top-left
+            )
+            val startAngles = listOf(0f, 90f, 180f, 270f)  // 4 quadrants
+            for (i in 0..3) {
+                drawArc(
+                    color = colors[i],
+                    startAngle = startAngles[i] - 45f,  // offset so arcs meet at 45° diagonals
+                    sweepAngle = 90f,
+                    useCenter = false,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                    topLeft = androidx.compose.ui.geometry.Offset(cx - r, cy - r),
+                    size = androidx.compose.ui.geometry.Size(r * 2, r * 2)
+                )
+            }
+        }
+    }
+}
+
+// ─── v6.8.3: Start Google OAuth via Supabase (Custom Tabs Intent) ───────────
+// Supabase Auth supports OAuth providers via /auth/v1/authorize endpoint.
+// We launch the URL in a Custom Tabs browser — user signs in with Google,
+// then Supabase redirects back to our app via deep link (configured separately).
+//
+// NOTE: This requires a redirect URL configured in Supabase Dashboard → Auth →
+// URL Configuration → Redirect URLs. For now, we use the default
+// https://lvmucsxbmadtsgrxuwmo.supabase.co/auth/v1/callback which shows the
+// session token in the browser (user copies it back — not ideal but works
+// without deep link setup).
+//
+// PROPER implementation: configure deep link (e.g. dlavie://auth-callback) in
+// AndroidManifest + Supabase, then handle the redirect in DLavieGuidedActivity
+// via intent extras. That's a separate task.
+private fun startGoogleOAuth(context: Context): String {
+    return try {
+        val url = "${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${SUPABASE_URL}/auth/v1/callback"
+        val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        // Try Custom Tabs first (preferred — stays in-app)
+        try {
+            val customTabsIntent = androidx.browser.customtabs.CustomTabsIntent.Builder()
+                .setShowTitle(true)
+                .build()
+            customTabsIntent.intent.data = android.net.Uri.parse(url)
+            context.startActivity(customTabsIntent.intent)
+        } catch (_: Exception) {
+            // Fallback: open in default browser
+            context.startActivity(intent)
+        }
+        "OK: Membuka Google login di browser. Setelah login, salin token dari URL dan masuk manual sementara deep link dikonfigurasi."
+    } catch (e: Exception) {
+        "Error: ${e.message ?: "gagal buka Google OAuth"}"
     }
 }
 

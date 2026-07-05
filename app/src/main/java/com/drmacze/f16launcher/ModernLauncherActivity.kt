@@ -1106,8 +1106,12 @@ fun MainShell(
                                 hasRated           = detailMyRating > 0,
                                 myRating           = detailMyRating,
                                 onRate             = {
-                                    // Cek login dulu — rating wajib login (Supabase RLS).
-                                    if (!api.loggedIn()) {
+                                    // v6.8.3: Guest restriction — rate requires login
+                                    if (api.isGuest()) {
+                                        ratingSubmitError = "Login diperlukan untuk rate game. Guest mode hanya untuk browse."
+                                        showRatingPopup = true
+                                    } else if (!api.loggedIn()) {
+                                        // Cek login dulu — rating wajib login (Supabase RLS).
                                         ratingSubmitError = "Login dulu untuk rate game ini."
                                         showRatingPopup = true
                                     } else if (detailMyRating > 0) {
@@ -1933,6 +1937,12 @@ fun HomeScreen(
                     // Download button with inline progress
                     Button(
                         onClick  = {
+                            // v6.8.3: Guest restriction — download APK requires login
+                            if (api.isGuest()) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                android.widget.Toast.makeText(context, "Login diperlukan untuk download APK FIFA 16. Guest mode hanya untuk browse.", android.widget.Toast.LENGTH_LONG).show()
+                                return@Button
+                            }
                             if (dlProgress < 0f || dlProgress >= 2f) {
                                 // Phase 4: light haptic on download trigger.
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -3965,7 +3975,9 @@ fun CommunityScreen(
                         .background(Color.White)
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            if (!api.loggedIn()) {
+                            if (api.isGuest()) {
+                                toast("Login diperlukan untuk posting. Guest mode hanya untuk browse.")
+                            } else if (!api.loggedIn()) {
                                 toast("Login dulu untuk membuat post")
                             } else {
                                 showCreateSheet = true
