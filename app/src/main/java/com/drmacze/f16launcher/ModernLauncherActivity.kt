@@ -268,7 +268,7 @@ const val FIFA16_APK_URL    = "${DLAVIE_DATA_BASE}/DLavie26.apk"
 const val FIFA16_MANIFEST   = "${DLAVIE_DATA_BASE}/manifest.json"
 const val FIFA16_OBB_MAIN   = "${DLAVIE_DATA_BASE}/main.13.com.ea.gp.fifaworld.obb"
 const val FIFA16_OBB_PATCH  = "${DLAVIE_DATA_BASE}/patch.26.com.ea.gp.fifaworld.obb"
-const val LAUNCHER_APK_URL  = "${DLAVIE_PROXY_URL}?f=launcher-latest"
+const val LAUNCHER_APK_URL  = "https://github.com/drmacze/F16-Launcher/releases/latest/download/DLavie26-Launcher-debug.apk"
 const val MARKER_PATH_16    = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
 
 // FIFA 15 (DLavie 15)
