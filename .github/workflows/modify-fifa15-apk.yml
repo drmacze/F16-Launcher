@@ -1,0 +1,219 @@
+name: Modify FIFA 15 APK (Launcher-Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_source_url:
+        description: 'URL APK FIFA 15 source (bisa Supabase proxy atau GitHub direct)'
+        required: false
+        default: 'https://github.com/drmacze/F15/releases/download/v2.1.8/DLavie15-Android16-Compatible.apk'
+      target_sdk:
+        description: 'Target SDK untuk APK (default 34 = Android 14)'
+        required: false
+        default: '34'
+
+jobs:
+  modify-fifa15-apk:
+    name: Modify FIFA 15 APK (Remove LAUNCHER category)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install apktool + apksigner + zipalign
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Install apktool
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq apktool apksigner zipalign wget
+          apktool --version
+          apksigner --version
+          zipalign --help 2>&1 | head -2
+
+      - name: Download source APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_URL="${{ inputs.apk_source_url || 'https://github.com/drmacze/F15/releases/download/v2.1.8/DLavie15-Android16-Compatible.apk' }}"
+          echo "Downloading from: $SOURCE_URL"
+          curl -L -s -o fifa15-original.apk "$SOURCE_URL"
+          ls -lh fifa15-original.apk
+          file fifa15-original.apk
+          # Verify it's a valid APK
+          if ! unzip -t fifa15-original.apk > /dev/null 2>&1; then
+            echo "ERROR: Downloaded file is not a valid APK/ZIP"
+            exit 1
+          fi
+          echo "✅ APK is valid"
+
+      - name: Decode APK with apktool
+        shell: bash
+        run: |
+          set -euo pipefail
+          apktool d -f -o fifa15-decoded fifa15-original.apk
+          ls -la fifa15-decoded/
+          echo "---"
+          echo "Original AndroidManifest.xml (first 30 lines):"
+          head -30 fifa15-decoded/AndroidManifest.xml
+
+      - name: Remove LAUNCHER category from manifest
+        shell: python
+        run: |
+          import re
+          from pathlib import Path
+
+          manifest_path = Path("fifa15-decoded/AndroidManifest.xml")
+          content = manifest_path.read_text()
+
+          # Find the LAUNCHER category line within an intent-filter
+          # Format: <category android:name="android.intent.category.LAUNCHER" />
+          launcher_pattern = re.compile(
+              r'<category\s+android:name="android\.intent\.category\.LAUNCHER"\s*/?>',
+              re.IGNORECASE
+          )
+
+          matches = launcher_pattern.findall(content)
+          print(f"Found {len(matches)} LAUNCHER category declaration(s)")
+
+          if len(matches) == 0:
+              print("WARNING: No LAUNCHER category found. APK may already be modified.")
+          else:
+              # Remove the LAUNCHER category line(s)
+              new_content = launcher_pattern.sub('', content)
+              # Clean up empty lines left behind
+              new_content = re.sub(r'\n\s*\n\s*\n', '\n\n', new_content)
+              manifest_path.write_text(new_content)
+              print("✅ Removed LAUNCHER category from AndroidManifest.xml")
+
+          # Also: bump targetSdkVersion to user-specified value (default 34)
+          target_sdk = "${{ inputs.target_sdk || '34' }}"
+          target_sdk_pattern = re.compile(
+              r'(<uses-sdk[^>]*android:targetSdkVersion=")(\d+)("[^>]*>)',
+              re.IGNORECASE
+          )
+          new_content, sdk_count = target_sdk_pattern.subn(
+              rf'\g<1>{target_sdk}\g<3>', content
+          )
+          if sdk_count > 0:
+              manifest_path.write_text(new_content)
+              print(f"✅ Bumped targetSdkVersion to {target_sdk} ({sdk_count} occurrence)")
+          else:
+              print(f"INFO: targetSdkVersion pattern not found, keeping existing")
+
+          # Also bump minSdkVersion to at least 19 (Android 4.4) for modern compatibility
+          # Only if current minSdk < 19
+          min_sdk_pattern = re.compile(
+              r'(<uses-sdk[^>]*android:minSdkVersion=")(\d+)("[^>]*>)',
+              re.IGNORECASE
+          )
+          m = min_sdk_pattern.search(manifest_path.read_text())
+          if m:
+              current_min = int(m.group(2))
+              if current_min < 19:
+                  new_content = min_sdk_pattern.sub(rf'\g<1>19\g<3>', manifest_path.read_text())
+                  manifest_path.write_text(new_content)
+                  print(f"✅ Bumped minSdkVersion from {current_min} to 19")
+
+          print("---")
+          print("Modified AndroidManifest.xml (first 30 lines):")
+          print(manifest_path.read_text()[:2000])
+
+      - name: Rebuild APK with apktool
+        shell: bash
+        run: |
+          set -euo pipefail
+          apktool b -f -o fifa15-rebuilt.apk fifa15-decoded
+          ls -lh fifa15-rebuilt.apk
+          file fifa15-rebuilt.apk
+
+      - name: Decode signing keystore from secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > /tmp/dlavie.keystore
+          ls -lh /tmp/dlavie.keystore
+          keytool -list -v -keystore /tmp/dlavie.keystore \
+            -storepass "${{ secrets.SIGNING_KEYSTORE_PASSWORD }}" \
+            -alias "${{ secrets.SIGNING_KEY_ALIAS }}" 2>&1 | head -15
+
+      - name: Zip-align APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          zipalign -v -p 4 fifa15-rebuilt.apk fifa15-aligned.apk 2>&1 | tail -5
+          ls -lh fifa15-aligned.apk
+
+      - name: Sign APK with DLavie keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner sign \
+            --ks /tmp/dlavie.keystore \
+            --ks-key-alias ${{ secrets.SIGNING_KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.SIGNING_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.SIGNING_KEY_PASSWORD }} \
+            --out fifa15-launcher-only-signed.apk \
+            fifa15-aligned.apk
+          ls -lh fifa15-launcher-only-signed.apk
+
+      - name: Verify signature
+        shell: bash
+        run: |
+          apksigner verify --print-certs fifa15-launcher-only-signed.apk | head -10
+          echo "---"
+          # Verify LAUNCHER category is removed
+          mkdir -p verify-extract
+          unzip -p fifa15-launcher-only-signed.apk AndroidManifest.xml > verify-extract/manifest.bin
+          # Binary, but we can search for "LAUNCHER" string
+          if strings verify-extract/manifest.bin | grep -q "android.intent.category.LAUNCHER"; then
+            echo "❌ WARNING: LAUNCHER category still present in signed APK"
+            exit 1
+          else
+            echo "✅ LAUNCHER category successfully removed"
+          fi
+
+      - name: Upload modified APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fifa15-launcher-only-apk
+          path: fifa15-launcher-only-signed.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload to Supabase Storage
+        shell: bash
+        env:
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PROJECT_URL: https://lvmucsxbmadtsgrxuwmo.supabase.co
+        run: |
+          set -euo pipefail
+          # Upload to Supabase Storage bucket apk-dist/fifa15/
+          curl -s -X POST \
+            "$SUPABASE_PROJECT_URL/storage/v1/object/apk-dist/fifa15/DLavie15-LauncherOnly.apk" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            -H "x-upsert: true" \
+            --data-binary @fifa15-launcher-only-signed.apk \
+            --max-time 300 | tee upload-response.json
+          echo ""
+          # Verify upload
+          curl -sI "$SUPABASE_PROJECT_URL/storage/v1/object/public/apk-dist/fifa15/DLavie15-LauncherOnly.apk" | head -5
+
+      - name: Cleanup keystore
+        if: always()
+        shell: bash
+        run: |
+          rm -f /tmp/dlavie.keystore
+          echo "✅ Keystore cleaned up"
