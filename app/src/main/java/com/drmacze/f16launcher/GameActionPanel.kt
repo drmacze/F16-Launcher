@@ -112,6 +112,15 @@ private val PanelYellow    = Color(0xFFFFFF88)
 private val PanelDim       = Color(0xDD000000)  // 87% black for background
 private val PanelAccent    = Color(0xFFFFFFFF)
 
+/** Single step in the GameActionPanel progress bar. Built per render based on game state. */
+private data class Step(
+    val num: Int,
+    val label: String,
+    val done: Boolean,
+    val action: () -> Unit,
+    val icon: ImageVector
+)
+
 @Composable
 fun GameActionPanel(
     game: GameItem,
@@ -272,14 +281,6 @@ fun GameActionPanel(
     }
 
     // ── Build step list (auto-skip: only show steps NOT done + Play) ──
-    data class Step(
-        val num: Int,
-        val label: String,
-        val done: Boolean,
-        val action: () -> Unit,
-        val icon: ImageVector
-    )
-
     val visibleSteps = remember(apkInstalled, dataReady, patched, game, apkDownloadActive, installing) {
         val steps = mutableListOf<Step>()
         var n = 1
@@ -722,7 +723,7 @@ fun GameActionPanel(
 
 @Composable
 private fun StepCircle(
-    step: GameActionPanel.Step,
+    step: Step,
     isLast: Boolean,
     canInteract: Boolean,
     modifier: Modifier = Modifier
