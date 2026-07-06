@@ -56,17 +56,23 @@ fun FloatingChatBot(api: CommunityApi) {
     var expanded by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf<String?>(null) } // null = menu, "report", "live_chat", "assistant"
 
-    // v7.9.20: Unread message count — check saat app dibuka + periodic poll (15s)
+    // v7.9.22: Unread count — poll + refresh trigger
     var unreadCount by remember { mutableStateOf(0) }
+    var refreshTrigger by remember { mutableStateOf(0) }  // bump to force recount
+
     LaunchedEffect(api.loggedIn()) {
         if (api.loggedIn()) {
-            // Initial check immediately
             unreadCount = countUnreadMessages(api)
-            // Poll every 15 seconds (lebih cepat supaya badge cepat muncul)
             while (true) {
-                delay(15_000)
+                delay(10_000)
                 unreadCount = countUnreadMessages(api)
             }
+        }
+    }
+    // v7.9.22: Recount when refreshTrigger changes (e.g., after closing detail)
+    LaunchedEffect(refreshTrigger) {
+        if (api.loggedIn() && refreshTrigger > 0) {
+            unreadCount = countUnreadMessages(api)
         }
     }
 
@@ -175,7 +181,8 @@ fun FloatingChatBot(api: CommunityApi) {
                 api = api,
                 onBack = { mode = null },
                 onClose = { expanded = false; mode = null },
-                onOpenActiveChat = { mode = "live_chat" }
+                onOpenActiveChat = { mode = "live_chat" },
+                onReadUpdate = { refreshTrigger++ }  // v7.9.22: trigger recount after read
             )
         }
     }
@@ -927,7 +934,8 @@ private fun ChatHistoryScreen(
     api: CommunityApi,
     onBack: () -> Unit,
     onClose: () -> Unit,
-    onOpenActiveChat: () -> Unit
+    onOpenActiveChat: () -> Unit,
+    onReadUpdate: () -> Unit = {}  // v7.9.22: callback after markMessagesAsRead
 ) {
     val scope = rememberCoroutineScope()
     var history by remember { mutableStateOf<List<ChatHistoryEntry>>(emptyList()) }
@@ -956,7 +964,8 @@ private fun ChatHistoryScreen(
             api = api,
             ticketId = selectedTicketId!!,
             entry = selectedEntry,
-            onBack = { selectedTicketId = null }
+            onBack = { selectedTicketId = null },
+            onReadUpdate = onReadUpdate  // v7.9.22: pass callback
         )
         return
     }
@@ -1126,6 +1135,24 @@ private fun ChatHistoryEntryCard(entry: ChatHistoryEntry, onClick: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 Icon(iconVector, null, tint = iconTint, modifier = Modifier.size(20.dp))
+                // v7.9.22: Red dot untuk ticket dengan unread dev_feedback/reply
+                // Report: ada dev_feedback → unread
+                // Live chat: lastMessageSender = admin/bot → unread
+                val hasUnread = if (isReport) {
+                    entry.devFeedback.isNotBlank()
+                } else {
+                    entry.lastMessageSender == "admin" || entry.lastMessageSender == "bot"
+                }
+                if (hasUnread) {
+                    Box(
+                        Modifier.align(Alignment.TopEnd)
+                            .offset(x = 4.dp, y = (-4).dp)
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFF4444))
+                            .border(2.dp, PureBlack, CircleShape)
+                    )
+                }
             }
             Spacer(Modifier.width(12.dp))
 
@@ -1226,8 +1253,9 @@ private fun ChatHistoryEntryCard(entry: ChatHistoryEntry, onClick: () -> Unit) {
 private fun ChatHistoryDetail(
     api: CommunityApi,
     ticketId: String,
-    entry: ChatHistoryEntry? = null,  // v7.9.19: pass entry for report detail
-    onBack: () -> Unit
+    entry: ChatHistoryEntry? = null,
+    onBack: () -> Unit,
+    onReadUpdate: () -> Unit = {}  // v7.9.22: trigger badge recount after read
 ) {
     val scope = rememberCoroutineScope()
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
@@ -1244,6 +1272,8 @@ private fun ChatHistoryDetail(
         loading = false
         // Mark as read (clear unread badge)
         markMessagesAsRead(api, ticketId)
+        // v7.9.22: Trigger badge recount immediately after marking as read
+        onReadUpdate()
         if (!isReport && messages.isNotEmpty()) {
             delay(100)
             listState.animateScrollToItem(messages.size - 1)
