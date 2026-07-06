@@ -78,17 +78,16 @@ fun FloatingChatBot(api: CommunityApi) {
     }
 
     if (!expanded) {
-        // v7.9.25: Speed Dial FAB — 1 main button, tap → icons expand, 3s idle → collapse.
-        // Default: hanya 1 FAB bulat (purple gradient).
-        // Tap FAB → 4 icon keluar dengan animasi (scale + offset ke kiri).
-        // 3 detik no interaction → icon collapse kembali ke FAB.
-        // Auto-hide: FAB slide ke kanan edge setelah 3s (saat collapsed).
+        // v7.9.26: Speed Dial FAB — WHITE main button (bukan purple).
+        // Fix: icon tidak terpotong (padding cukup), hide delay 5s (bukan 3s).
+        // 1 main FAB bulat putih. Tap → 4 icon expand. 5s no interaction → collapse.
+        // Auto-hide: FAB slide ke kanan edge setelah 5s (saat collapsed).
 
-        var isExpanded by remember { mutableStateOf(false) }  // icon speed dial expanded?
-        var isHidden by remember { mutableStateOf(false) }  // auto-hide to edge?
+        var isExpanded by remember { mutableStateOf(false) }
+        var isHidden by remember { mutableStateOf(false) }
         var lastInteraction by remember { mutableStateOf(System.currentTimeMillis()) }
 
-        // Auto-hide ke edge (hanya saat collapsed, tidak saat expanded)
+        // v7.9.26: Auto-hide 5 detik (sebelumnya 3s — terlalu cepat)
         val offsetX by animateDpAsState(
             targetValue = if (isHidden && !isExpanded) 28.dp else 0.dp,
             animationSpec = tween(400, easing = FastOutSlowInEasing),
@@ -97,17 +96,17 @@ fun FloatingChatBot(api: CommunityApi) {
 
         LaunchedEffect(isHidden, isExpanded) {
             if (!isHidden && !isExpanded) {
-                delay(3000)
+                delay(5000)
                 isHidden = true
             }
         }
 
-        // v7.9.25: Auto-collapse speed dial setelah 3 detik no interaction
+        // v7.9.26: Auto-collapse 5 detik no interaction (sebelumnya 3s)
         LaunchedEffect(isExpanded, lastInteraction) {
             if (isExpanded) {
                 while (true) {
                     delay(1000)
-                    if (System.currentTimeMillis() - lastInteraction > 3000) {
+                    if (System.currentTimeMillis() - lastInteraction > 5000) {
                         isExpanded = false
                         break
                     }
@@ -115,7 +114,6 @@ fun FloatingChatBot(api: CommunityApi) {
             }
         }
 
-        // Animasi expand/collapse
         val fabRotation by animateFloatAsState(
             targetValue = if (isExpanded) 135f else 0f,
             animationSpec = tween(300, easing = FastOutSlowInEasing),
@@ -132,8 +130,7 @@ fun FloatingChatBot(api: CommunityApi) {
                 Modifier.offset(x = offsetX)
             ) {
                 Box(contentAlignment = Alignment.CenterEnd) {
-                    // ── Speed dial icons (expand ke kiri) ──
-                    // 4 icon dalam row, muncul saat isExpanded=true
+                    // ── Speed dial icons ──
                     val iconItems = listOf(
                         Triple(Icons.Rounded.BugReport, "Report", "report"),
                         Triple(Icons.Rounded.SupportAgent, "Live Chat", "live_chat"),
@@ -142,8 +139,11 @@ fun FloatingChatBot(api: CommunityApi) {
                     )
 
                     Row(
-                        Modifier.offset(x = if (isExpanded) 0.dp else 52.dp),  // hide di belakang FAB saat collapsed
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        // v7.9.26: Fix terpotong — offset lebih besar + padding kanan
+                        Modifier
+                            .offset(x = if (isExpanded) 0.dp else 60.dp)
+                            .padding(end = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         iconItems.forEachIndexed { index, (icon, label, modeKey) ->
@@ -183,7 +183,6 @@ fun FloatingChatBot(api: CommunityApi) {
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(icon, contentDescription = label, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(20.dp))
-                                // Badge on Riwayat icon
                                 if (modeKey == "history" && unreadCount > 0) {
                                     Box(
                                         Modifier.align(Alignment.TopEnd)
@@ -205,23 +204,19 @@ fun FloatingChatBot(api: CommunityApi) {
                         }
                     }
 
-                    // ── Main FAB (purple gradient, orbit offset) ──
+                    // ── Main FAB — WHITE (bukan purple) ──
                     Box(
                         Modifier
-                            .offset(x = 16.dp)  // orbit: partially outside
+                            .offset(x = 16.dp)
                             .size(52.dp)
                             .shadow(
                                 elevation = if (isExpanded) 16.dp else 12.dp,
                                 shape = CircleShape,
                                 ambientColor = Color.Black.copy(alpha = 0.3f),
-                                spotColor = Color(0xFF7C4DFF).copy(alpha = 0.4f)
+                                spotColor = Color.Black.copy(alpha = 0.2f)
                             )
                             .clip(CircleShape)
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(Color(0xFF7C4DFF), Color(0xFF651FFF))
-                                )
-                            )
+                            .background(Color.White)  // v7.9.26: WHITE (bukan purple gradient)
                             .clickable {
                                 lastInteraction = System.currentTimeMillis()
                                 isHidden = false
@@ -229,14 +224,12 @@ fun FloatingChatBot(api: CommunityApi) {
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        // Icon rotates when expanded (plus → close)
                         Icon(
                             Icons.Rounded.Add,
                             contentDescription = if (isExpanded) "Tutup" else "DLavie Assistant",
-                            tint = Color.White,
+                            tint = Color.Black,  // v7.9.26: black icon on white bg
                             modifier = Modifier.size(24.dp).rotate(fabRotation)
                         )
-                        // Red badge on FAB if unread
                         if (unreadCount > 0) {
                             Box(
                                 Modifier.align(Alignment.TopEnd)
@@ -244,7 +237,7 @@ fun FloatingChatBot(api: CommunityApi) {
                                     .size(if (unreadCount > 9) 20.dp else 16.dp)
                                     .clip(CircleShape)
                                     .background(Color(0xFFFF4444))
-                                    .border(2.dp, Color(0xFF1E1E1E), CircleShape),
+                                    .border(2.dp, Color.White, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
