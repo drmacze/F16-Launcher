@@ -84,7 +84,12 @@ fun FloatingChatBot(api: CommunityApi) {
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(end = 16.dp, bottom = 96.dp),  // v6.8: clear new fixed bottom nav bar
+                // v7.9.1: bottom = 168.dp — stack di atas Post FAB (yang ada di 96.dp).
+                // Sebelumnya 96.dp → overlap dengan Post FAB di halaman Komunitas.
+                // Sekarang Live Chat FAB selalu di atas Post FAB dengan gap 16dp.
+                // Untuk page lain (tanpa Post FAB), posisi ini aman karena masih
+                // di atas FloatingNav (yang ada di bottom=16dp+64dp+center button 22dp).
+                .padding(end = 16.dp, bottom = 168.dp),
             contentAlignment = Alignment.BottomEnd
         ) {
             Box(
@@ -147,13 +152,24 @@ fun FloatingChatBot(api: CommunityApi) {
             "live_chat" -> LiveChatScreen(
                 api = api,
                 onBack = { mode = null },
-                onClose = { expanded = false; mode = null }
+                onClose = { expanded = false; mode = null },
+                onOpenHistory = { mode = "history" }
             )
             "assistant" -> LiveChatScreen(
                 api = api,
                 isAssistant = true,
                 onBack = { mode = null },
-                onClose = { expanded = false; mode = null }
+                onClose = { expanded = false; mode = null },
+                onOpenHistory = { mode = "history" }
+            )
+            // v7.9.1: Riwayat Chat — list semua ticket (open + closed) yang dimiliki user.
+            // Memanggil fetchChatHistory() untuk load data dari Supabase support_tickets.
+            // User bisa tap entry untuk lihat pesan di ticket tersebut (read-only untuk closed).
+            "history" -> ChatHistoryScreen(
+                api = api,
+                onBack = { mode = null },
+                onClose = { expanded = false; mode = null },
+                onOpenActiveChat = { mode = "live_chat" }
             )
         }
     }
@@ -202,6 +218,16 @@ private fun ChatBotMenu(onSelect: (String) -> Unit, onClose: () -> Unit) {
                     title = "Live Chat",
                     subtitle = "Chat langsung dengan tim developer",
                     onClick = { onSelect("live_chat") }
+                )
+                Spacer(Modifier.height(12.dp))
+
+                // v7.9.1: Riwayat Chat button — list semua chat sebelumnya
+                // (open + closed). User bisa lihat balasan developer di sesi lama.
+                ChatBotMenuItem(
+                    icon = Icons.Rounded.History,
+                    title = "Riwayat Chat",
+                    subtitle = "Lihat chat sebelumnya dengan developer",
+                    onClick = { onSelect("history") }
                 )
                 Spacer(Modifier.height(12.dp))
 
@@ -421,7 +447,16 @@ private fun ReportForm(api: CommunityApi, onBack: () -> Unit, onClose: () -> Uni
 // ─── Live Chat ──────────────────────────────────────────────────────────────
 
 @Composable
-private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBack: () -> Unit, onClose: () -> Unit) {
+private fun LiveChatScreen(
+    api: CommunityApi,
+    isAssistant: Boolean = false,
+    onBack: () -> Unit,
+    onClose: () -> Unit,
+    // v7.9.1: callback untuk navigasi langsung ke halaman Riwayat Chat dari form state.
+    // Memudahkan user yang ingin lihat balasan developer di sesi lama tanpa harus
+    // kembali ke menu utama ChatBot dulu.
+    onOpenHistory: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
@@ -695,6 +730,28 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
                                 Text("Mulai", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
                             }
                         }
+                        // v7.9.1: Tombol "Lihat Riwayat Chat" — shortcut ke halaman history.
+                        // Bantu user yang mungkin sudah pernah chat sebelumnya untuk
+                        // melihat balasan developer di sesi lama tanpa harus mulai sesi baru.
+                        Spacer(Modifier.height(12.dp))
+                        Surface(
+                            Modifier.clickable { onOpenHistory() },
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color.White.copy(alpha = 0.05f),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Rounded.History, null, tint = Color.White.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Lihat Riwayat Chat", color = Color.White.copy(alpha = 0.7f),
+                                    fontSize = 12.sp, fontFamily = InterFontFamily)
+                            }
+                        }
                     }
                 } else if (ticketStatus == "pending") {
                     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -827,6 +884,352 @@ private fun ChatBubble(msg: ChatMessage) {
             fontFamily = InterFontFamily,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
         )
+    }
+}
+
+// ─── v7.9.1: Chat History Screen ──────────────────────────────────────────────
+// List semua ticket (live_chat + assistant) milik user — open, pending, closed.
+// Tiap entry: icon, kategori, status badge, pesan terakhir (preview), timestamp.
+// Tap closed ticket → buka ChatHistoryDetail (read-only).
+// Tap open/pending ticket → lanjutkan sesi (buka LiveChatScreen via onOpenActiveChat).
+// ──────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun ChatHistoryScreen(
+    api: CommunityApi,
+    onBack: () -> Unit,
+    onClose: () -> Unit,
+    onOpenActiveChat: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var history by remember { mutableStateOf<List<ChatHistoryEntry>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var selectedTicketId by remember { mutableStateOf<String?>(null) }
+
+    // Load history on launch
+    LaunchedEffect(Unit) {
+        loading = true
+        error = null
+        val result = fetchChatHistory(api)
+        history = result
+        loading = if (result.isEmpty() && !api.loggedIn()) {
+            error = "Login diperlukan untuk melihat riwayat chat"
+            false
+        } else {
+            false
+        }
+    }
+
+    if (selectedTicketId != null) {
+        // Show detail view for selected ticket
+        ChatHistoryDetail(
+            api = api,
+            ticketId = selectedTicketId!!,
+            onBack = { selectedTicketId = null }
+        )
+        return
+    }
+
+    Dialog(onDismissRequest = onClose) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = PureBlack,
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+        ) {
+            Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
+                // Header
+                Surface(Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.05f)) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.ArrowBack, null, tint = Color.White,
+                            modifier = Modifier.size(24.dp).clickable { onBack() })
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Riwayat Chat", color = Color.White, fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                            Text("Percakapan sebelumnya dengan developer",
+                                color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp,
+                                fontFamily = InterFontFamily)
+                        }
+                        // Refresh button
+                        Icon(Icons.Rounded.Refresh, null, tint = Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier.size(22.dp).clickable {
+                                scope.launch {
+                                    loading = true
+                                    history = fetchChatHistory(api)
+                                    loading = false
+                                }
+                            })
+                    }
+                }
+
+                // Content
+                if (loading) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp))
+                    }
+                } else if (error != null) {
+                    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Rounded.ErrorOutline, null, tint = Color.White.copy(alpha = 0.5f),
+                                modifier = Modifier.size(48.dp))
+                            Spacer(Modifier.height(12.dp))
+                            Text(error!!, color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp,
+                                textAlign = TextAlign.Center, fontFamily = InterFontFamily)
+                        }
+                    }
+                } else if (history.isEmpty()) {
+                    // Empty state
+                    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Rounded.ChatBubbleOutline, null, tint = Color.White.copy(alpha = 0.3f),
+                                modifier = Modifier.size(56.dp))
+                            Spacer(Modifier.height(16.dp))
+                            Text("Belum ada riwayat chat", color = Color.White, fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                            Spacer(Modifier.height(8.dp))
+                            Text("Percakapan Live Chat dan Assistant akan muncul di sini",
+                                color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp,
+                                textAlign = TextAlign.Center, fontFamily = InterFontFamily)
+                            Spacer(Modifier.height(24.dp))
+                            Surface(Modifier.clickable { onClose() },
+                                shape = RoundedCornerShape(12.dp), color = Color.White) {
+                                Text("Tutup", color = Color.Black, fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold, fontFamily = InterFontFamily,
+                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp))
+                            }
+                        }
+                    }
+                } else {
+                    // List of history entries
+                    LazyColumn(
+                        Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(history) { entry ->
+                            ChatHistoryEntryCard(
+                                entry = entry,
+                                onClick = {
+                                    if (entry.status == "open" || entry.status == "pending") {
+                                        // Active session — open Live Chat (will resume)
+                                        onOpenActiveChat()
+                                    } else {
+                                        // Closed session — open read-only detail
+                                        selectedTicketId = entry.ticketId
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatHistoryEntryCard(entry: ChatHistoryEntry, onClick: () -> Unit) {
+    val isLiveChat = entry.category == "live_chat"
+    val isActive = entry.status == "open" || entry.status == "pending"
+    val statusColor = when (entry.status) {
+        "open" -> Color(0xFF4ADE80)      // green
+        "pending" -> Color(0xFFFBBF24)   // yellow
+        "closed" -> Color.White.copy(alpha = 0.3f)
+        else -> Color.White.copy(alpha = 0.3f)
+    }
+    val statusLabel = when (entry.status) {
+        "open" -> "Aktif"
+        "pending" -> "Menunggu"
+        "closed" -> "Selesai"
+        else -> entry.status
+    }
+
+    Surface(
+        Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = Color.White.copy(alpha = 0.04f),
+        border = BorderStroke(1.dp, if (isActive) Color(0xFF4ADE80).copy(alpha = 0.25f) else Color.White.copy(alpha = 0.08f))
+    ) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Icon
+            Box(
+                Modifier.size(40.dp).clip(CircleShape)
+                    .background(
+                        if (isLiveChat) Color(0xFF3B82F6).copy(alpha = 0.15f)
+                        else Color(0xFFA855F7).copy(alpha = 0.15f)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (isLiveChat) Icons.Rounded.SupportAgent else Icons.Rounded.AutoAwesome,
+                    null, tint = if (isLiveChat) Color(0xFF60A5FA) else Color(0xFFC084FC),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+
+            // Content
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (isLiveChat) "Live Chat" else "Assistant",
+                        color = Color.White, fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold, fontFamily = InterFontFamily
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    // Status badge
+                    Box(
+                        Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(statusColor.copy(alpha = 0.18f))
+                    ) {
+                        Text(
+                            statusLabel,
+                            color = statusColor,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = InterFontFamily,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    // Message count
+                    Text(
+                        "${entry.messageCount} pesan",
+                        color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp,
+                        fontFamily = InterFontFamily
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                // Last message preview
+                val preview = entry.lastMessageBody.ifBlank {
+                    if (entry.messageCount == 0) "Belum ada pesan" else "(gambar)"
+                }
+                val previewPrefix = when (entry.lastMessageSender) {
+                    "user" -> "Anda: "
+                    "admin" -> "Developer: "
+                    "bot" -> "Bot: "
+                    else -> ""
+                }
+                Text(
+                    previewPrefix + preview,
+                    color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp,
+                    fontFamily = InterFontFamily, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(4.dp))
+                // Timestamp
+                val timeStr = try {
+                    val parsed = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).parse(
+                        if (entry.lastMessageCreatedAt.isNotBlank()) entry.lastMessageCreatedAt
+                        else entry.createdAt
+                    )
+                    val cal = Calendar.getInstance()
+                    val now = cal.timeInMillis
+                    cal.time = parsed ?: Date()
+                    val then = cal.timeInMillis
+                    val diffMin = (now - then) / (60 * 1000)
+                    val diffHr = diffMin / 60
+                    val diffDay = diffHr / 24
+                    when {
+                        diffMin < 1 -> "Baru saja"
+                        diffMin < 60 -> "${diffMin} menit lalu"
+                        diffHr < 24 -> "${diffHr} jam lalu"
+                        diffDay < 7 -> "${diffDay} hari lalu"
+                        else -> SimpleDateFormat("dd MMM yyyy", Locale("id", "ID")).format(parsed)
+                    }
+                } catch (_: Exception) { "" }
+                Text(
+                    timeStr,
+                    color = Color.White.copy(alpha = 0.3f), fontSize = 10.sp,
+                    fontFamily = InterFontFamily
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatHistoryDetail(
+    api: CommunityApi,
+    ticketId: String,
+    onBack: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(ticketId) {
+        loading = true
+        messages = fetchAllTicketMessages(api, ticketId)
+        loading = false
+        // Mark as read (clear unread badge)
+        markMessagesAsRead(api, ticketId)
+        // Scroll to bottom after load
+        if (messages.isNotEmpty()) {
+            delay(100)
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
+    Dialog(onDismissRequest = onBack) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = PureBlack,
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+        ) {
+            Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
+                // Header
+                Surface(Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.05f)) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.ArrowBack, null, tint = Color.White,
+                            modifier = Modifier.size(24.dp).clickable { onBack() })
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Detail Percakapan", color = Color.White, fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                            Text("Sesi selesai • Read-only",
+                                color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp,
+                                fontFamily = InterFontFamily)
+                        }
+                    }
+                }
+
+                // Messages list
+                if (loading) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp))
+                    }
+                } else if (messages.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Rounded.ChatBubbleOutline, null, tint = Color.White.copy(alpha = 0.3f),
+                                modifier = Modifier.size(48.dp))
+                            Spacer(Modifier.height(12.dp))
+                            Text("Tidak ada pesan", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp,
+                                fontFamily = InterFontFamily)
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        Modifier.weight(1f).padding(horizontal = 12.dp),
+                        state = listState,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(messages) { msg -> ChatBubble(msg) }
+                    }
+                    // Footer (read-only notice)
+                    Surface(Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.03f)) {
+                        Box(Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
+                            Text("Sesi ini telah berakhir. Pesan bersifat read-only.",
+                                color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp,
+                                fontFamily = InterFontFamily, textAlign = TextAlign.Center)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1376,18 +1779,20 @@ private fun markMessagesAsRead(api: CommunityApi, ticketId: String) {
 
 /**
  * v7.9.0: Fetch chat history untuk ticket yang sudah closed.
- * Return list of (ticketId, createdAt, messageCount, lastMessage) untuk ditampilkan
- * sebagai "Riwayat Chat" di Live Chat screen.
+ * v7.9.1: UPDATE — sekarang juga fetch last_message_preview + message_count
+ * per ticket, supaya UI Riwayat Chat bisa tampilkan preview pesan terakhir.
+ * Return list of ChatHistoryEntry (urut created_at desc, limit 20).
  */
 private suspend fun fetchChatHistory(api: CommunityApi): List<ChatHistoryEntry> = withContext(Dispatchers.IO) {
     if (!api.loggedIn()) return@withContext emptyList()
     try {
         val userId = api.userId()
+        // 1. Fetch tickets (live_chat + assistant, semua status)
         val url = URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets" +
             "?user_id=eq.$userId" +
             "&category=in.(live_chat,assistant)" +
-            "&order=created_at.desc&limit=10" +
-            "&select=id,status,category,created_at,closed_at")
+            "&order=created_at.desc&limit=20" +
+            "&select=id,status,category,created_at,closed_at,last_activity_at")
         val conn = (url.openConnection() as HttpURLConnection).apply {
             connectTimeout = 10000
             readTimeout = 15000
@@ -1400,12 +1805,44 @@ private suspend fun fetchChatHistory(api: CommunityApi): List<ChatHistoryEntry> 
         val result = mutableListOf<ChatHistoryEntry>()
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
+            val ticketId = o.optString("id")
+            // 2. Fetch last message + total count untuk ticket ini
+            val msgUrl = URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/ticket_messages" +
+                "?ticket_id=eq.$ticketId" +
+                "&order=created_at.desc&limit=1" +
+                "&select=body,sender_type,created_at")
+            val msgConn = (msgUrl.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 8000
+                readTimeout = 10000
+                setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+                setRequestProperty("Authorization", "Bearer ${api.token()}")
+                // Supabase returns count via header Prefer: count=exact
+                setRequestProperty("Prefer", "count=exact")
+            }
+            val msgText = msgConn.inputStream?.bufferedReader()?.readText().orEmpty()
+            val totalRange = msgConn.getHeaderField("Content-Range") ?: "0-0/*"
+            msgConn.disconnect()
+            val totalCount = try {
+                val afterSlash = totalRange.substringAfter("/", "0")
+                afterSlash.substringBefore("?").trim().toIntOrNull() ?: 0
+            } catch (_: Exception) { 0 }
+
+            val msgArr = JSONArray(msgText)
+            val lastBody = if (msgArr.length() > 0) msgArr.getJSONObject(0).optString("body", "") else ""
+            val lastSender = if (msgArr.length() > 0) msgArr.getJSONObject(0).optString("sender_type", "") else ""
+            val lastCreatedAt = if (msgArr.length() > 0) msgArr.getJSONObject(0).optString("created_at", "") else ""
+
             result.add(ChatHistoryEntry(
-                ticketId = o.optString("id"),
+                ticketId = ticketId,
                 status = o.optString("status"),
                 category = o.optString("category"),
                 createdAt = o.optString("created_at"),
-                closedAt = o.optString("closed_at")
+                closedAt = o.optString("closed_at"),
+                lastActivityAt = o.optString("last_activity_at"),
+                messageCount = totalCount,
+                lastMessageBody = lastBody,
+                lastMessageSender = lastSender,
+                lastMessageCreatedAt = lastCreatedAt
             ))
         }
         result
@@ -1415,10 +1852,60 @@ private suspend fun fetchChatHistory(api: CommunityApi): List<ChatHistoryEntry> 
     }
 }
 
+/**
+ * v7.9.1: Fetch ALL messages (user + admin + bot) untuk ticket tertentu.
+ * Berbeda dari pollMessages yang hanya fetch sender_type != user.
+ * Dipakai di ChatHistoryDetail untuk menampilkan percakapan lengkap.
+ */
+private suspend fun fetchAllTicketMessages(api: CommunityApi, ticketId: String): List<ChatMessage> = withContext(Dispatchers.IO) {
+    try {
+        val url = URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/ticket_messages" +
+            "?ticket_id=eq.$ticketId" +
+            "&order=created_at.asc" +
+            "&select=id,sender_type,body,image_url,created_at")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10000
+            readTimeout = 15000
+            setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+            setRequestProperty("Authorization", "Bearer ${api.token()}")
+        }
+        val code = conn.responseCode
+        if (code in 200..299) {
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val arr = JSONArray(text)
+            val result = mutableListOf<ChatMessage>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                result.add(ChatMessage(
+                    id = obj.optString("id"),
+                    senderType = obj.optString("sender_type"),
+                    body = obj.optString("body", ""),
+                    imageUrll = obj.optString("image_url", "").ifEmpty { null },
+                    timestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).parse(obj.optString("created_at"))?.time ?: System.currentTimeMillis()
+                ))
+            }
+            result
+        } else {
+            conn.disconnect()
+            emptyList()
+        }
+    } catch (e: Exception) {
+        Log.e("DLavieChat", "fetchAllTicketMessages failed", e)
+        emptyList()
+    }
+}
+
 data class ChatHistoryEntry(
     val ticketId: String,
     val status: String,
     val category: String,
     val createdAt: String,
-    val closedAt: String
+    val closedAt: String,
+    // v7.9.1: tambahan untuk preview UI
+    val lastActivityAt: String = "",
+    val messageCount: Int = 0,
+    val lastMessageBody: String = "",
+    val lastMessageSender: String = "",
+    val lastMessageCreatedAt: String = ""
 )

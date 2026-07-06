@@ -3911,13 +3911,18 @@ fun CommunityScreen(
                 }
 
                 // ── FAB: create new post (bottom-right, circular white bg + black +) ──
+                // v7.9.1: Pindah ke bottom = 96.dp (di atas FloatingNav) supaya
+                // tidak overlap dengan FloatingNav pill (yang ada di bottom=16dp+64dp).
+                // Live Chat FAB (di FloatingChatBot.kt) akan stack di atas Post FAB
+                // ini dengan bottom = 168.dp (gap 16dp antar FAB).
                 Box(
                     Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = TTSpacing.xl, bottom = TTSpacing.xxl)
+                        .padding(end = TTSpacing.lg, bottom = 96.dp)
                         .size(56.dp)
                         .clip(CircleShape)
                         .background(Color.White)
+                        .shadow(8.dp, CircleShape)
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             if (api.isGuest()) {
@@ -3939,6 +3944,11 @@ fun CommunityScreen(
 }
 
 // ─── Top bar: role badge + tabs + filter dropdown ──────────────────────────────
+// v7.9.1: REDESIGN — gunakan Box dengan tabs di-align Center, role badge kiri,
+// filter kanan. Sebelumnya pakai Row + 2 Spacer(weight=1f), tapi lebar role badge
+// yang variabel (MEMBER=6 char, DEVELOPER=9 char) menyebabkan tabs tidak centered
+// dan terlihat "terpotong"/off-balance di layar kecil. Dengan Box overlay, tabs
+// SELALU di tengah layar terlepas dari lebar badge/filter.
 @Composable
 private fun CommunityTopBar(
     roleBadge: String,
@@ -3949,12 +3959,14 @@ private fun CommunityTopBar(
     onToggleFilter: () -> Unit,
     onFilterSelect: (String) -> Unit
 ) {
-    Box {
-        Row(
-            Modifier.fillMaxWidth()
-                .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = TTSpacing.lg, vertical = TTSpacing.md),
+        contentAlignment = Alignment.Center
+    ) {
+        // ── Layer 1 (background): Left role badge + Right filter icon ──
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             // Left: user role badge
             Surface(
                 color = roleColor.copy(0.15f),
@@ -3968,14 +3980,6 @@ private fun CommunityTopBar(
                     fontWeight = FontWeight.Black,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                 )
-            }
-
-            Spacer(Modifier.weight(1f))
-
-            // Center: tabs (Following | For You) — underline active
-            Row(horizontalArrangement = Arrangement.spacedBy(TTSpacing.lg)) {
-                CommunityTab("Following", selectedTab == 0) { onTabSelect(0) }
-                CommunityTab("For You", selectedTab == 1) { onTabSelect(1) }
             }
 
             Spacer(Modifier.weight(1f))
@@ -4024,6 +4028,14 @@ private fun CommunityTopBar(
                     )
                 }
             }
+        }
+
+        // ── Layer 2 (overlay): Centered tabs — selalu di tengah layar ──
+        // Pakai Box dengan Center alignment supaya posisi tabs tidak
+        // terpengaruh lebar role badge (kiri) atau filter icon (kanan).
+        Row(horizontalArrangement = Arrangement.spacedBy(TTSpacing.xxl)) {
+            CommunityTab("Following", selectedTab == 0) { onTabSelect(0) }
+            CommunityTab("For You", selectedTab == 1) { onTabSelect(1) }
         }
     }
 }
