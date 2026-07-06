@@ -1243,9 +1243,9 @@ fun MainShell(
                                         val ok = uninstallGame(context, currentGame.packageName)
                                         if (ok) {
                                             detailGameInstalled = false
-                                            toast("Game berhasil dihapus")
+                                            android.widget.Toast.makeText(context, "Game berhasil dihapus", android.widget.Toast.LENGTH_SHORT).show()
                                         } else {
-                                            toast("Gagal hapus game — uninstall manual dari Settings")
+                                            android.widget.Toast.makeText(context, "Gagal hapus game — uninstall manual dari Settings", android.widget.Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 },
