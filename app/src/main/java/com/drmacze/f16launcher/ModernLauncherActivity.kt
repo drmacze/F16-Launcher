@@ -873,6 +873,7 @@ fun MainShell(
     // profileExpandedSection di-lift ke MainShell supaya SettingsScreen bisa
     // membuka Profile dengan section tertentu (password/email/profile) ter-expand.
     var showSettings           by remember { mutableStateOf(false) }
+    var showEditProfile        by remember { mutableStateOf(false) }
     var profileExpandedSection by remember { mutableStateOf<String?>(null) }
 
     // ── Visit Profile (Task 4): user ID being viewed in UserProfileScreen overlay.
@@ -1493,6 +1494,7 @@ fun MainShell(
                                         api                     = api,
                                         onLogout                = onLogout,
                                         onOpenSettings          = { showSettings = true },
+                                        onOpenEditProfile       = { showEditProfile = true },
                                         expandedSection         = profileExpandedSection,
                                         onExpandedSectionChange = { profileExpandedSection = it },
                                         onVisitProfile          = { uid -> visitingUserId = uid }
@@ -1516,6 +1518,16 @@ fun MainShell(
                     showSettings = false
                     onLogout()
                 }
+            )
+        }
+
+        // ── v3.1: Edit Profile overlay (separate from Settings) ──
+        // Triggered by the "Edit Profile" button on the Profile screen.
+        // Previously mis-wired to open Settings — now opens a real edit form.
+        if (showEditProfile) {
+            EditProfileScreen(
+                api    = api,
+                onBack = { showEditProfile = false }
             )
         }
 
@@ -5443,6 +5455,7 @@ fun ProfileScreen(
     api: CommunityApi,
     onLogout: () -> Unit,
     onOpenSettings: () -> Unit = {},
+    onOpenEditProfile: () -> Unit = {},
     expandedSection: String? = null,
     onExpandedSectionChange: (String?) -> Unit = {},
     onVisitProfile: (String) -> Unit = {}
@@ -5722,6 +5735,8 @@ fun ProfileScreen(
             }
 
             // ── Edit Profile button (pill, centered, below info) ──
+            // v3.1 FIX: was .clickable { onOpenSettings() } which opened Settings
+            //          instead of an edit form. Now opens dedicated EditProfileScreen.
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.Center
@@ -5729,7 +5744,7 @@ fun ProfileScreen(
                 Surface(
                     modifier = Modifier
                         .height(40.dp)
-                        .clickable { onOpenSettings() },
+                        .clickable { onOpenEditProfile() },
                     shape = RoundedCornerShape(20.dp),
                     color = Color.White.copy(0.08f),
                     border = BorderStroke(1.dp, Color.White.copy(0.15f))

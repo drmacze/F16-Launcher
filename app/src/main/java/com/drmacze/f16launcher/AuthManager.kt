@@ -79,6 +79,21 @@ object AuthManager {
         return "OK: Profile diperbarui."
     }
 
+    fun updateBio(accessToken: String, userId: String, newBio: String): String {
+        val b = newBio.take(200)
+        val body = JSONObject()
+            .put("id", userId)
+            .put("bio", b)
+        val (_, _) = http(
+            "PATCH",
+            "/rest/v1/profiles?id=eq.$userId",
+            body,
+            token = accessToken,
+            prefer = "return=minimal"
+        )
+        return "OK: Bio diperbarui."
+    }
+
     // ─── HTTP helper ───────────────────────────────────────────────────────────
 
     private data class Resp(val code: Int, val body: String)
