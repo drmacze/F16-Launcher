@@ -66,8 +66,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Restore
+import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.SaveAlt
+import androidx.compose.material.icons.rounded.Delete
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -871,7 +879,7 @@ private fun SaveGameSection(context: android.content.Context) {
                         if (slot.exists) {
                             Text(slot.label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
                             Text(
-                                "${formatSize(slot.sizeBytes)} • ${slot.fileCount} file • ${java.text.SimpleDateFormat("dd MMM yyyy HH:mm", java.util.Locale("id", "ID")).format(java.util.Date(slot.timestamp))}",
+                                "${formatBytesHelper(slot.sizeBytes)} • ${slot.fileCount} file • ${java.text.SimpleDateFormat("dd MMM yyyy HH:mm", java.util.Locale("id", "ID")).format(java.util.Date(slot.timestamp))}",
                                 color = DlcMuted, fontSize = 10.sp, fontFamily = InterFontFamily, maxLines = 1
                             )
                         } else {
