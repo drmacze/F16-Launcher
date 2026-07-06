@@ -8125,7 +8125,39 @@ fun GameHubScreen(
     onGameClick: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val games = remember {
+    val scope = rememberCoroutineScope()
+
+    // v7.8.1: Fetch server status dari Supabase app_config
+    var fifa16Status by remember { mutableStateOf(ServerStatus.ONLINE) }
+    var fifa15Status by remember { mutableStateOf(ServerStatus.MAINTENANCE) } // default: maintenance (masih error)
+
+    LaunchedEffect(Unit) {
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val api = CommunityApi(context)
+                // Fetch game_server_status dari app_config
+                val config = api.getAppConfig("game_server_status")
+                val fifa16 = config.optString("fifa16", "online").lowercase()
+                val fifa15 = config.optString("fifa15", "maintenance").lowercase()
+                fifa16Status = when (fifa16) {
+                    "online" -> ServerStatus.ONLINE
+                    "busy" -> ServerStatus.BUSY
+                    "maintenance" -> ServerStatus.MAINTENANCE
+                    "offline" -> ServerStatus.OFFLINE
+                    else -> ServerStatus.ONLINE
+                }
+                fifa15Status = when (fifa15) {
+                    "online" -> ServerStatus.ONLINE
+                    "busy" -> ServerStatus.BUSY
+                    "maintenance" -> ServerStatus.MAINTENANCE
+                    "offline" -> ServerStatus.OFFLINE
+                    else -> ServerStatus.MAINTENANCE
+                }
+            }
+        }
+    }
+
+    val games = remember(fifa16Status, fifa15Status) {
         listOf(
             GameItem(
                 title = "FIFA 16 Mobile",
@@ -8134,7 +8166,8 @@ fun GameHubScreen(
                 mainActivity = "com.byfen.downloadzipsdk.MainActivity",
                 coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222)),
                 coverText = "DL",
-                coverImageRes = R.drawable.fifa16_cover  // v7.0.3: real cover art
+                coverImageRes = R.drawable.fifa16_cover,
+                serverStatus = fifa16Status
             ),
             GameItem(
                 title = "FIFA 15 Mobile",
@@ -8143,7 +8176,8 @@ fun GameHubScreen(
                 mainActivity = FIFA15_MAIN_ACTIVITY,
                 coverGradient = listOf(Color(0xFF1A1A2E), Color(0xFF16213E)),
                 coverText = "D15",
-                coverImageRes = R.drawable.fifa15_cover  // v7.0.3: real cover art
+                coverImageRes = R.drawable.fifa15_cover,
+                serverStatus = fifa15Status
             )
         )
     }
