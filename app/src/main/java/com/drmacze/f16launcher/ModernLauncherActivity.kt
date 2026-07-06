@@ -8993,7 +8993,7 @@ fun IssueManagerCard(api: CommunityApi, context: android.content.Context) {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             runCatching {
-                val resp = api.requestPublic("GET", "/rest/v1/feed_posts?type=eq.issue&order=created_at.desc&limit=20&select=id,title,body,created_at", null, true, false)
+                val resp = api.requestPublic("GET", "/rest/v1/feed_posts?type=eq.issue&order=created_at.desc&limit=20&select=id,title,body,created_at")
                 val arr = JSONArray(resp)
                 val list = mutableListOf<JSONObject>()
                 for (i in 0 until arr.length()) { list.add(arr.getJSONObject(i)) }
@@ -9005,7 +9005,7 @@ fun IssueManagerCard(api: CommunityApi, context: android.content.Context) {
 
     GlassCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.BugReport, null, tint = DangerRed, modifier = Modifier.size(18.dp))
+            Icon(Icons.Rounded.Warning, null, tint = DangerRed, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text("Issue Manager", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
@@ -9052,8 +9052,8 @@ fun IssueManagerCard(api: CommunityApi, context: android.content.Context) {
                                     scope.launch {
                                         withContext(Dispatchers.IO) {
                                             runCatching {
-                                                api.requestPublic("DELETE", "/rest/v1/feed_comments?post_id=eq.$issueId", null, true, false)
-                                                api.requestPublic("DELETE", "/rest/v1/feed_posts?id=eq.$issueId", null, true, false)
+                                                api.requestPublic("DELETE", "/rest/v1/feed_comments?post_id=eq.$issueId")
+                                                api.requestPublic("DELETE", "/rest/v1/feed_posts?id=eq.$issueId")
                                             }
                                         }
                                         issues = issues.filterNot { it.optString("id") == issueId }
