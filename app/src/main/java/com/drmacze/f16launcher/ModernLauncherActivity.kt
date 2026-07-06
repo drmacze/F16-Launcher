@@ -387,17 +387,51 @@ class ModernLauncherActivity : ComponentActivity() {
     // ── DLavie Portal Connect: deep link handler ──
     // When user clicks "Connect to DLavie" on the web FAQ page,
     // Android opens the launcher via dlavie://connect?callback=URL
-    // We detect this, navigate to Profile tab, show "DLavie Portal connected"
-    // status, then redirect back to the web with the user's auth token.
-    private var portalConnectCallback: String? = null
-
+    // We detect this, show "DLavie Portal Connected" status,
+    // then redirect back to the web with the user's auth token.
     private fun handlePortalConnectIntent(intent: android.content.Intent?) {
         val data = intent?.data ?: return
-        if (data.scheme == "dlavie" && data.host == "connect") {
-            portalConnectCallback = data.getQueryParameter("callback")
-            // Show toast immediately
-            android.widget.Toast.makeText(this, "DLavie Portal Connected!", android.widget.Toast.LENGTH_SHORT).show()
+        if (data.scheme != "dlavie" || data.host != "connect") return
+
+        val callback = data.getQueryParameter("callback") ?: return
+        val api = CommunityApi(this)
+
+        if (!api.loggedIn()) {
+            android.widget.Toast.makeText(
+                this,
+                "Silakan login dulu di launcher, lalu coba Connect lagi dari web.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            return
         }
+
+        // Show "DLavie Portal Connected" status
+        android.widget.Toast.makeText(
+            this,
+            "✓ DLavie Portal Connected!\nMengalihkan kembali ke web…",
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+
+        // Delay 1.5s so user can see the status, then redirect back to web
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            try {
+                val token = api.token()
+                val uid = api.userId()
+                val redirectUrl = "$callback?token=$token&uid=$uid"
+
+                val browserIntent = android.content.Intent(
+                    android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse(redirectUrl)
+                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(browserIntent)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(
+                    this,
+                    "Gagal redirect ke web: ${e.message}",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        }, 1500)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -837,20 +871,6 @@ fun MainShell(
         initialPage = page.ordinal,
         pageCount = { Page.values().size }
     )
-
-    // ── DLavie Portal Connect: if deep link was triggered, navigate to Profile ──
-    LaunchedEffect(Unit) {
-        if (portalConnectPending) {
-            // Navigate to Profile tab
-            kotlinx.coroutines.delay(300)
-            pagePagerState.animateScrollToPage(Page.Me.ordinal)
-            // Show "DLavie Portal connected" status
-            android.widget.Toast.makeText(context, "✓ DLavie Portal Connected — Mengalihkan kembali ke web…", android.widget.Toast.LENGTH_LONG).show()
-            // Wait 1.5s for user to see the status, then redirect back to web
-            kotlinx.coroutines.delay(1500)
-            completePortalConnect(api)
-        }
-    }
     // v7.0.2 FIX: track apakah swipe sedang in-flight untuk avoid feedback loop.
     //   Sebelumnya: tap nav → set page → LaunchedEffect(page) animateScrollToPage
     //   → swipe selesai → LaunchedEffect(currentPage) set page lagi → re-trigger.
