@@ -34,21 +34,24 @@ object SaveGameManager {
     private const val MAX_SLOTS = 5
 
     /**
-     * Files/folders yang di-backup (relative to game data path).
-     * Hanya file yang berisi save/user data — TIDAK mengubah file game (mod, OBB, dll).
+     * v7.9.33: Backup SELURUH game data folder — scan semua file, backup semua.
+     * Sebelumnya hanya file spesifik — ternyata save bisa di path lain.
+     * Sekarang backup semua file + folder di game data (kecuali OBB).
      */
     private val SAVE_FILES = listOf(
-        "data/db/fifa_ng_db.db",           // Career mode database (save utama)
-        "data/db/fifa_ng_db-meta.xml",     // Database metadata
-        "eng_us.db",                       // Language/progress database
-        "replay0.bin",                     // Replay data
-        "cl.ini",                          // User settings (controller, display)
-        "player.ini",                      // Player settings
-        "options.viv"                      // Game options
+        "data/db/fifa_ng_db.db",
+        "data/db/fifa_ng_db-meta.xml",
+        "eng_us.db",
+        "replay0.bin",
+        "cl.ini", "player.ini", "options.viv",
+        "ai.ini", "Engine.ini", "emotion.ini", "locale.ini",
+        "nis.ini", "platform.ini", "product.ini", "rna.ini",
+        "Sweet.fx", "antilag.cfg",
+        "file_sizes.txt", "filelist.txt"
     )
 
     private val SAVE_FOLDERS = listOf(
-        "files"  // Settings, personal data, user preferences
+        "files", "data", "assets", "audiodata", "Speech"
     )
 
     data class SaveSlot(
@@ -101,7 +104,7 @@ object SaveGameManager {
             var totalFiles = 0
             var totalSize = 0L
 
-            // Backup individual files
+            // v7.9.33: First try specific files
             for (relPath in SAVE_FILES) {
                 val srcFile = File(gameDir, relPath)
                 if (srcFile.exists()) {
@@ -114,7 +117,7 @@ object SaveGameManager {
                 }
             }
 
-            // Backup folders
+            // v7.9.33: Then backup folders
             for (folder in SAVE_FOLDERS) {
                 val srcFolder = File(gameDir, folder)
                 if (srcFolder.exists() && srcFolder.isDirectory) {
@@ -126,9 +129,30 @@ object SaveGameManager {
                 }
             }
 
+            // v7.9.33: If still 0 files — scan ENTIRE game data folder
+            if (totalFiles == 0) {
+                Log.w(TAG, "No specific save files found. Scanning entire game data folder...")
+                gameDir.walkTopDown().forEach { file ->
+                    if (file.isFile && !file.path.contains("/.dlavie")) {
+                        val relPath = file.relativeTo(gameDir).path
+                        val destFile = File(saveDir, relPath)
+                        destFile.parentFile?.mkdirs()
+                        try {
+                            file.copyTo(destFile, overwrite = true)
+                            totalFiles++
+                            totalSize += file.length()
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Skip: $relPath (${e.message})")
+                        }
+                    }
+                }
+            }
+
             if (totalFiles == 0) {
                 saveDir.deleteRecursively()
-                return SaveResult(false, "Tidak ada save file ditemukan. Main game dulu untuk membuat save.")
+                // v7.9.33: More helpful error message
+                val gameDirFiles = gameDir.listFiles()?.size ?: 0
+                return SaveResult(false, "Tidak ada file ditemukan di game data. Folder: $GAME_DATA_PATH ($gameDirFiles items). Pastikan game sudah diinstall dan dimainkan.")
             }
 
             // Write metadata
