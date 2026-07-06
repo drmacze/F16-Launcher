@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -63,12 +64,22 @@ fun NewsScreen(api: CommunityApi) {
         loading = false
     }
 
-    if (selectedNews != null) {
-        NewsDetailScreen(
-            news = selectedNews!!,
-            onBack = { selectedNews = null }
-        )
-        return
+    // v7.9.6 FIX: NewsDetailScreen sebagai full-screen overlay Dialog (bukan embedded).
+    // Sebelumnya pakai `return` yang menempatkan NewsDetailScreen (fillMaxSize + verticalScroll)
+    // di dalam HomeScreen's verticalScroll Column → crash "infinity height constraints".
+    // Dialog punya constraint tinggi terbatas (window size), jadi aman.
+    selectedNews?.let { item ->
+        Dialog(onDismissRequest = { selectedNews = null }) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = Carbon
+            ) {
+                NewsDetailContent(
+                    news = item,
+                    onBack = { selectedNews = null }
+                )
+            }
+        }
     }
 
     Column(Modifier.fillMaxWidth()) {
@@ -176,17 +187,27 @@ private fun NewsHeroSlide(item: NewsItem, onClick: () -> Unit) {
             .clip(RoundedCornerShape(20.dp))
             .clickable { onClick() }
     ) {
-        // Background gradient (based on category)
-        val bgGradient = when (item.category) {
-            NewsCategory.UPDATE -> Brush.verticalGradient(listOf(Color(0xFF1A237E), Color(0xFF0D47A1)))
-            NewsCategory.ANNOUNCEMENT -> Brush.verticalGradient(listOf(Color(0xFF4A148C), Color(0xFF311B92)))
-            NewsCategory.MAINTENANCE -> Brush.verticalGradient(listOf(Color(0xFFB71C1C), Color(0xFF7F0000)))
-            NewsCategory.COMMUNITY -> Brush.verticalGradient(listOf(Color(0xFF1B5E20), Color(0xFF0D3814)))
+        // v7.9.6: Show image if available, otherwise gradient background
+        if (item.imageUrl.isNotBlank()) {
+            AsyncImage(
+                model = item.imageUrl,
+                contentDescription = item.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            // Background gradient (based on category)
+            val bgGradient = when (item.category) {
+                NewsCategory.UPDATE -> Brush.verticalGradient(listOf(Color(0xFF1A237E), Color(0xFF0D47A1)))
+                NewsCategory.ANNOUNCEMENT -> Brush.verticalGradient(listOf(Color(0xFF4A148C), Color(0xFF311B92)))
+                NewsCategory.MAINTENANCE -> Brush.verticalGradient(listOf(Color(0xFFB71C1C), Color(0xFF7F0000)))
+                NewsCategory.COMMUNITY -> Brush.verticalGradient(listOf(Color(0xFF1B5E20), Color(0xFF0D3814)))
+            }
+            Box(Modifier.fillMaxSize().background(bgGradient))
         }
-        Box(Modifier.fillMaxSize().background(bgGradient))
 
-        // Dark overlay
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(0.4f)))
+        // Dark overlay for readability
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(0.5f)))
 
         // Content
         Column(
@@ -264,78 +285,98 @@ private fun NewsCard(news: NewsItem, onClick: (NewsItem) -> Unit) {
         colors = CardDefaults.cardColors(containerColor = GlassBase),
         border = BorderStroke(1.dp, GlassStroke)
     ) {
-        Column(Modifier.padding(14.dp)) {
-            // Top: category badge + timestamp
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.clip(RoundedCornerShape(4.dp))
-                        .background(news.category.color.copy(0.2f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
+        Column {
+            // v7.9.6: Cover image (if available)
+            if (news.imageUrl.isNotBlank()) {
+                AsyncImage(
+                    model = news.imageUrl,
+                    contentDescription = news.title,
+                    modifier = Modifier.fillMaxWidth().height(160.dp),
+                    contentScale = ContentScale.Crop
+                )
+            }
+            Column(Modifier.padding(14.dp)) {
+                // Top: category badge + timestamp
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(4.dp))
+                            .background(news.category.color.copy(0.2f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            news.category.label,
+                            color = news.category.color,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = InterFontFamily
+                        )
+                    }
+                    if (news.critical) {
+                        Spacer(Modifier.width(6.dp))
+                        Box(
+                            Modifier.clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFFFF5252).copy(0.2f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("CRITICAL", color = Color(0xFFFF5252), fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
                     Text(
-                        news.category.label,
-                        color = news.category.color,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
+                        news.timeAgo,
+                        color = Color.White.copy(0.4f),
+                        fontSize = 10.sp,
                         fontFamily = InterFontFamily
                     )
                 }
-                if (news.critical) {
-                    Spacer(Modifier.width(6.dp))
-                    Box(
-                        Modifier.clip(RoundedCornerShape(4.dp))
-                            .background(Color(0xFFFF5252).copy(0.2f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text("CRITICAL", color = Color(0xFFFF5252), fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
-                    }
-                }
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.height(8.dp))
+                // Title
                 Text(
-                    news.timeAgo,
-                    color = Color.White.copy(0.4f),
-                    fontSize = 10.sp,
-                    fontFamily = InterFontFamily
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            // Title
-            Text(
-                news.title,
-                color = Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                fontFamily = InterFontFamily
-            )
-            // Body preview
-            if (news.body.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    news.body,
-                    color = Color.White.copy(0.6f),
-                    fontSize = 12.sp,
+                    news.title,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     fontFamily = InterFontFamily
                 )
-            }
-            // Release notes (if update_posts)
-            if (news.releaseNotes.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                news.releaseNotes.take(3).forEach { note ->
-                    Row(Modifier.padding(vertical = 1.dp)) {
-                        Text("•", color = Color.White.copy(0.5f), fontSize = 11.sp)
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            note,
-                            color = Color.White.copy(0.7f),
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            fontFamily = InterFontFamily
-                        )
+                // Body preview
+                if (news.body.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        news.body,
+                        color = Color.White.copy(0.6f),
+                        fontSize = 12.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        fontFamily = InterFontFamily
+                    )
+                }
+                // Release notes (if update_posts)
+                if (news.releaseNotes.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    news.releaseNotes.take(3).forEach { note ->
+                        Row(Modifier.padding(vertical = 1.dp)) {
+                            Text("•", color = Color.White.copy(0.5f), fontSize = 11.sp)
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                note,
+                                color = Color.White.copy(0.7f),
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontFamily = InterFontFamily
+                            )
+                        }
+                    }
+                }
+                // v7.9.6: Slider images indicator
+                if (news.sliderImages.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.PhotoLibrary, null, tint = Color.White.copy(0.4f), modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("${news.sliderImages.size} gambar", color = Color.White.copy(0.4f), fontSize = 10.sp, fontFamily = InterFontFamily)
                     }
                 }
             }
@@ -360,10 +401,14 @@ private fun NewsCardSkeleton() {
     }
 }
 
-// ─── News Detail Screen (full screen) ────────────────────────────────────────
+// ─── News Detail Content (rendered inside Dialog overlay) ────────────────────
+// v7.9.6: Renamed from NewsDetailScreen to NewsDetailContent.
+// Rendered inside Dialog (full-screen Surface) supaya tidak crash di verticalScroll.
 
 @Composable
-private fun NewsDetailScreen(news: NewsItem, onBack: () -> Unit) {
+private fun NewsDetailContent(news: NewsItem, onBack: () -> Unit) {
+    var selectedSliderImage by remember { mutableStateOf<String?>(null) }
+
     Column(Modifier.fillMaxSize().background(Carbon)) {
         // Header with back button
         Surface(color = GlassBase) {
@@ -376,9 +421,19 @@ private fun NewsDetailScreen(news: NewsItem, onBack: () -> Unit) {
 
         // Content
         Column(
-            Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(16.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // v7.9.6: Cover image (if available)
+            if (news.imageUrl.isNotBlank()) {
+                AsyncImage(
+                    model = news.imageUrl,
+                    contentDescription = news.title,
+                    modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
             // Category + critical badge
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -417,6 +472,26 @@ private fun NewsDetailScreen(news: NewsItem, onBack: () -> Unit) {
                 Text(news.body, color = Color.White.copy(0.7f), fontSize = 13.sp, lineHeight = 20.sp, fontFamily = InterFontFamily)
             }
 
+            // v7.9.6: Slider images gallery (promo images)
+            if (news.sliderImages.isNotEmpty()) {
+                Text("Galeri", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                LazyRow(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(news.sliderImages) { img ->
+                        AsyncImage(
+                            model = img,
+                            contentDescription = "Slider image",
+                            modifier = Modifier.size(280.dp, 160.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { selectedSliderImage = img },
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                }
+            }
+
             // Release notes
             if (news.releaseNotes.isNotEmpty()) {
                 Text("Release Notes", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
@@ -444,6 +519,30 @@ private fun NewsDetailScreen(news: NewsItem, onBack: () -> Unit) {
             Spacer(Modifier.height(100.dp))
         }
     }
+
+    // Full-screen image viewer for slider
+    selectedSliderImage?.let { url ->
+        Box(
+            Modifier.fillMaxSize().background(Color.Black.copy(0.95f))
+                .clickable { selectedSliderImage = null },
+            contentAlignment = Alignment.Center
+        ) {
+            AsyncImage(
+                model = url,
+                contentDescription = "Full image",
+                modifier = Modifier.fillMaxWidth(),
+                contentScale = ContentScale.Fit
+            )
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(24.dp).size(40.dp)
+                    .clip(CircleShape).background(Color.White.copy(0.2f))
+                    .clickable { selectedSliderImage = null },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.Close, null, tint = Color.White, modifier = Modifier.size(24.dp))
+            }
+        }
+    }
 }
 
 // ─── Data Classes ────────────────────────────────────────────────────────────
@@ -466,7 +565,10 @@ data class NewsItem(
     val releaseNotes: List<String> = emptyList(),
     val knownIssues: List<String> = emptyList(),
     val createdAt: Long = 0,
-    val timeAgo: String = ""
+    val timeAgo: String = "",
+    // v7.9.6: Image support — cover image + slider images (multiple for promo)
+    val imageUrl: String = "",
+    val sliderImages: List<String> = emptyList()
 )
 
 // ─── API: Fetch all news (composite) ──────────────────────────────────────────
@@ -527,20 +629,26 @@ private suspend fun fetchAllNews(api: CommunityApi): List<NewsItem> = withContex
         }
     }.onFailure { Log.w("NewsScreen", "getNotifications failed", it) }
 
-    // 3. Fetch official feed posts (pinned/official only)
+    // 3. Fetch official feed posts (pinned/official only) — v7.9.6: include image_url + slider_images
     runCatching {
-        val resp = api.requestPublic("GET", "/rest/v1/feed_posts?official=eq.true&order=created_at.desc&limit=5&select=id,title,body,created_at")
+        val resp = api.requestPublic("GET", "/rest/v1/feed_posts?official=eq.true&order=created_at.desc&limit=10&select=id,title,body,image_url,slider_images,created_at")
         val arr = JSONArray(resp)
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             val createdAt = parseIsoDate(o.optString("created_at")) ?: now
+            // Parse slider_images (text[])
+            val sliderImgs = arrayListOf<String>()
+            val si = o.optJSONArray("slider_images")
+            if (si != null) for (j in 0 until si.length()) sliderImgs.add(si.getString(j))
             result.add(NewsItem(
                 id = "feed_${o.optString("id")}",
                 title = o.optString("title", "Post"),
                 body = o.optString("body", ""),
                 category = NewsCategory.COMMUNITY,
                 createdAt = createdAt,
-                timeAgo = timeAgo(createdAt, now)
+                timeAgo = timeAgo(createdAt, now),
+                imageUrl = o.optString("image_url", "").ifBlank { "" },
+                sliderImages = sliderImgs
             ))
         }
     }.onFailure { Log.w("NewsScreen", "official feed failed", it) }

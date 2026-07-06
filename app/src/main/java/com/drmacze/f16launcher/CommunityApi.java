@@ -263,17 +263,25 @@ public class CommunityApi {
     //  Feed posts — TapTap-style "For You" (global) + "Following" tabs
     // ──────────────────────────────────────────────────────────────────────
 
-    /** Fetch feed posts for "For You" (global) — with filter. Public read. */
+    /**
+     * v7.9.6: Fetch feed posts for "For You" (global) — with filter.
+     * Filter official=eq.false supaya News/official posts TIDAK muncul di Komunitas.
+     * News & official posts sekarang ADA DI tab Beranda (NewsScreen composite).
+     * Komunitas = user posts only (official=false).
+     */
     public JSONArray fetchFeedPostsGlobal(String sortBy, int limit) throws Exception {
         String order = "created_at.desc";
         if ("oldest".equals(sortBy)) order = "created_at.asc";
         return new JSONArray(request("GET",
-            "/rest/v1/feed_posts?order=" + order + "&limit=" + limit +
+            "/rest/v1/feed_posts?official=eq.false&order=" + order + "&limit=" + limit +
             "&select=id,author_id,title,body,image_url,type,pinned,official,created_at",
             null, false, false));
     }
 
-    /** Fetch feed posts for "Following" — only from followed users. Login required. */
+    /**
+     * v7.9.6: Fetch feed posts for "Following" — only from followed users.
+     * Filter official=eq.false (Komunitas = user posts only, bukan news/official).
+     */
     public JSONArray fetchFeedPostsFollowing(String sortBy, int limit) throws Exception {
         String order = "created_at.desc";
         if ("oldest".equals(sortBy)) order = "created_at.asc";
@@ -290,7 +298,7 @@ public class CommunityApi {
         }
 
         return new JSONArray(request("GET",
-            "/rest/v1/feed_posts?author_id=in.(" + inList + ")&order=" + order + "&limit=" + limit +
+            "/rest/v1/feed_posts?author_id=in.(" + inList + ")&official=eq.false&order=" + order + "&limit=" + limit +
             "&select=id,author_id,title,body,image_url,type,pinned,official,created_at",
             null, true, false));
     }
