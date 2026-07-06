@@ -6225,6 +6225,12 @@ fun ProfileScreen(
                 SettingsRow(icon = Icons.Rounded.PrivacyTip, label = "Privacy Policy", onClick = { })
             }
 
+            // ── Issue Manager (admin/dev only) ──
+            if (role == "admin" || role == "developer") {
+                Spacer(Modifier.height(8.dp))
+                IssueManagerCard(api = api, context = context)
+            }
+
             // FCM (admin only)
             if (role == "admin" || role == "developer") {
                 Spacer(Modifier.height(8.dp))
@@ -8974,3 +8980,97 @@ private fun GameListItem(game: GameItem, onClick: () -> Unit) {
 }
 
 // GameItem moved to GameItem.kt (v7.3.7)
+
+
+// ─── Issue Manager Card (admin/dev) — delete web FAQ issues ───
+@Composable
+fun IssueManagerCard(api: CommunityApi, context: android.content.Context) {
+    val scope = rememberCoroutineScope()
+    var issues by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var deletingId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val resp = api.requestPublic("GET", "/rest/v1/feed_posts?type=eq.issue&order=created_at.desc&limit=20&select=id,title,body,created_at", null, true, false)
+                val arr = JSONArray(resp)
+                val list = mutableListOf<JSONObject>()
+                for (i in 0 until arr.length()) { list.add(arr.getJSONObject(i)) }
+                issues = list
+            }
+            loading = false
+        }
+    }
+
+    GlassCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.BugReport, null, tint = DangerRed, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Issue Manager", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            Text("${issues.size}", color = SubText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text("Hapus issue yang tidak relevan atau sudah resolved.", color = SubText, fontSize = 12.sp)
+        Spacer(Modifier.height(12.dp))
+
+        if (loading) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+            }
+        } else if (issues.isEmpty()) {
+            Text("Tidak ada issue.", color = SubText, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+        } else {
+            issues.forEach { issue ->
+                val issueId = issue.optString("id", "")
+                val issueTitle = issue.optString("title", "")
+                val issueDate = issue.optString("created_at", "").take(10)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.White.copy(0.04f))
+                        .padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(issueTitle, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("$issueDate · ${issueId.take(8)}", color = SubText, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    if (deletingId == issueId) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = DangerRed, strokeWidth = 2.dp)
+                    } else {
+                        Surface(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    deletingId = issueId
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                api.requestPublic("DELETE", "/rest/v1/feed_comments?post_id=eq.$issueId", null, true, false)
+                                                api.requestPublic("DELETE", "/rest/v1/feed_posts?id=eq.$issueId", null, true, false)
+                                            }
+                                        }
+                                        issues = issues.filterNot { it.optString("id") == issueId }
+                                        deletingId = null
+                                        android.widget.Toast.makeText(context, "Issue dihapus", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                            color = DangerRed.copy(0.15f),
+                            border = BorderStroke(1.dp, DangerRed.copy(0.4f))
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Delete, "Delete", tint = DangerRed, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
