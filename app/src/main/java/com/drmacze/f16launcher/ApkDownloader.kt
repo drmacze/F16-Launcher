@@ -216,11 +216,26 @@ class ApkDownloader(private val context: Context) {
                 val progress = if (total > 0) ((soFar * 100L) / total).toInt().coerceIn(0, 100) else 0
 
                 return when (status) {
-                    DownloadManager.STATUS_SUCCESSFUL -> DownloadProgress(
-                        active = false, done = true, progress = 100,
-                        downloadedBytes = soFar, totalBytes = total, label = label,
-                        filePath = path
-                    )
+                    DownloadManager.STATUS_SUCCESSFUL -> {
+                        // v7.9.15 FIX: Cek file size — kalau < 1MB, download gagal (redirect page/HTML error).
+                        // Sebelumnya: getProgress return done=true tanpa cek file size → openInstaller
+                        // dipanggil dengan file invalid → "app not compatible" / "package invalid".
+                        val file = File(path)
+                        if (file.exists() && file.length() < 1_000_000) {
+                            file.delete()  // hapus file invalid
+                            DownloadProgress(
+                                active = false, done = false, progress = 0,
+                                downloadedBytes = soFar, totalBytes = total, label = label,
+                                error = "Download gagal — file tidak valid (size ${file.length()} bytes). Coba lagi."
+                            )
+                        } else {
+                            DownloadProgress(
+                                active = false, done = true, progress = 100,
+                                downloadedBytes = soFar, totalBytes = total, label = label,
+                                filePath = path
+                            )
+                        }
+                    }
                     DownloadManager.STATUS_FAILED -> DownloadProgress(
                         active = false, done = false, progress = progress,
                         downloadedBytes = soFar, totalBytes = total, label = label,
