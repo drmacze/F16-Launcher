@@ -922,10 +922,12 @@ private fun ChatHistoryScreen(
     }
 
     if (selectedTicketId != null) {
-        // Show detail view for selected ticket
+        // v7.9.19: Pass entry for report detail (has complaint, screenshot, dev_feedback)
+        val selectedEntry = history.find { it.ticketId == selectedTicketId }
         ChatHistoryDetail(
             api = api,
             ticketId = selectedTicketId!!,
+            entry = selectedEntry,
             onBack = { selectedTicketId = null }
         )
         return
@@ -1127,6 +1129,14 @@ private fun ChatHistoryEntryCard(entry: ChatHistoryEntry, onClick: () -> Unit) {
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
+                    // v7.9.19: Ticket ID
+                    Text(
+                        "#${entry.ticketId.take(8)}",
+                        color = Color.White.copy(alpha = 0.3f),
+                        fontSize = 9.sp,
+                        fontFamily = InterFontFamily,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
                     Spacer(Modifier.weight(1f))
                     // Message count
                     Text(
@@ -1188,6 +1198,7 @@ private fun ChatHistoryEntryCard(entry: ChatHistoryEntry, onClick: () -> Unit) {
 private fun ChatHistoryDetail(
     api: CommunityApi,
     ticketId: String,
+    entry: ChatHistoryEntry? = null,  // v7.9.19: pass entry for report detail
     onBack: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -1195,14 +1206,17 @@ private fun ChatHistoryDetail(
     var loading by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
 
+    val isReport = entry?.category == "report"
+
     LaunchedEffect(ticketId) {
         loading = true
-        messages = fetchAllTicketMessages(api, ticketId)
+        if (!isReport) {
+            messages = fetchAllTicketMessages(api, ticketId)
+        }
         loading = false
         // Mark as read (clear unread badge)
         markMessagesAsRead(api, ticketId)
-        // Scroll to bottom after load
-        if (messages.isNotEmpty()) {
+        if (!isReport && messages.isNotEmpty()) {
             delay(100)
             listState.animateScrollToItem(messages.size - 1)
         }
@@ -1215,26 +1229,113 @@ private fun ChatHistoryDetail(
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
         ) {
             Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
-                // Header
+                // Header — v7.9.19: show Ticket ID
                 Surface(Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.05f)) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.ArrowBack, null, tint = Color.White,
                             modifier = Modifier.size(24.dp).clickable { onBack() })
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("Detail Percakapan", color = Color.White, fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
-                            Text("Sesi selesai • Read-only",
+                            Text(
+                                if (isReport) "Detail Report" else "Detail Percakapan",
+                                color = Color.White, fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold, fontFamily = InterFontFamily
+                            )
+                            Text(
+                                "Ticket #${ticketId.take(8)} • ${if (isReport) "Read-only" else "Sesi selesai"}",
                                 color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp,
-                                fontFamily = InterFontFamily)
+                                fontFamily = InterFontFamily
+                            )
                         }
                     }
                 }
 
-                // Messages list
                 if (loading) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp))
+                    }
+                } else if (isReport && entry != null) {
+                    // v7.9.19: Report detail — show all info
+                    Column(
+                        Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Status badge
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val statusColor = when (entry.status) {
+                                "approved" -> Color(0xFF4ADE80)
+                                "rejected" -> Color(0xFFFF5252)
+                                "pending" -> Color(0xFFFBBF24)
+                                else -> Color.White.copy(alpha = 0.3f)
+                            }
+                            val statusLabel = when (entry.status) {
+                                "approved" -> "Disetujui"
+                                "rejected" -> "Ditolak"
+                                "pending" -> "Menunggu"
+                                "open" -> "Ditinjau"
+                                else -> entry.status
+                            }
+                            Box(
+                                Modifier.clip(RoundedCornerShape(6.dp))
+                                    .background(statusColor.copy(alpha = 0.2f))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(statusLabel, color = statusColor, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                            }
+                        }
+
+                        // Screenshot
+                        if (entry.screenshotUrl.isNotBlank()) {
+                            Text("Screenshot", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                            AsyncImage(
+                                model = entry.screenshotUrl,
+                                contentDescription = "Screenshot",
+                                modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(12.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+
+                        // Complaint
+                        if (entry.complaint.isNotBlank()) {
+                            Text("Keluhan", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                            Text(entry.complaint, color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, fontFamily = InterFontFamily)
+                        }
+
+                        // User feedback
+                        if (entry.userFeedback.isNotBlank()) {
+                            Text("Harapan User", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                            Text(entry.userFeedback, color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontFamily = InterFontFamily)
+                        }
+
+                        // Dev feedback
+                        if (entry.devFeedback.isNotBlank()) {
+                            Spacer(Modifier.height(4.dp))
+                            Surface(
+                                Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFF4CAF50).copy(alpha = 0.1f),
+                                border = BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.3f))
+                            ) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Text("Feedback Developer", color = Color(0xFF4CAF50), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(entry.devFeedback, color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp, fontFamily = InterFontFamily)
+                                }
+                            }
+                        }
+
+                        // Android version
+                        if (entry.androidVersion.isNotBlank()) {
+                            Text("Android Version: ${entry.androidVersion}", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontFamily = InterFontFamily)
+                        }
+                    }
+                    // Footer
+                    Surface(Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.03f)) {
+                        Box(Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
+                            Text("Report ini bersifat read-only.",
+                                color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp,
+                                fontFamily = InterFontFamily, textAlign = TextAlign.Center)
+                        }
                     }
                 } else if (messages.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -1254,7 +1355,6 @@ private fun ChatHistoryDetail(
                     ) {
                         items(messages) { msg -> ChatBubble(msg) }
                     }
-                    // Footer (read-only notice)
                     Surface(Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.03f)) {
                         Box(Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
                             Text("Sesi ini telah berakhir. Pesan bersifat read-only.",
@@ -1862,6 +1962,9 @@ private suspend fun fetchChatHistory(api: CommunityApi): List<ChatHistoryEntry> 
                 val devFeedback = o.optString("dev_feedback", "")
                 val devFeedbackAt = o.optString("dev_feedback_at", "")
                 val complaint = o.optString("complaint", "")
+                val userFeedback = o.optString("user_feedback", "")
+                val screenshotUrl = o.optString("screenshot_url", "")
+                val androidVersion = o.optString("android_version", "")
                 result.add(ChatHistoryEntry(
                     ticketId = ticketId,
                     status = o.optString("status"),
@@ -1872,7 +1975,13 @@ private suspend fun fetchChatHistory(api: CommunityApi): List<ChatHistoryEntry> 
                     messageCount = if (devFeedback.isNotBlank()) 1 else 0,
                     lastMessageBody = if (devFeedback.isNotBlank()) devFeedback else complaint,
                     lastMessageSender = if (devFeedback.isNotBlank()) "admin" else "user",
-                    lastMessageCreatedAt = if (devFeedbackAt.isNotBlank() && devFeedbackAt != "null") devFeedbackAt else o.optString("created_at")
+                    lastMessageCreatedAt = if (devFeedbackAt.isNotBlank() && devFeedbackAt != "null") devFeedbackAt else o.optString("created_at"),
+                    // v7.9.19: Report detail fields
+                    complaint = complaint,
+                    userFeedback = userFeedback,
+                    screenshotUrl = screenshotUrl,
+                    androidVersion = androidVersion,
+                    devFeedback = devFeedback
                 ))
                 continue
             }
@@ -1977,5 +2086,11 @@ data class ChatHistoryEntry(
     val messageCount: Int = 0,
     val lastMessageBody: String = "",
     val lastMessageSender: String = "",
-    val lastMessageCreatedAt: String = ""
+    val lastMessageCreatedAt: String = "",
+    // v7.9.19: Report fields (for report detail)
+    val complaint: String = "",
+    val userFeedback: String = "",
+    val screenshotUrl: String = "",
+    val androidVersion: String = "",
+    val devFeedback: String = ""
 )
