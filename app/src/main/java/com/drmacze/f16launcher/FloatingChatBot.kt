@@ -53,6 +53,18 @@ fun FloatingChatBot(api: CommunityApi) {
     var expanded by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf<String?>(null) } // null = menu, "report", "live_chat", "assistant"
 
+    // v7.9.0: Unread message count — check saat app dibuka + periodic poll
+    var unreadCount by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        // Initial check
+        unreadCount = countUnreadMessages(api)
+        // Poll every 30 seconds
+        while (true) {
+            delay(30_000)
+            unreadCount = countUnreadMessages(api)
+        }
+    }
+
     if (!expanded) {
         // Floating button with auto-hide (slides to edge after 3 seconds)
         var isHidden by remember { mutableStateOf(false) }
@@ -95,6 +107,28 @@ fun FloatingChatBot(api: CommunityApi) {
                     tint = Color.Black,
                     modifier = Modifier.size(28.dp)
                 )
+            }
+
+            // v7.9.0: Notification dot — merah, menandakan ada pesan baru dari developer
+            if (unreadCount > 0) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 2.dp, y = (-2).dp)
+                        .size(if (unreadCount > 9) 22.dp else 18.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFFF4444))
+                        .border(2.dp, Color.Black, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (unreadCount > 9) "9+" else unreadCount.toString(),
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = InterFontFamily
+                    )
+                }
             }
         }
     } else {
@@ -438,6 +472,8 @@ private fun LiveChatScreen(api: CommunityApi, isAssistant: Boolean = false, onBa
                 val history = pollMessages(api, existingTicket.first)
                 messages = history
                 lastActivityTime = System.currentTimeMillis()
+                // v7.9.0: Mark messages as read (update last_read_at)
+                markMessagesAsRead(api, existingTicket.first)
                 if (existingTicket.second == "open") {
                     adminOnline = checkAdminOnline(api)
                     if (!adminOnline) {
@@ -1244,3 +1280,145 @@ private fun closeTicketWithCooldown(
         Log.e("DLavieChat", "closeTicketWithCooldown failed", e)
     }
 }
+
+// ─── v7.9.0: Unread message tracking ─────────────────────────────────────────
+
+/**
+ * Count unread messages dari developer (sender_type != user) untuk user ini.
+ * Unread = pesan yang dikirim SETELAH last_read_at di support_tickets.
+ *
+ * Cek semua ticket (open + closed) milik user, hitung pesan admin yang
+ * created_at > last_read_at.
+ */
+private suspend fun countUnreadMessages(api: CommunityApi): Int = withContext(Dispatchers.IO) {
+    if (!api.loggedIn()) return@withContext 0
+    try {
+        val userId = api.userId()
+        if (userId.isBlank()) return@withContext 0
+
+        // 1. Get all tickets for this user (open + closed, live_chat category)
+        val ticketsUrl = URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets" +
+            "?user_id=eq.$userId" +
+            "&category=in.(live_chat,assistant)" +
+            "&order=created_at.desc&limit=20" +
+            "&select=id,last_read_at,status")
+        val ticketsConn = (ticketsUrl.openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10000
+            readTimeout = 15000
+            setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+            setRequestProperty("Authorization", "Bearer ${api.token()}")
+        }
+        val ticketsText = ticketsConn.inputStream?.bufferedReader()?.readText().orEmpty()
+        ticketsConn.disconnect()
+        val ticketsArr = JSONArray(ticketsText)
+        if (ticketsArr.length() == 0) return@withContext 0
+
+        var totalUnread = 0
+        for (i in 0 until ticketsArr.length()) {
+            val ticket = ticketsArr.getJSONObject(i)
+            val ticketId = ticket.optString("id")
+            val lastReadAt = ticket.optString("last_read_at", "")
+            val status = ticket.optString("status", "closed")
+
+            // Only count unread for open tickets (closed = already seen)
+            if (status != "open" && status != "pending") continue
+
+            // 2. Count admin messages after last_read_at
+            val msgUrl = URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/ticket_messages" +
+                "?ticket_id=eq.$ticketId" +
+                "&sender_type=neq.user" +
+                (if (lastReadAt.isNotBlank() && lastReadAt != "null") "&created_at=gt.$lastReadAt" else "") +
+                "&select=id")
+            val msgConn = (msgUrl.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10000
+                readTimeout = 15000
+                setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+                setRequestProperty("Authorization", "Bearer ${api.token()}")
+            }
+            val msgText = msgConn.inputStream?.bufferedReader()?.readText().orEmpty()
+            msgConn.disconnect()
+            val msgArr = JSONArray(msgText)
+            totalUnread += msgArr.length()
+        }
+        totalUnread
+    } catch (e: Exception) {
+        Log.e("DLavieChat", "countUnreadMessages failed", e)
+        0
+    }
+}
+
+/**
+ * Update last_read_at untuk ticket tertentu → mark all messages as read.
+ * Dipanggil saat user membuka chat screen.
+ */
+private fun markMessagesAsRead(api: CommunityApi, ticketId: String) {
+    try {
+        val now = java.time.Instant.now().toString()
+        val url = URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets?id=eq.$ticketId")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "PATCH"
+            connectTimeout = 10000
+            readTimeout = 15000
+            doOutput = true
+            setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+            setRequestProperty("Authorization", "Bearer ${api.token()}")
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Prefer", "return=minimal")
+        }
+        val payload = JSONObject().put("last_read_at", now)
+        conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+        conn.responseCode
+        conn.disconnect()
+    } catch (e: Exception) {
+        Log.e("DLavieChat", "markMessagesAsRead failed", e)
+    }
+}
+
+/**
+ * v7.9.0: Fetch chat history untuk ticket yang sudah closed.
+ * Return list of (ticketId, createdAt, messageCount, lastMessage) untuk ditampilkan
+ * sebagai "Riwayat Chat" di Live Chat screen.
+ */
+private suspend fun fetchChatHistory(api: CommunityApi): List<ChatHistoryEntry> = withContext(Dispatchers.IO) {
+    if (!api.loggedIn()) return@withContext emptyList()
+    try {
+        val userId = api.userId()
+        val url = URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets" +
+            "?user_id=eq.$userId" +
+            "&category=in.(live_chat,assistant)" +
+            "&order=created_at.desc&limit=10" +
+            "&select=id,status,category,created_at,closed_at")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10000
+            readTimeout = 15000
+            setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
+            setRequestProperty("Authorization", "Bearer ${api.token()}")
+        }
+        val text = conn.inputStream?.bufferedReader()?.readText().orEmpty()
+        conn.disconnect()
+        val arr = JSONArray(text)
+        val result = mutableListOf<ChatHistoryEntry>()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            result.add(ChatHistoryEntry(
+                ticketId = o.optString("id"),
+                status = o.optString("status"),
+                category = o.optString("category"),
+                createdAt = o.optString("created_at"),
+                closedAt = o.optString("closed_at")
+            ))
+        }
+        result
+    } catch (e: Exception) {
+        Log.e("DLavieChat", "fetchChatHistory failed", e)
+        emptyList()
+    }
+}
+
+data class ChatHistoryEntry(
+    val ticketId: String,
+    val status: String,
+    val category: String,
+    val createdAt: String,
+    val closedAt: String
+)
