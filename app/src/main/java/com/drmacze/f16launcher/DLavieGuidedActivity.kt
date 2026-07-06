@@ -716,7 +716,7 @@ private fun GuidedLoginScreen(
                                         api.clearGuest()
                                         when (mode) {
                                             "login"    -> Telemetry.track(context, Telemetry.EVT_LOGIN,    mapOf("email" to email.trim()))
-                                            "register" -> Telemetry.track(context, Telemetry.EVT_REGISTER, mapOf("email" to email.trim(), "username" to username.trim(), "country" to country))
+                                            "register" -> Telemetry.track(context, Telemetry.EVT_REGISTER, mapOf("email" to email.trim(), "username" to username.trim()))
                                         }
                                     }
                                     result.session?.let(onLoggedIn)

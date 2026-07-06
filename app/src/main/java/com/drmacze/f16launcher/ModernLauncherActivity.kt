@@ -1569,6 +1569,22 @@ fun MainShell(
             FloatingChatBot(api = api)
         }
 
+        // ── v7.9.17: Onboarding modal (post-login) ──────────────────────────
+        // Show jika user sudah login TAPI user_type masih kosong (belum isi onboarding).
+        // Cek dilakukan di MainShell supaya modal muncul di atas semua page.
+        LaunchedEffect(api.loggedIn()) {
+            if (api.loggedIn() && api.userType().isBlank()) {
+                kotlinx.coroutines.delay(1500)  // delay supaya app sempat load
+                showOnboardingModal = true
+            }
+        }
+        if (showOnboardingModal && api.loggedIn() && api.userType().isBlank()) {
+            OnboardingModal(
+                api = api,
+                onComplete = { showOnboardingModal = false }
+            )
+        }
+
         // ── v6.8.1: Rating popup (lifted to MainShell — dipakai dari GameDetailScreen) ──
         // Setelah submit: refresh avg/count + myRating (Supabase upsert merge-duplicates).
         if (showRatingPopup) {
@@ -2141,23 +2157,8 @@ fun HomeScreen(
         )
     }
 
-    // ── v7.9.17: Onboarding modal (post-login) ──────────────────────────────
-    // Show jika user sudah login TAPI user_type masih kosong (belum isi onboarding).
-    // Cek dilakukan di sini (HomeScreen scope) supaya modal muncul di atas HomeScreen.
-    LaunchedEffect(api.loggedIn()) {
-        if (api.loggedIn() && api.userType().isBlank()) {
-            // Small delay supaya HomeScreen sempat render dulu
-            kotlinx.coroutines.delay(800)
-            showOnboardingModal = true
-        }
-    }
-    if (showOnboardingModal && api.loggedIn()) {
-        OnboardingModal(
-            api = api,
-            onComplete = { showOnboardingModal = false }
-        )
-    }
-
+    // ── v7.9.17: Onboarding modal (post-login) — DIPINDAH ke MainShell ──────
+    // (was here, moved to MainShell supaya bisa akses showOnboardingModal state)
     // ── Filtered notification list dialog (muncul setelah pilih kategori) ──────
     if (notifListOpen) {
         NotificationListDialog(
