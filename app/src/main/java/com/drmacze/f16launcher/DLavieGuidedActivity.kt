@@ -718,9 +718,9 @@ private fun GuidedLoginScreen(
 
                         val canSubmit = when (mode) {
                             "forgot"  -> !working && email.isNotBlank() && email.contains("@")
-                            "login"   -> !working && email.isNotBlank() && password.length >= 4
+                            "login"   -> !working && email.isNotBlank() && password.length >= 6
                             "register"-> !working && email.isNotBlank() && email.contains("@") &&
-                                         password.length >= 4 && password == confirmPassword &&
+                                         password.length >= 6 && password == confirmPassword &&
                                          username.matches(Regex("[a-zA-Z0-9_]{3,24}")) &&
                                          displayName.trim().length >= 2
                             else -> false
@@ -1485,7 +1485,7 @@ private fun parseError(text: String): String {
                 "New password must be different from your current password."
             }
             "password_too_short" -> {
-                "Password is too short. Use at least 4 characters."
+                "Password is too short. Use at least 6 characters."
             }
             "password_too_long" -> {
                 "Password is too long. Maximum 72 characters."
