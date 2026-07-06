@@ -107,10 +107,18 @@
             android:exported="true"
             android:icon="@mipmap/dlavie_launcher_icon"
             android:label="DLavie 26"
+            android:launchMode="singleTop"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- DLavie Portal Connect: deep link from web FAQ page -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dlavie" android:host="connect" />
             </intent-filter>
         </activity>
 
