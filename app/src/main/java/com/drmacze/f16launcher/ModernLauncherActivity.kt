@@ -5721,6 +5721,8 @@ fun ProfileScreen(
     var myPosts      by remember { mutableStateOf<List<FeedPostData>>(emptyList()) }
     var myPostsCount by remember { mutableStateOf(0) }  // v7.3.0: for stat card
     var myDrafts     by remember { mutableStateOf<List<FeedPostData>>(emptyList()) }
+    var myIssues     by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var deletingIssueId by remember { mutableStateOf<String?>(null) }
     var mySavedPosts by remember { mutableStateOf<List<FeedPostData>>(emptyList()) }
     var postsLoading by remember { mutableStateOf(true) }
     var publishingId by remember { mutableStateOf<String?>(null) }
@@ -5828,6 +5830,14 @@ fun ProfileScreen(
                         }
                         2 -> {
                             val arr = api.getMyDrafts()
+                        }
+                        3 -> {
+                            // Issues tab — fetch feed_posts type=issue
+                            val resp = api.adminGet("/rest/v1/feed_posts?type=eq.issue&order=created_at.desc&limit=30&select=id,title,body,created_at")
+                            val arr = JSONArray(resp)
+                            val issueList = mutableListOf<JSONObject>()
+                            for (i in 0 until arr.length()) { issueList.add(arr.getJSONObject(i)) }
+                            myIssues = issueList
                             myDrafts = (0 until arr.length()).mapNotNull { i ->
                                 runCatching { parseFeedPostData(arr.getJSONObject(i)) }.getOrNull()
                             }
@@ -6024,6 +6034,15 @@ fun ProfileScreen(
                     selected = selectedTab == 2,
                     modifier = Modifier.weight(1f)
                 ) { selectedTab = 2 }
+                // Issues tab — admin/dev only
+                if (role.equals("admin", true) || role.equals("developer", true)) {
+                    PillTab(
+                        icon = Icons.Rounded.Warning,
+                        label = "Issues",
+                        selected = selectedTab == 3,
+                        modifier = Modifier.weight(1f)
+                    ) { selectedTab = 3 }
+                }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -6047,6 +6066,69 @@ fun ProfileScreen(
                 selectedTab == 2 && myDrafts.isEmpty() -> ProfileEmptyPosts(
                     text = "No drafts. Toggle 'Save as Draft' when creating a post."
                 )
+                selectedTab == 3 && myIssues.isEmpty() -> ProfileEmptyPosts(
+                    text = "No issues reported yet."
+                )
+                selectedTab == 3 -> {
+                    // Issues list with delete buttons (admin/dev)
+                    Column(
+                        Modifier.padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        myIssues.forEach { issue ->
+                            val issueId = issue.optString("id", "")
+                            val issueTitle = issue.optString("title", "")
+                            val issueDate = issue.optString("created_at", "").take(10)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.White.copy(0.04f))
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Rounded.Warning, null, tint = DangerRed, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(issueTitle, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("$issueDate · ${issueId.take(8)}", color = SubText, fontSize = 10.sp)
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                if (deletingIssueId == issueId) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = DangerRed, strokeWidth = 2.dp)
+                                } else {
+                                    Surface(
+                                        modifier = Modifier.size(32.dp).clip(CircleShape).clickable {
+                                            deletingIssueId = issueId
+                                            scope.launch {
+                                                val errMsg = withContext(Dispatchers.IO) {
+                                                    try {
+                                                        api.adminDelete("/rest/v1/feed_comments?post_id=eq.$issueId")
+                                                        api.adminDelete("/rest/v1/feed_posts?id=eq.$issueId")
+                                                        null
+                                                    } catch (e: Exception) { e.message }
+                                                }
+                                                if (errMsg == null) {
+                                                    myIssues = myIssues.filterNot { it.optString("id") == issueId }
+                                                    toast("Issue dihapus")
+                                                } else {
+                                                    toast("Gagal: $errMsg")
+                                                }
+                                                deletingIssueId = null
+                                            }
+                                        },
+                                        color = DangerRed.copy(0.15f),
+                                        border = BorderStroke(1.dp, DangerRed.copy(0.4f))
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Rounded.Delete, "Delete", tint = DangerRed, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 else -> {
                     val list = when (selectedTab) {
                         0 -> myPosts
@@ -6239,12 +6321,6 @@ fun ProfileScreen(
                 SettingsRow(icon = Icons.Rounded.Description, label = "Terms", onClick = { })
                 SettingsDivider()
                 SettingsRow(icon = Icons.Rounded.PrivacyTip, label = "Privacy Policy", onClick = { })
-            }
-
-            // ── Issue Manager (admin/dev only) ──
-            if (role == "admin" || role == "developer") {
-                Spacer(Modifier.height(8.dp))
-                IssueManagerCard(api = api, context = context)
             }
 
             // FCM (admin only)
