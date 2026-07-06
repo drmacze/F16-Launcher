@@ -817,7 +817,7 @@ private fun formatBytesHelper(bytes: Long): String {
 // ─── v7.9.32: Save Game Manager Section ──────────────────────────────────────
 
 @Composable
-private fun SaveGameSection(context: Context) {
+private fun SaveGameSection(context: android.content.Context) {
     val scope = rememberCoroutineScope()
     var slots by remember { mutableStateOf(SaveGameManager.listSlots()) }
     var loading by remember { mutableStateOf(false) }
@@ -830,7 +830,7 @@ private fun SaveGameSection(context: Context) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         // Section header
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(width = 3.dp, height = 18.dp).clip(RoundedCornerShape(2.dp)).background(DlcAccent))
+            Box(Modifier.size(width = 3.dp, height = 18.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFF4CAF50)))
             Spacer(Modifier.width(8.dp))
             Text("Save Game", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
             Spacer(Modifier.weight(1f))
@@ -855,12 +855,12 @@ private fun SaveGameSection(context: Context) {
                     // Slot number
                     Box(
                         Modifier.size(32.dp).clip(CircleShape)
-                            .background(if (slot.exists) DlcAccent.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f)),
+                            .background(if (slot.exists) Color(0xFF4CAF50).copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             slot.slotNumber.toString(),
-                            color = if (slot.exists) DlcAccent else Color.White.copy(alpha = 0.3f),
+                            color = if (slot.exists) Color(0xFF4CAF50) else Color.White.copy(alpha = 0.3f),
                             fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily
                         )
                     }
@@ -871,7 +871,7 @@ private fun SaveGameSection(context: Context) {
                         if (slot.exists) {
                             Text(slot.label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
                             Text(
-                                "${formatPatchSize(slot.sizeBytes)} • ${slot.fileCount} file • ${java.text.SimpleDateFormat("dd MMM yyyy HH:mm", java.util.Locale("id", "ID")).format(java.util.Date(slot.timestamp))}",
+                                "${formatSize(slot.sizeBytes)} • ${slot.fileCount} file • ${java.text.SimpleDateFormat("dd MMM yyyy HH:mm", java.util.Locale("id", "ID")).format(java.util.Date(slot.timestamp))}",
                                 color = DlcMuted, fontSize = 10.sp, fontFamily = InterFontFamily, maxLines = 1
                             )
                         } else {
@@ -886,10 +886,10 @@ private fun SaveGameSection(context: Context) {
                         Surface(
                             Modifier.size(32.dp).clickable { showRestoreConfirm = slot.slotNumber },
                             shape = CircleShape,
-                            color = DlcAccent.copy(alpha = 0.1f)
+                            color = Color(0xFF4CAF50).copy(alpha = 0.1f)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Rounded.Restore, null, tint = DlcAccent, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Rounded.Restore, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
                             }
                         }
                         Spacer(Modifier.width(8.dp))
@@ -911,10 +911,10 @@ private fun SaveGameSection(context: Context) {
                                 showLabelDialog = slot.slotNumber
                             },
                             shape = CircleShape,
-                            color = DlcAccent.copy(alpha = 0.1f)
+                            color = Color(0xFF4CAF50).copy(alpha = 0.1f)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Rounded.Save, null, tint = DlcAccent, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Rounded.Save, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -930,24 +930,24 @@ private fun SaveGameSection(context: Context) {
                 showLabelDialog = 0  // 0 = auto slot
             },
             shape = RoundedCornerShape(12.dp),
-            color = DlcAccent.copy(alpha = 0.08f),
-            border = BorderStroke(1.dp, DlcAccent.copy(alpha = 0.2f))
+            color = Color(0xFF4CAF50).copy(alpha = 0.08f),
+            border = BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.2f))
         ) {
             Row(
                 Modifier.padding(12.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Rounded.SaveAlt, null, tint = DlcAccent, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.SaveAlt, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Backup ke Slot Kosong", color = DlcAccent, fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFamily = InterFontFamily)
+                Text("Backup ke Slot Kosong", color = Color(0xFF4CAF50), fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFamily = InterFontFamily)
             }
         }
 
         // Message
         if (message.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
-            Text(message, color = if (message.startsWith("Error") || message.startsWith("Gagal")) Color(0xFFFF5252) else DlcAccent, fontSize = 11.sp, fontFamily = InterFontFamily, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            Text(message, color = if (message.startsWith("Error") || message.startsWith("Gagal")) Color(0xFFFF5252) else Color(0xFF4CAF50), fontSize = 11.sp, fontFamily = InterFontFamily, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
     }
 
@@ -990,7 +990,7 @@ private fun SaveGameSection(context: Context) {
                             message = result.message
                             slots = SaveGameManager.listSlots()
                         }
-                    }) { Text("Backup", color = DlcAccent, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) }
+                    }) { Text("Backup", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) }
                 },
                 dismissButton = {
                     TextButton(onClick = { showLabelDialog = -1 }) { Text("Batal", color = Color.White, fontFamily = InterFontFamily) }
@@ -1016,7 +1016,7 @@ private fun SaveGameSection(context: Context) {
                         loading = false
                         message = result.message
                     }
-                }) { Text("Restore", color = DlcAccent, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) }
+                }) { Text("Restore", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) }
             },
             dismissButton = {
                 TextButton(onClick = { showRestoreConfirm = 0 }) { Text("Batal", color = Color.White, fontFamily = InterFontFamily) }
