@@ -170,6 +170,18 @@ fun DlcScreen(
     var applyProgress by remember { mutableStateOf(0f) }
     var applyError by remember { mutableStateOf("") }
 
+    // v7.9.36: Auto-request storage permission saat buka DLC tab
+    var showPermissionPopup by remember { mutableStateOf(false) }
+    LaunchedEffect(filesAccessGranted) {
+        if (!filesAccessGranted) {
+            // Check if we already showed the popup (don't spam)
+            val prefs = context.getSharedPreferences("dlavie_dlc_prefs", android.content.Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("permission_dismissed", false)) {
+                showPermissionPopup = true
+            }
+        }
+    }
+
     // ── Refresh functions ──
     fun refreshStatus() {
         scope.launch(Dispatchers.IO) {
@@ -418,11 +430,64 @@ fun DlcScreen(
         // ─── Footer ───
         Spacer(Modifier.height(4.dp))
         Text(
-            "DLavie Launcher v7.9.32 — Mod Manager + Save Game",
+            "DLavie Launcher v7.9.36 — Mod Manager + Save Game",
             color = DlcMuted,
             fontSize = 11.sp,
             fontFamily = InterFontFamily,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        )
+    }
+
+    // v7.9.36: Auto permission popup saat buka DLC tab
+    if (showPermissionPopup && !filesAccessGranted) {
+        AlertDialog(
+            onDismissRequest = {
+                showPermissionPopup = false
+                context.getSharedPreferences("dlavie_dlc_prefs", android.content.Context.MODE_PRIVATE)
+                    .edit().putBoolean("permission_dismissed", true).apply()
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Security, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Izin Storage Diperlukan", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        "Untuk menggunakan DLC Mod dan Save Game, launcher memerlukan akses ke file storage.\n\n",
+                        color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, fontFamily = InterFontFamily
+                    )
+                    Text("Yang akan diizinkan:", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                    Spacer(Modifier.height(4.dp))
+                    Text("• Akses file game FIFA 16\n• Install mod patches\n• Backup & restore save game\n• Manage game data",
+                        color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp, fontFamily = InterFontFamily, lineHeight = 18.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Tanpa izin ini, DLC Mod dan Save Game tidak akan bekerja.",
+                        color = Color(0xFFFFC107), fontSize = 11.sp, fontFamily = InterFontFamily)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showPermissionPopup = false
+                    context.getSharedPreferences("dlavie_dlc_prefs", android.content.Context.MODE_PRIVATE)
+                        .edit().putBoolean("permission_dismissed", true).apply()
+                    StorageAccess.request(context)
+                }) {
+                    Text("Izinkan Sekarang", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showPermissionPopup = false
+                    context.getSharedPreferences("dlavie_dlc_prefs", android.content.Context.MODE_PRIVATE)
+                        .edit().putBoolean("permission_dismissed", true).apply()
+                }) {
+                    Text("Nanti", color = Color.White.copy(alpha = 0.4f), fontFamily = InterFontFamily)
+                }
+            },
+            containerColor = Carbon
         )
     }
 
