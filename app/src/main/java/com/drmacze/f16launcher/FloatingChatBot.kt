@@ -1010,8 +1010,11 @@ private fun ChatHistoryScreen(
                             ChatHistoryEntryCard(
                                 entry = entry,
                                 onClick = {
-                                    if (entry.status == "open" || entry.status == "pending") {
-                                        // Active session — open Live Chat (will resume)
+                                    // v7.9.18: Reports always open as detail (read-only, show dev_feedback)
+                                    if (entry.category == "report") {
+                                        selectedTicketId = entry.ticketId
+                                    } else if (entry.status == "open" || entry.status == "pending") {
+                                        // Active live chat session — open Live Chat (will resume)
                                         onOpenActiveChat()
                                     } else {
                                         // Closed session — open read-only detail
@@ -1030,18 +1033,39 @@ private fun ChatHistoryScreen(
 @Composable
 private fun ChatHistoryEntryCard(entry: ChatHistoryEntry, onClick: () -> Unit) {
     val isLiveChat = entry.category == "live_chat"
+    val isReport = entry.category == "report"
     val isActive = entry.status == "open" || entry.status == "pending"
-    val statusColor = when (entry.status) {
-        "open" -> Color(0xFF4ADE80)      // green
-        "pending" -> Color(0xFFFBBF24)   // yellow
-        "closed" -> Color.White.copy(alpha = 0.3f)
-        else -> Color.White.copy(alpha = 0.3f)
+    // v7.9.18: Report status colors (pending/approved/rejected)
+    val statusColor = when {
+        isReport -> when (entry.status) {
+            "approved" -> Color(0xFF4ADE80)
+            "rejected" -> Color(0xFFFF5252)
+            "pending" -> Color(0xFFFBBF24)
+            "open" -> Color(0xFF4ADE80)
+            else -> Color.White.copy(alpha = 0.3f)
+        }
+        else -> when (entry.status) {
+            "open" -> Color(0xFF4ADE80)      // green
+            "pending" -> Color(0xFFFBBF24)   // yellow
+            "closed" -> Color.White.copy(alpha = 0.3f)
+            else -> Color.White.copy(alpha = 0.3f)
+        }
     }
-    val statusLabel = when (entry.status) {
-        "open" -> "Aktif"
-        "pending" -> "Menunggu"
-        "closed" -> "Selesai"
-        else -> entry.status
+    val statusLabel = when {
+        isReport -> when (entry.status) {
+            "approved" -> "Disetujui"
+            "rejected" -> "Ditolak"
+            "pending" -> "Menunggu"
+            "open" -> "Ditinjau"
+            "closed" -> "Selesai"
+            else -> entry.status
+        }
+        else -> when (entry.status) {
+            "open" -> "Aktif"
+            "pending" -> "Menunggu"
+            "closed" -> "Selesai"
+            else -> entry.status
+        }
     }
 
     Surface(
@@ -1051,20 +1075,27 @@ private fun ChatHistoryEntryCard(entry: ChatHistoryEntry, onClick: () -> Unit) {
         border = BorderStroke(1.dp, if (isActive) Color(0xFF4ADE80).copy(alpha = 0.25f) else Color.White.copy(alpha = 0.08f))
     ) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            // Icon
+            // Icon — v7.9.18: add report icon
+            val iconBg = when {
+                isReport -> Color(0xFFFF9800).copy(alpha = 0.15f)
+                isLiveChat -> Color(0xFF3B82F6).copy(alpha = 0.15f)
+                else -> Color(0xFFA855F7).copy(alpha = 0.15f)
+            }
+            val iconTint = when {
+                isReport -> Color(0xFFFFB74D)
+                isLiveChat -> Color(0xFF60A5FA)
+                else -> Color(0xFFC084FC)
+            }
+            val iconVector = when {
+                isReport -> Icons.Rounded.BugReport
+                isLiveChat -> Icons.Rounded.SupportAgent
+                else -> Icons.Rounded.AutoAwesome
+            }
             Box(
-                Modifier.size(40.dp).clip(CircleShape)
-                    .background(
-                        if (isLiveChat) Color(0xFF3B82F6).copy(alpha = 0.15f)
-                        else Color(0xFFA855F7).copy(alpha = 0.15f)
-                    ),
+                Modifier.size(40.dp).clip(CircleShape).background(iconBg),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    if (isLiveChat) Icons.Rounded.SupportAgent else Icons.Rounded.AutoAwesome,
-                    null, tint = if (isLiveChat) Color(0xFF60A5FA) else Color(0xFFC084FC),
-                    modifier = Modifier.size(20.dp)
-                )
+                Icon(iconVector, null, tint = iconTint, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.width(12.dp))
 
@@ -1072,7 +1103,11 @@ private fun ChatHistoryEntryCard(entry: ChatHistoryEntry, onClick: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        if (isLiveChat) "Live Chat" else "Assistant",
+                        when {
+                            isReport -> "Report"
+                            isLiveChat -> "Live Chat"
+                            else -> "Assistant"
+                        },
                         color = Color.White, fontSize = 13.sp,
                         fontWeight = FontWeight.Bold, fontFamily = InterFontFamily
                     )
@@ -1699,12 +1734,13 @@ private suspend fun countUnreadMessages(api: CommunityApi): Int = withContext(Di
         val userId = api.userId()
         if (userId.isBlank()) return@withContext 0
 
-        // 1. Get all tickets for this user (open + closed, live_chat category)
+        // v7.9.18: Include ALL categories (live_chat, assistant, report) in unread count.
+        // Sebelumnya hanya live_chat + assistant — report replies tidak dihitung.
         val ticketsUrl = URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets" +
             "?user_id=eq.$userId" +
-            "&category=in.(live_chat,assistant)" +
+            "&category=in.(live_chat,assistant,report)" +
             "&order=created_at.desc&limit=20" +
-            "&select=id,last_read_at,status")
+            "&select=id,last_read_at,status,category,dev_feedback,dev_feedback_at")
         val ticketsConn = (ticketsUrl.openConnection() as HttpURLConnection).apply {
             connectTimeout = 10000
             readTimeout = 15000
@@ -1722,6 +1758,19 @@ private suspend fun countUnreadMessages(api: CommunityApi): Int = withContext(Di
             val ticketId = ticket.optString("id")
             val lastReadAt = ticket.optString("last_read_at", "")
             val status = ticket.optString("status", "closed")
+            val category = ticket.optString("category", "")
+            val devFeedback = ticket.optString("dev_feedback", "")
+            val devFeedbackAt = ticket.optString("dev_feedback_at", "")
+
+            // v7.9.18: For reports — count dev_feedback as unread if dev_feedback_at > last_read_at
+            if (category == "report") {
+                if (devFeedback.isNotBlank() && devFeedbackAt.isNotBlank() && devFeedbackAt != "null") {
+                    // Check if dev_feedback is newer than last_read_at
+                    val isUnread = lastReadAt.isBlank() || lastReadAt == "null" || devFeedbackAt > lastReadAt
+                    if (isUnread) totalUnread++
+                }
+                continue  // reports don't have ticket_messages from admin (only dev_feedback)
+            }
 
             // Only count unread for open tickets (closed = already seen)
             if (status != "open" && status != "pending") continue
@@ -1780,19 +1829,19 @@ private fun markMessagesAsRead(api: CommunityApi, ticketId: String) {
 /**
  * v7.9.0: Fetch chat history untuk ticket yang sudah closed.
  * v7.9.1: UPDATE — sekarang juga fetch last_message_preview + message_count
- * per ticket, supaya UI Riwayat Chat bisa tampilkan preview pesan terakhir.
+ * v7.9.18: Include report category + fetch dev_feedback untuk reports.
  * Return list of ChatHistoryEntry (urut created_at desc, limit 20).
  */
 private suspend fun fetchChatHistory(api: CommunityApi): List<ChatHistoryEntry> = withContext(Dispatchers.IO) {
     if (!api.loggedIn()) return@withContext emptyList()
     try {
         val userId = api.userId()
-        // 1. Fetch tickets (live_chat + assistant, semua status)
+        // v7.9.18: Include report category (sebelumnya hanya live_chat + assistant)
         val url = URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/support_tickets" +
             "?user_id=eq.$userId" +
-            "&category=in.(live_chat,assistant)" +
+            "&category=in.(live_chat,assistant,report)" +
             "&order=created_at.desc&limit=20" +
-            "&select=id,status,category,created_at,closed_at,last_activity_at")
+            "&select=id,status,category,created_at,closed_at,last_activity_at,complaint,dev_feedback,dev_feedback_at,report_status,screenshot_url")
         val conn = (url.openConnection() as HttpURLConnection).apply {
             connectTimeout = 10000
             readTimeout = 15000
@@ -1806,7 +1855,29 @@ private suspend fun fetchChatHistory(api: CommunityApi): List<ChatHistoryEntry> 
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             val ticketId = o.optString("id")
-            // 2. Fetch last message + total count untuk ticket ini
+            val category = o.optString("category")
+
+            // v7.9.18: For reports — use dev_feedback as last message (no ticket_messages)
+            if (category == "report") {
+                val devFeedback = o.optString("dev_feedback", "")
+                val devFeedbackAt = o.optString("dev_feedback_at", "")
+                val complaint = o.optString("complaint", "")
+                result.add(ChatHistoryEntry(
+                    ticketId = ticketId,
+                    status = o.optString("status"),
+                    category = category,
+                    createdAt = o.optString("created_at"),
+                    closedAt = o.optString("closed_at"),
+                    lastActivityAt = o.optString("last_activity_at"),
+                    messageCount = if (devFeedback.isNotBlank()) 1 else 0,
+                    lastMessageBody = if (devFeedback.isNotBlank()) devFeedback else complaint,
+                    lastMessageSender = if (devFeedback.isNotBlank()) "admin" else "user",
+                    lastMessageCreatedAt = if (devFeedbackAt.isNotBlank() && devFeedbackAt != "null") devFeedbackAt else o.optString("created_at")
+                ))
+                continue
+            }
+
+            // 2. Fetch last message + total count untuk ticket ini (live_chat/assistant)
             val msgUrl = URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/ticket_messages" +
                 "?ticket_id=eq.$ticketId" +
                 "&order=created_at.desc&limit=1" +
@@ -1816,7 +1887,6 @@ private suspend fun fetchChatHistory(api: CommunityApi): List<ChatHistoryEntry> 
                 readTimeout = 10000
                 setRequestProperty("apikey", com.drmacze.f16launcher.BuildConfig.SUPABASE_ANON_KEY)
                 setRequestProperty("Authorization", "Bearer ${api.token()}")
-                // Supabase returns count via header Prefer: count=exact
                 setRequestProperty("Prefer", "count=exact")
             }
             val msgText = msgConn.inputStream?.bufferedReader()?.readText().orEmpty()
@@ -1835,7 +1905,7 @@ private suspend fun fetchChatHistory(api: CommunityApi): List<ChatHistoryEntry> 
             result.add(ChatHistoryEntry(
                 ticketId = ticketId,
                 status = o.optString("status"),
-                category = o.optString("category"),
+                category = category,
                 createdAt = o.optString("created_at"),
                 closedAt = o.optString("closed_at"),
                 lastActivityAt = o.optString("last_activity_at"),
