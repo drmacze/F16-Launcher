@@ -12,6 +12,10 @@ on:
       - '.github/scripts/**'
       - '.github/workflows/build-debug-apk.yml'
 
+permissions:
+  contents: write   # required for `gh release create` to publish APK as a Release
+  actions: write    # required to read/run other workflow runs if needed
+
 jobs:
   build:
     name: Build DLavie 26 Debug APK
@@ -150,6 +154,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
