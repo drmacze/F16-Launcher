@@ -5902,7 +5902,19 @@ fun ProfileScreen(
 
             // Block 3: Info (FAQ, Terms, Policy)
             SettingsContainer {
-                SettingsRow(icon = Icons.Rounded.HelpOutline, label = "FAQ", onClick = { })
+                SettingsRow(
+                    icon = Icons.Rounded.HelpOutline,
+                    label = "FAQ",
+                    onClick = {
+                        // Open the DLavie FAQ web page in the user's default browser.
+                        // Hosted on GitHub Pages: https://drmacze.github.io/dlavie-faq/
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://drmacze.github.io/dlavie-faq/")
+                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runCatching { context.startActivity(intent) }
+                    }
+                )
                 SettingsDivider()
                 SettingsRow(icon = Icons.Rounded.Description, label = "Terms", onClick = { })
                 SettingsDivider()
