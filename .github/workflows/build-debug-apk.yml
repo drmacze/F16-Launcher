@@ -144,3 +144,91 @@ jobs:
           name: DLavie-26-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      - name: Publish to GitHub Releases (auto-update popup)
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+          if [ -z "$APK_FILE" ]; then echo "No APK found"; exit 1; fi
+          
+          # Read version info from build.gradle
+          VERSION_CODE=$(grep -E "^\s*versionCode" app/build.gradle | head -1 | grep -oE '[0-9]+')
+          VERSION_NAME=$(grep -E "^\s*versionName" app/build.gradle | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          TAG="v${VERSION_CODE}"
+          
+          echo "Publishing APK as GitHub Release ${TAG} (${VERSION_NAME})"
+          
+          # Delete existing release (if any — for re-runs)
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          
+          # Create new release with the APK as an asset
+          gh release create "$TAG" "$APK_FILE" \
+            --title "DLavie Launcher ${VERSION_NAME}" \
+            --notes "Auto-built from commit ${GITHUB_SHA::7}
+
+          **What's new in v${VERSION_CODE} (${VERSION_NAME}):**
+          - Fixed: 'Edit Profile' button now opens dedicated EditProfileScreen (was opening Settings)
+          - Added: real edit form (avatar, full name, phone, email, username, bio)
+          - Added: AuthManager.updateBio() for bio persistence
+          - Added: 8 new i18n keys (EN + ID)
+
+          **Install:**
+          Download the APK below, then tap to install. Existing launcher data is preserved.
+
+          **Full Changelog:** https://github.com/drmacze/F16-Launcher/compare/v185...v${TAG}"
+          
+          echo "✓ Release ${TAG} published"
+          echo "  URL: https://github.com/drmacze/F16-Launcher/releases/tag/${TAG}"
+          
+          # Print asset URL for the Supabase app_releases insert step
+          ASSET_URL="https://github.com/drmacze/F16-Launcher/releases/download/${TAG}/app-debug.apk"
+          echo "ASSET_URL=$ASSET_URL" >> $GITHUB_ENV
+          echo "::set-output name=asset_url::$ASSET_URL"
+          echo "::set-output name=version_code::$VERSION_CODE"
+          echo "::set-output name=version_name::$VERSION_NAME"
+          echo "::set-output name=tag::$TAG"
+
+      - name: Insert app_releases row in Supabase (for update popup)
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The AppUpdateChecker queries: GET /rest/v1/app_releases?version_code=gt.<current>&is_published=eq.true
+          # We need a row with version_code=186, is_published=true, apk_download_url=<GitHub Release asset URL>
+          # RLS policy on app_releases: only admin/developer can INSERT. We use the
+          # SUPABASE_SERVICE_ROLE secret if available; otherwise this step is skipped
+          # and the user must insert the row manually via Dev Dashboard.
+          if [ -z "${{ secrets.SUPABASE_SERVICE_ROLE }}" ]; then
+            echo "⚠ SUPABASE_SERVICE_ROLE secret not set — skipping app_releases INSERT."
+            echo "  Manual step required: open Dev Dashboard → SQL editor → run:"
+            echo "    INSERT INTO public.app_releases"
+            echo "      (version_code, version_name, tag_name, apk_download_url, changelog, is_published, published_at)"
+            echo "    VALUES (186, '7.9.17-v26-profile-fix', 'v186',"
+            echo "            'https://github.com/drmacze/F16-Launcher/releases/download/v186/app-debug.apk',"
+            echo "            'Edit Profile fix + new EditProfileScreen',"
+            echo "            true, now());"
+            exit 0
+          fi
+          
+          # Use service_role key to bypass RLS
+          curl -s -X POST \
+            "https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/app_releases" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE }}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d '{
+              "version_code": 186,
+              "version_name": "7.9.17-v26-profile-fix",
+              "tag_name": "v186",
+              "apk_download_url": "https://github.com/drmacze/F16-Launcher/releases/download/v186/app-debug.apk",
+              "changelog": "Fixed: Edit Profile button now opens dedicated EditProfileScreen (was opening Settings). Added: real edit form with avatar, full name, phone, email, username, bio. Added: AuthManager.updateBio().",
+              "is_published": true,
+              "published_at": "now()"
+            }'
+          echo "✓ Inserted app_releases row — update popup will appear on devices running v185 or older"
+
