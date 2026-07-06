@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -55,19 +56,18 @@ import java.util.*
 fun NewsScreen(api: CommunityApi) {
     val scope = rememberCoroutineScope()
     var news by remember { mutableStateOf<List<NewsItem>>(emptyList()) }
+    var sliderPosts by remember { mutableStateOf<List<NewsItem>>(emptyList()) }  // v7.9.7: pure image slider
     var loading by remember { mutableStateOf(true) }
     var selectedNews by remember { mutableStateOf<NewsItem?>(null) }
 
     LaunchedEffect(Unit) {
         loading = true
         news = fetchAllNews(api)
+        sliderPosts = fetchSliderPosts(api)  // v7.9.7: fetch pure image slider posts
         loading = false
     }
 
     // v7.9.6 FIX: NewsDetailScreen sebagai full-screen overlay Dialog (bukan embedded).
-    // Sebelumnya pakai `return` yang menempatkan NewsDetailScreen (fillMaxSize + verticalScroll)
-    // di dalam HomeScreen's verticalScroll Column → crash "infinity height constraints".
-    // Dialog punya constraint tinggi terbatas (window size), jadi aman.
     selectedNews?.let { item ->
         Dialog(onDismissRequest = { selectedNews = null }) {
             Surface(
@@ -83,8 +83,20 @@ fun NewsScreen(api: CommunityApi) {
     }
 
     Column(Modifier.fillMaxWidth()) {
-        // ── News Hero Carousel (top 3 news) ──
-        if (news.isNotEmpty()) {
+        // ── v7.9.7: Pure Image Slider (promo banner) ──
+        // Hanya gambar, ratio auto (16:9 fillMaxWidth), no text.
+        // Source: feed_posts WHERE is_slider=true AND official=true
+        if (sliderPosts.isNotEmpty()) {
+            PromoSliderCarousel(
+                items = sliderPosts,
+                onClick = { selectedNews = it }
+            )
+            Spacer(Modifier.height(16.dp))
+        }
+
+        // ── v7.9.7: News Hero Carousel (top 3 news) — fallback if no slider ──
+        // Kalau slider kosong, tetap tampilkan hero carousel dari news posts
+        if (sliderPosts.isEmpty() && news.isNotEmpty()) {
             val heroNews = news.take(3)
             NewsHeroCarousel(
                 news = heroNews,
@@ -108,19 +120,11 @@ fun NewsScreen(api: CommunityApi) {
         }
 
         // ── News Feed List ──
-        // v7.9.5 FIX: Use Column (NOT LazyColumn) because NewsScreen is embedded
-        // inside HomeScreen's verticalScroll Column. LazyColumn inside verticalScroll
-        // = crash "Vertically scrollable component was measured with infinity height".
-        // Since news max ~25 items, Column is fine (no perf issue).
         if (loading && news.isEmpty()) {
-            // Loading skeleton
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                repeat(3) {
-                    NewsCardSkeleton()
-                }
+                repeat(3) { NewsCardSkeleton() }
             }
         } else if (news.isEmpty()) {
-            // Empty state
             Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Rounded.Article, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(48.dp))
@@ -141,10 +145,91 @@ fun NewsScreen(api: CommunityApi) {
                         onClick = { selectedNews = it }
                     )
                 }
-                // Bottom spacer for floating nav
                 Spacer(Modifier.height(120.dp))
             }
         }
+    }
+}
+
+// ─── v7.9.7: Promo Slider Carousel (pure image, auto ratio 16:9) ─────────────
+
+@Composable
+private fun PromoSliderCarousel(items: List<NewsItem>, onClick: (NewsItem) -> Unit) {
+    val pagerState = rememberPagerState(pageCount = { items.size })
+
+    // Auto-scroll every 4 seconds
+    LaunchedEffect(items.size) {
+        if (items.size > 1) {
+            while (true) {
+                delay(4000)
+                val next = (pagerState.currentPage + 1) % items.size
+                pagerState.animateScrollToPage(next)
+            }
+        }
+    }
+
+    Box(Modifier.fillMaxWidth().height(180.dp)) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            val item = items[page]
+            PromoSliderSlide(item = item, onClick = { onClick(item) })
+        }
+
+        // Dots indicator
+        if (items.size > 1) {
+            Row(
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                repeat(items.size) { index ->
+                    val isActive = pagerState.currentPage == index
+                    Box(
+                        Modifier.size(if (isActive) 20.dp else 6.dp, 6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(if (isActive) Color.White else Color.White.copy(0.4f))
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PromoSliderSlide(item: NewsItem, onClick: () -> Unit) {
+    Box(
+        Modifier.fillMaxSize().padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable { onClick() }
+    ) {
+        // Pure image, auto ratio (fillMaxSize = match parent 180dp height)
+        if (item.imageUrl.isNotBlank()) {
+            AsyncImage(
+                model = item.imageUrl,
+                contentDescription = item.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else if (item.sliderImages.isNotEmpty()) {
+            // Fallback: use first slider image
+            AsyncImage(
+                model = item.sliderImages.first(),
+                contentDescription = item.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            // No image — gradient placeholder
+            Box(Modifier.fillMaxSize().background(
+                Brush.verticalGradient(listOf(Color(0xFF1A237E), Color(0xFF0D47A1)))
+            ))
+        }
+
+        // Subtle gradient at bottom for any text overlay (optional)
+        Box(Modifier.fillMaxSize().background(
+            Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.3f)))
+        ))
     }
 }
 
@@ -630,8 +715,9 @@ private suspend fun fetchAllNews(api: CommunityApi): List<NewsItem> = withContex
     }.onFailure { Log.w("NewsScreen", "getNotifications failed", it) }
 
     // 3. Fetch official feed posts (pinned/official only) — v7.9.6: include image_url + slider_images
+    //    v7.9.7: filter is_slider=eq.false (slider posts TIDAK masuk news cards, hanya di slider carousel)
     runCatching {
-        val resp = api.requestPublic("GET", "/rest/v1/feed_posts?official=eq.true&order=created_at.desc&limit=10&select=id,title,body,image_url,slider_images,created_at")
+        val resp = api.requestPublic("GET", "/rest/v1/feed_posts?official=eq.true&is_slider=eq.false&order=created_at.desc&limit=10&select=id,title,body,image_url,slider_images,created_at")
         val arr = JSONArray(resp)
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
@@ -653,6 +739,38 @@ private suspend fun fetchAllNews(api: CommunityApi): List<NewsItem> = withContex
         }
     }.onFailure { Log.w("NewsScreen", "official feed failed", it) }
 
+    // Sort by createdAt desc
+    result.sortedByDescending { it.createdAt }
+}
+
+/**
+ * v7.9.7: Fetch pure image slider posts (promo banners).
+ * Source: feed_posts WHERE is_slider=true AND official=true
+ * Hanya gambar, no text body — tampil di slider carousel Beranda.
+ */
+private suspend fun fetchSliderPosts(api: CommunityApi): List<NewsItem> = withContext(Dispatchers.IO) {
+    val result = mutableListOf<NewsItem>()
+    val now = System.currentTimeMillis()
+    runCatching {
+        val resp = api.requestPublic("GET", "/rest/v1/feed_posts?is_slider=eq.true&official=eq.true&order=created_at.desc&limit=10&select=id,title,image_url,slider_images,created_at")
+        val arr = JSONArray(resp)
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val createdAt = parseIsoDate(o.optString("created_at")) ?: now
+            val sliderImgs = arrayListOf<String>()
+            val si = o.optJSONArray("slider_images")
+            if (si != null) for (j in 0 until si.length()) sliderImgs.add(si.getString(j))
+            result.add(NewsItem(
+                id = "slider_${o.optString("id")}",
+                title = o.optString("title", "Slider"),
+                category = NewsCategory.COMMUNITY,
+                createdAt = createdAt,
+                timeAgo = timeAgo(createdAt, now),
+                imageUrl = o.optString("image_url", "").ifBlank { "" },
+                sliderImages = sliderImgs
+            ))
+        }
+    }.onFailure { Log.w("NewsScreen", "fetchSliderPosts failed", it) }
     // Sort by createdAt desc
     result.sortedByDescending { it.createdAt }
 }
