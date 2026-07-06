@@ -32,6 +32,9 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
+// v7.9.19: AsyncImage + ContentScale for report screenshot in detail
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import java.util.*
 
 /**
