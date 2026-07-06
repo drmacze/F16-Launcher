@@ -87,9 +87,19 @@
 
         <activity
             android:name=".ModernLauncherActivity"
-            android:exported="false"
+            android:exported="true"
             android:label="DLavie 26"
-            android:theme="@style/AppTheme.Splash" />
+            android:launchMode="singleTop"
+            android:theme="@style/AppTheme.Splash">
+            <!-- Deep link for DLavie Portal Connect (dlavie://connect) -->
+            <!-- Triggered from web FAQ page when user clicks "Connect to DLavie" -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dlavie" android:host="connect" />
+            </intent-filter>
+        </activity>
 
         <!-- Shiny splash screen — true launcher entry point -->
         <activity

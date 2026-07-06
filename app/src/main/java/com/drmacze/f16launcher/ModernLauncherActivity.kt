@@ -384,8 +384,25 @@ class ModernLauncherActivity : ComponentActivity() {
         super.attachBaseContext(newBase.createConfigurationContext(config))
     }
 
+    // ── DLavie Portal Connect: deep link handler ──
+    // When user clicks "Connect to DLavie" on the web FAQ page,
+    // Android opens the launcher via dlavie://connect?callback=URL
+    // We detect this, navigate to Profile tab, show "DLavie Portal connected"
+    // status, then redirect back to the web with the user's auth token.
+    private var portalConnectCallback: String? = null
+
+    private fun handlePortalConnectIntent(intent: android.content.Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme == "dlavie" && data.host == "connect") {
+            portalConnectCallback = data.getQueryParameter("callback")
+            // Show toast immediately
+            android.widget.Toast.makeText(this, "DLavie Portal Connected!", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handlePortalConnectIntent(intent)
         // Pre-create notification channel (idempotent) so the channel is ready
         // before any local notification fires (Android O+).
         NotificationHelper.createChannel(this)
