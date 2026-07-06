@@ -1208,6 +1208,7 @@ fun MainShell(
                         if (showDetail) {
                             // ── Phase 2: GameDetailScreen overlay (replaces page content) ──
                             // v7.9.3: Pass GameItem (FIFA 16 or FIFA 15). Default to FIFA 16 if null.
+                            // v7.9.4: Default includes screenshots (real gameplay from user upload).
                             val currentGame = detailGameItem ?: GameItem(
                                 title = "FIFA 16 Mobile",
                                 subtitle = "DLavie 26 Mod · Sports",
@@ -1224,6 +1225,12 @@ fun MainShell(
                                 ageRating = "9+",
                                 lastUpdate = "5 Juli 2026",
                                 features = listOf("Gameplay Realistis", "Roster Update 2025/2026", "Komunitas Aktif", "Update Rutin"),
+                                screenshots = listOf(
+                                    R.drawable.fifa16_screenshot_1,
+                                    R.drawable.fifa16_screenshot_2,
+                                    R.drawable.fifa16_screenshot_3,
+                                    R.drawable.fifa16_screenshot_4
+                                ),
                                 apkUrl = FIFA16_APK_URL
                             )
                             GameDetailScreen(
@@ -1363,6 +1370,12 @@ fun MainShell(
                                                         ageRating = "9+",
                                                         lastUpdate = "5 Juli 2026",
                                                         features = listOf("Gameplay Realistis", "Roster Update 2025/2026", "Komunitas Aktif", "Update Rutin"),
+                                                        screenshots = listOf(
+                                                            R.drawable.fifa16_screenshot_1,
+                                                            R.drawable.fifa16_screenshot_2,
+                                                            R.drawable.fifa16_screenshot_3,
+                                                            R.drawable.fifa16_screenshot_4
+                                                        ),
                                                         apkUrl = FIFA16_APK_URL
                                                     )
                                                     GAME_PKG_15 -> GameItem(
@@ -8226,6 +8239,13 @@ fun GameHubScreen(
                     "Roster Update 2025/2026 — Pemain dan tim terbaru",
                     "Komunitas Aktif — Ribuan pemain DLavie",
                     "Update Rutin — Patch mod baru berkala"
+                ),
+                // v7.9.4: Real screenshots dari gameplay FIFA 16 (user upload)
+                screenshots = listOf(
+                    R.drawable.fifa16_screenshot_1,
+                    R.drawable.fifa16_screenshot_2,
+                    R.drawable.fifa16_screenshot_3,
+                    R.drawable.fifa16_screenshot_4
                 ),
                 apkUrl = FIFA16_APK_URL
             ),
