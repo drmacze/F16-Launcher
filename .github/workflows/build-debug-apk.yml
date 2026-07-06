@@ -160,6 +160,12 @@ jobs:
           APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
           if [ -z "$APK_FILE" ]; then echo "No APK found"; exit 1; fi
           
+          # Rename to match existing release convention (DLavie26-Launcher-debug.apk)
+          # so the public asset URL stays consistent with previous releases.
+          RENAMED="app/build/outputs/apk/debug/DLavie26-Launcher-debug.apk"
+          cp "$APK_FILE" "$RENAMED"
+          APK_FILE="$RENAMED"
+          
           # Read version info from build.gradle
           VERSION_CODE=$(grep -E "^\s*versionCode" app/build.gradle | head -1 | grep -oE '[0-9]+')
           VERSION_NAME=$(grep -E "^\s*versionName" app/build.gradle | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
@@ -190,7 +196,7 @@ jobs:
           echo "  URL: https://github.com/drmacze/F16-Launcher/releases/tag/${TAG}"
           
           # Print asset URL for the Supabase app_releases insert step
-          ASSET_URL="https://github.com/drmacze/F16-Launcher/releases/download/${TAG}/app-debug.apk"
+          ASSET_URL="https://github.com/drmacze/F16-Launcher/releases/download/${TAG}/DLavie26-Launcher-debug.apk"
           echo "ASSET_URL=$ASSET_URL" >> $GITHUB_ENV
           echo "::set-output name=asset_url::$ASSET_URL"
           echo "::set-output name=version_code::$VERSION_CODE"
@@ -230,7 +236,7 @@ jobs:
               "version_code": 186,
               "version_name": "7.9.17-v26-profile-fix",
               "tag_name": "v186",
-              "apk_download_url": "https://github.com/drmacze/F16-Launcher/releases/download/v186/app-debug.apk",
+              "apk_download_url": "https://github.com/drmacze/F16-Launcher/releases/download/v186/DLavie26-Launcher-debug.apk",
               "changelog": "Fixed: Edit Profile button now opens dedicated EditProfileScreen (was opening Settings). Added: real edit form with avatar, full name, phone, email, username, bio. Added: AuthManager.updateBio().",
               "is_published": true,
               "published_at": "now()"
