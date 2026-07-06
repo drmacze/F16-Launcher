@@ -863,6 +863,11 @@ fun MainShell(
     var detailMyRating          by remember { mutableStateOf(0) }
     var showRatingPopup         by remember { mutableStateOf(false) }
     var ratingSubmitError       by remember { mutableStateOf("") }
+    // v7.9.3: Selected GameItem for GameDetailScreen — supports FIFA 16 AND FIFA 15.
+    // Di-set saat user klik game card di GameHub atau Beranda. Default: FIFA 16.
+    var detailGameItem          by remember { mutableStateOf<GameItem?>(null) }
+    // v7.9.3: Show GameActionPanel dari GameDetailScreen (untuk install flow).
+    var detailShowActionPanel   by remember { mutableStateOf(false) }
 
     // ── Phase 4: Settings overlay state + lifted Profile expand state ──
     // profileExpandedSection di-lift ke MainShell supaya SettingsScreen bisa
@@ -1202,17 +1207,47 @@ fun MainShell(
                     CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
                         if (showDetail) {
                             // ── Phase 2: GameDetailScreen overlay (replaces page content) ──
+                            // v7.9.3: Pass GameItem (FIFA 16 or FIFA 15). Default to FIFA 16 if null.
+                            val currentGame = detailGameItem ?: GameItem(
+                                title = "FIFA 16 Mobile",
+                                subtitle = "DLavie 26 Mod · Sports",
+                                packageName = GAME_PKG_16,
+                                mainActivity = "com.byfen.downloadzipsdk.MainActivity",
+                                coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222)),
+                                coverText = "DL",
+                                coverImageRes = R.drawable.fifa16_cover,
+                                serverStatus = ServerStatus.ONLINE,
+                                description = "FIFA 16 Mobile dengan mod DLavie 26.",
+                                version = "v26.0",
+                                sizeMb = "34 MB",
+                                category = "Olahraga",
+                                ageRating = "9+",
+                                lastUpdate = "5 Juli 2026",
+                                features = listOf("Gameplay Realistis", "Roster Update 2025/2026", "Komunitas Aktif", "Update Rutin"),
+                                apkUrl = FIFA16_APK_URL
+                            )
                             GameDetailScreen(
+                                game = currentGame,
                                 onBack = { showGameDetail = false },
                                 onPlay = {
-                                    launchGame(context)
+                                    launchGame(context, currentGame.packageName, currentGame.mainActivity)
                                     showGameDetail = false
                                 },
-                                onDownload = {
-                                    showGameDetail = false
-                                    // Trigger download via lifted state (dlProgress/dlError/startDownload)
-                                    // — user kembali ke Beranda dan download otomatis dimulai.
-                                    startDownload()
+                                onInstall = {
+                                    // v7.9.3: Show GameActionPanel from detail (install flow)
+                                    detailShowActionPanel = true
+                                },
+                                onDelete = {
+                                    // v7.9.3: Uninstall game via PackageManager
+                                    scope.launch {
+                                        val ok = uninstallGame(context, currentGame.packageName)
+                                        if (ok) {
+                                            detailGameInstalled = false
+                                            toast("Game berhasil dihapus")
+                                        } else {
+                                            toast("Gagal hapus game — uninstall manual dari Settings")
+                                        }
+                                    }
                                 },
                                 gameInstalled      = detailGameInstalled,
                                 avgRating          = detailAvgRating,
@@ -1221,24 +1256,43 @@ fun MainShell(
                                 // v6.8.1: pass myRating supaya Rate button tahu state-nya.
                                 hasRated           = detailMyRating > 0,
                                 myRating           = detailMyRating,
-                                onRate             = {
-                                    // v6.8.4: Guest restriction — rate requires login (dialog, not popup)
+                                onRate             = { rating ->
+                                    // v7.9.3: onRate now receives rating directly (1-5) from star bar.
                                     if (api.isGuest()) {
                                         ratingSubmitError = t.loginToRateGuest
                                         showRatingPopup = true
                                     } else if (!api.loggedIn()) {
-                                        // Cek login dulu — rating wajib login (Supabase RLS).
                                         ratingSubmitError = t.loginToRate
                                         showRatingPopup = true
                                     } else if (detailMyRating > 0) {
-                                        // Sudah rate — tidak bisa rate lagi. Tombol sudah jadi checkmark
-                                        // (visual cue), jadi seharusnya tidak sampai sini. Tapi kalau
-                                        // somehow terpanggil, silent ignore.
+                                        // Sudah rate — silent ignore
                                     } else {
-                                        showRatingPopup = true
+                                        // Submit rating directly (star bar already selected the value)
+                                        scope.launch {
+                                            runCatching {
+                                                api.submitRating(rating, "")
+                                                val stats = api.fetchRatingStats()
+                                                detailAvgRating   = stats.optDouble("avg", 0.0)
+                                                detailRatingCount = stats.optInt("count", 0)
+                                                detailMyRating    = rating
+                                            }
+                                        }
                                     }
                                 }
                             )
+
+                            // v7.9.3: GameActionPanel overlay (triggered from detail's Install button)
+                            if (detailShowActionPanel) {
+                                GameActionPanel(
+                                    game = currentGame,
+                                    onDismiss = { detailShowActionPanel = false },
+                                    onGoToDlc = {
+                                        detailShowActionPanel = false
+                                        showGameDetail = false
+                                        page = Page.DLC
+                                    }
+                                )
+                            }
                         } else {
                             // ── P3A: HorizontalPager replaces AnimatedContent for tab nav ──
                             // v7.0.2 FIX: beyondViewportPageCount = 1 (pre-render adjacent pages)
@@ -1287,14 +1341,69 @@ fun MainShell(
                                     Page.DLC -> DlcScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
                                     Page.GameHub -> GameHubScreen(
                                             onNav = { page = it },
-                                            onGameClick = { gameTitle ->
-                                                // Navigate to game detail
-                                                detailGameInstalled      = false
-                                                detailAvgRating          = 0.0
-                                                detailRatingCount        = 0
-                                                detailMaintenanceBlocked = false
-                                                detailMyRating           = 0
-                                                showGameDetail           = true
+                                            onGameClick = { gamePackage ->
+                                                // v7.9.3: Find GameItem by packageName, set as detail target.
+                                                // Cek installed status, fetch rating, lalu buka detail.
+                                                val game = when (gamePackage) {
+                                                    GAME_PKG_16 -> GameItem(
+                                                        title = "FIFA 16 Mobile",
+                                                        subtitle = "DLavie 26 Mod · Sports",
+                                                        packageName = GAME_PKG_16,
+                                                        mainActivity = "com.byfen.downloadzipsdk.MainActivity",
+                                                        coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222)),
+                                                        coverText = "DL",
+                                                        coverImageRes = R.drawable.fifa16_cover,
+                                                        serverStatus = ServerStatus.ONLINE,
+                                                        description = "FIFA 16 Mobile dengan mod DLavie 26 — gameplay yang ditingkatkan, roster update musim 2025/2026, " +
+                                                            "dan fitur tambahan. Mainkan mode career, ultimate team, dan online match dengan komunitas DLavie.",
+                                                        developer = "DLavie Company",
+                                                        version = "v26.0",
+                                                        sizeMb = "34 MB",
+                                                        category = "Olahraga",
+                                                        ageRating = "9+",
+                                                        lastUpdate = "5 Juli 2026",
+                                                        features = listOf("Gameplay Realistis", "Roster Update 2025/2026", "Komunitas Aktif", "Update Rutin"),
+                                                        apkUrl = FIFA16_APK_URL
+                                                    )
+                                                    GAME_PKG_15 -> GameItem(
+                                                        title = "FIFA 15 Mobile",
+                                                        subtitle = "DLavie 15 Mod · Sports",
+                                                        packageName = GAME_PKG_15,
+                                                        mainActivity = FIFA15_MAIN_ACTIVITY,
+                                                        coverGradient = listOf(Color(0xFF1A1A2E), Color(0xFF16213E)),
+                                                        coverText = "D15",
+                                                        coverImageRes = R.drawable.fifa15_cover,
+                                                        serverStatus = ServerStatus.MAINTENANCE,
+                                                        description = "FIFA 15 Mobile dengan mod DLavie 15 — versi klasik dengan gameplay retro.",
+                                                        developer = "DLavie Company",
+                                                        version = "v15.0",
+                                                        sizeMb = "22 MB",
+                                                        category = "Olahraga",
+                                                        ageRating = "9+",
+                                                        lastUpdate = "4 Juli 2026",
+                                                        features = listOf("Gameplay Klasik", "Roster 2014/2015", "Mode Nostalgia", "Android 16 Ready"),
+                                                        apkUrl = FIFA15_APK_URL
+                                                    )
+                                                    else -> return@GameHubScreen
+                                                }
+                                                detailGameItem = game
+                                                // Cek installed status
+                                                detailGameInstalled = try {
+                                                    context.packageManager.getPackageInfo(game.packageName, 0); true
+                                                } catch (_: Throwable) { false }
+                                                // Fetch rating stats
+                                                scope.launch {
+                                                    runCatching {
+                                                        val stats = api.fetchRatingStats()
+                                                        detailAvgRating   = stats.optDouble("avg", 0.0)
+                                                        detailRatingCount = stats.optInt("count", 0)
+                                                        detailMyRating    = api.getMyRating()
+                                                    }
+                                                }
+                                                // Cek maintenance
+                                                detailMaintenanceBlocked = game.serverStatus == ServerStatus.MAINTENANCE ||
+                                                    game.serverStatus == ServerStatus.OFFLINE
+                                                showGameDetail = true
                                             }
                                         )
                                     Page.Chat   -> CommunityScreen(
@@ -1916,150 +2025,12 @@ fun HomeScreen(
             }
         }
 
-        // ── v6.8 Hero Carousel (full-width image + dots + 5-star rating) ────────
-        // Replaces single decorative hero banner. Swipeable, auto-scroll 5s,
-        // dots indicator below, 5-star rating overlay on each slide.
-        // v6.8.1: Banner slides — NO rating (banner is promotional, not a game card).
-        // Slide 1: FIFA 16 Mobile cover image (dlavie_game_logo).
-        // Slide 2: Komunitas promo — large Forum icon + halftone + gradient.
-        // Slide 3: Update promo — large CloudSync icon + halftone + gradient.
-        val heroSlides = listOf(
-            HeroSlide(
-                title    = "FIFA 16 Mobile",
-                subtitle = "DLavie 26 Mod — Play offline, Always update, More improvement",
-                imageRes = R.drawable.dlavie_game_logo,
-                tag      = "OFFICIAL"
-            ),
-            HeroSlide(
-                title         = "Komunitas DLavie",
-                subtitle      = "Berbagi patch, tips, dan diskusi dengan ribuan pemain",
-                imageRes      = null,
-                tag           = "KOMUNITAS",
-                promoIcon     = Icons.Rounded.Forum,
-                promoGradient = listOf(PureBlack, Surface2, Carbon)
-            ),
-            HeroSlide(
-                title         = "Update v6.7.0",
-                subtitle      = t.update,
-                imageRes      = null,
-                tag           = "UPDATE",
-                promoIcon     = Icons.Rounded.CloudSync,
-                promoGradient = listOf(Surface3, Carbon, PureBlack)
-            )
-        )
-        DLavieHeroCarousel(
-            slides = heroSlides,
-            onSlideClick = { slide ->
-                when (slide.tag) {
-                    "OFFICIAL" -> onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked, myRating)
-                    "KOMUNITAS" -> onNav(Page.Chat)
-                    "UPDATE" -> onNav(Page.DLC)
-                }
-            }
-        )
-
-        // ── Beranda CLEAN (v5.0): Hanya game library DLavie 26 FIFA 16 ──────────
-        // Banner carousel, Berita/Feed, Trusted by DLavie, Status bar (3 chips)
-        // dipindahkan ke tab Community/Update. Beranda fokus ONLY ke game card.
-
+        // ── v7.9.3: Beranda = NEWS ONLY ──────────────────────────────────────────
+        // Hapus: hero carousel (3 slides), TTGameCard "DLavie 26", Play button, install hint card.
+        // Game info & install sekarang ADA DI GameHub (klik game card → GameDetailScreen).
+        // Beranda fokus ke berita: news hero carousel + news feed (composite).
         Spacer(Modifier.height(DLSpacing.md))
-
-        // ── Game Card: "DLavie 26: Football Game" (TapTap-style TTGameCard) ──
-        // Phase 2 fix: saat setupState==LOADING, tampilkan TTGameCardSkeleton
-        // (bukan card dengan data kosong) untuk loading state yang konsisten.
-        // Tombol adaptif: Dapatkan / Mainkan / Diblokir Maintenance.
-        // Inline download progress + error ditampilkan di bawah card (TTGameCard
-        // tidak punya slot untuk itu, jadi kita wrap dalam Column).
-        val rating10 = String.format("%.1f", avgRating * 2.0)
-        // v5.0 aurora cover gradient (deep space + cyan glow)
-        val coverGradient = listOf(
-            DLavieGlass.SpaceBlack,
-            DLavieGlass.SpaceCharcoal,
-            DLavieGlass.SpaceSurface
-        )
-        // v7.2.9: Button label "Lihat" (View) — buka GameDetailScreen, bukan download.
-        // Install & play hanya di GameHub. Beranda = info + rating saja.
-        val ttButtonLabel: String = "Lihat"
-        val ttButtonEnabled: Boolean = true
-        // v7.2.9: Tombol "Lihat" selalu buka GameDetailScreen (tidak ada download dari Beranda)
-        val ttButtonClick: () -> Unit = {
-            onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked, myRating)
-        }
-        // Phase 2: tap card body → navigate ke GameDetailScreen (pass state ke MainShell)
-        // v6.8.1: tambah myRating supaya Rate button di detail screen tahu state-nya.
-        val ttCardClick: () -> Unit = {
-            onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked, myRating)
-        }
-
-        if (setupState == SetupState.LOADING) {
-            // Loading state: skeleton (bukan card dengan data kosong)
-            TTGameCardSkeleton()
-        } else {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            TTGameCard(
-                title          = "DLavie 26: Football Game",
-                subtitle       = "Olahraga · FIFA 16 Mod",
-                rating         = "$rating10 · $ratingCount ratings",
-                coverGradient  = coverGradient,
-                coverText      = "DL",
-                coverImageRes  = R.drawable.dlavie_game_logo,
-                buttonLabel    = ttButtonLabel,
-                buttonEnabled  = ttButtonEnabled,
-                onButtonClick  = ttButtonClick,
-                onClick        = ttCardClick,
-                onLongClick    = { /* haptic-only acknowledgment */ },
-                sharedContentKey = "game-cover"
-            )
-            // v7.3.8: HAPUS inline download progress + error — install ONLY di GameHub
-        }
-        } // end if (setupState == LOADING) else { ... }
-
-        // v7.3.8: HAPUS entire AnimatedContent setup states (NEED_GAME/NEED_DATA/READY)
-        // Install ONLY di GameHub. Beranda = info + rating + link ke GameHub.
-        // Kalau game belum terinstall: card bilang "Buka GameHub untuk install"
-        // Kalau game sudah terinstall: card bilang "Main" (launch game)
-        if (!gameInstalled && setupState != SetupState.LOADING) {
-            // Simple info card — NO download button, NO install button
-            GlassCard(borderColor = GlassStroke) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        Modifier.size(40.dp)
-                            .background(Color.White.copy(0.08f), RoundedCornerShape(12.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Rounded.SportsEsports, null, tint = Color.White, modifier = Modifier.size(20.dp))
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text(t.gameHub, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                        Text("Go to GameHub to install", color = SoftText, fontSize = 11.sp)
-                    }
-                    Icon(Icons.Rounded.ChevronRight, null, tint = SubText, modifier = Modifier.size(18.dp).clickable { onNav(Page.GameHub) })
-                }
-            }
-        } else if (gameInstalled && setupState == SetupState.READY) {
-            // Game ready — Play button
-            Button(
-                onClick  = { if (!maintenanceBlocked) launchGame(context) },
-                enabled  = !maintenanceBlocked,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape    = RoundedCornerShape(18.dp),
-                colors   = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor   = PureBlack
-                )
-            ) {
-                Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(t.play, fontSize = 15.sp, fontWeight = FontWeight.Black)
-            }
-        }
-
-        // ── Beranda CLEAN: Status bar (3 chips) & Berita/Feed REMOVED ──────────
-        // These cluttered the home screen. Status info is now in the Update tab,
-        // and Feed/Berita is in the Community tab. Beranda stays minimal.
+        NewsScreen(api = api)
 
         // Bottom spacer
         Spacer(Modifier.height(8.dp))
@@ -7755,6 +7726,35 @@ fun launchGame(context: android.content.Context, gamePackage: String = GAME_PKG_
     }
 }
 
+/**
+ * v7.9.3: Uninstall game via PackageManager.
+ * Return true kalau berhasil, false kalau gagal (e.g. game tidak installed, atau permission denied).
+ *
+ * Catatan: Untuk uninstall tanpa root, launcher hanya bisa trigger
+ * uninstall confirmation dialog (Intent.ACTION_DELETE) — user konfirmasi manual.
+ * Tapi kalau pakai @Suppress("DEPRECATION") packageManager.deletePackage,
+ * perlu signature/system permission. Untuk launcher biasa, pakai Intent approach.
+ *
+ * Disini kita cek dulu game installed apa nggak, lalu buka uninstall confirmation.
+ */
+suspend fun uninstallGame(context: android.content.Context, packageName: String): Boolean {
+    return withContext(Dispatchers.IO) {
+        try {
+            // Cek installed
+            context.packageManager.getPackageInfo(packageName, 0)
+            // Trigger uninstall confirmation (user konfirmasi manual di system dialog)
+            val intent = android.content.Intent(android.content.Intent.ACTION_DELETE).apply {
+                data = android.net.Uri.parse("package:$packageName")
+                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+}
+
 // ─── Push Notification polling helpers (Module 3) ────────────────────────────────
 private const val SEEN_NOTIFS_PREFS = "dlavie_seen_notifs"
 
@@ -8208,7 +8208,26 @@ fun GameHubScreen(
                 coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222)),
                 coverText = "DL",
                 coverImageRes = R.drawable.fifa16_cover,
-                serverStatus = fifa16Status
+                serverStatus = fifa16Status,
+                // v7.9.3: Enhanced metadata
+                description = "FIFA 16 Mobile dengan mod DLavie 26 — gameplay yang ditingkatkan, roster update musim 2025/2026, " +
+                    "dan fitur tambahan. Mainkan mode career, ultimate team, dan online match dengan komunitas DLavie.\n\n" +
+                    "Game ini dimaintain oleh DLavie Company dan didistribusikan melalui DLavie Launcher.",
+                developer = "DLavie Company",
+                version = "v26.0",
+                sizeMb = "34 MB",
+                category = "Olahraga",
+                ageRating = "9+",
+                language = "Indonesia, English",
+                engine = "EA Sports FIFA 16",
+                lastUpdate = "5 Juli 2026",
+                features = listOf(
+                    "Gameplay Realistis — Mod gameplay yang ditingkatkan",
+                    "Roster Update 2025/2026 — Pemain dan tim terbaru",
+                    "Komunitas Aktif — Ribuan pemain DLavie",
+                    "Update Rutin — Patch mod baru berkala"
+                ),
+                apkUrl = FIFA16_APK_URL
             ),
             GameItem(
                 title = "FIFA 15 Mobile",
@@ -8218,7 +8237,26 @@ fun GameHubScreen(
                 coverGradient = listOf(Color(0xFF1A1A2E), Color(0xFF16213E)),
                 coverText = "D15",
                 coverImageRes = R.drawable.fifa15_cover,
-                serverStatus = fifa15Status
+                serverStatus = fifa15Status,
+                // v7.9.3: Enhanced metadata
+                description = "FIFA 15 Mobile dengan mod DLavie 15 — versi klasik dengan gameplay retro, " +
+                    "roster musim 2014/2015, dan feel nostalgia FIFA era lama.\n\n" +
+                    "Saat ini dalam maintenance — pantau pengumuman komunitas untuk info ketersediaan.",
+                developer = "DLavie Company",
+                version = "v15.0",
+                sizeMb = "22 MB",
+                category = "Olahraga",
+                ageRating = "9+",
+                language = "Indonesia, English",
+                engine = "EA Sports FIFA 15",
+                lastUpdate = "4 Juli 2026",
+                features = listOf(
+                    "Gameplay Klasik — Feel FIFA 15 asli",
+                    "Roster 2014/2015 — Pemain era itu",
+                    "Mode Nostalgia — Untuk fans lama",
+                    "Kompatibilitas Luas — Android 16 ready"
+                ),
+                apkUrl = FIFA15_APK_URL
             )
         )
     }
@@ -8253,8 +8291,9 @@ fun GameHubScreen(
                     GameCard(
                         game = game,
                         onClick = {
-                            // v7.0.7: Show floating action panel instead of directly launching
-                            activeGame = game
+                            // v7.9.3: Open GameDetailScreen (console-style) — NOT GameActionPanel.
+                            // Pass game packageName so MainShell can find the right GameItem.
+                            onGameClick(game.packageName)
                         }
                     )
                 }
@@ -8281,8 +8320,8 @@ fun GameHubScreen(
                     GameListItem(
                         game = game,
                         onClick = {
-                            // v7.0.7: Show floating action panel
-                            activeGame = game
+                            // v7.9.3: Open GameDetailScreen — same as card click.
+                            onGameClick(game.packageName)
                         }
                     )
                 }
