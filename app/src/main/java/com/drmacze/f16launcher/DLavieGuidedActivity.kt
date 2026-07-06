@@ -312,6 +312,21 @@ private fun DLavieGuidedApp(deepLinkResult: String? = null) {
                         onLoggedIn = { session ->
                             saveSession(context, session)
                             syncToCommunityPrefs(context, session)
+                            // v7.9.28: Save account to multi-account store
+                            try {
+                                val api = CommunityApi(context)
+                                val account = AccountStore.Account()
+                                account.userId = api.userId()
+                                account.email = session.email
+                                account.username = api.username()
+                                account.displayName = api.displayName()
+                                account.avatarUrl = api.avatarUrl()
+                                account.role = api.role()
+                                account.country = api.country()
+                                account.accessToken = session.accessToken
+                                account.refreshToken = session.refreshToken
+                                AccountStore.saveAccount(context, account)
+                            } catch (_: Exception) {}
                             context.startActivity(
                                 Intent(context, ModernLauncherActivity::class.java)
                                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)

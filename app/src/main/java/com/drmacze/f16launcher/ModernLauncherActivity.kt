@@ -5521,6 +5521,156 @@ private data class CommentItem(
 //      draft posts with Publish button per draft
 //   E. Bottom — Pengaturan entry, AccountSettingsCard (password/email/profile/pin),
 //      Keamanan info, Logout button (preserved dari versi sebelumnya)
+
+/**
+ * v7.9.28: Account Switcher Section — tampil di Profile screen sebelum logout.
+ * List semua akun tersimpan. Tap untuk switch. Long-press untuk remove.
+ * Button "Tambah Akun" di bawah.
+ */
+@Composable
+private fun AccountSwitcherSection(
+    api: CommunityApi,
+    onAccountSwitched: () -> Unit,
+    onAddAccount: () -> Unit
+) {
+    val context = LocalContext.current
+    var accounts by remember { mutableStateOf(AccountStore.listAccounts(context)) }
+    val activeUserId by remember { mutableStateOf(AccountStore.getActiveUserId(context)) }
+    var showRemoveConfirm by remember { mutableStateOf<String?>(null) }
+
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        // Section header
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(width = 3.dp, height = 18.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
+            Spacer(Modifier.width(8.dp))
+            Text("Akun", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+            Spacer(Modifier.weight(1f))
+            Text("${accounts.size}/5", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontFamily = InterFontFamily)
+        }
+        Spacer(Modifier.height(12.dp))
+
+        // Account list
+        accounts.forEach { account ->
+            val isActive = account.userId == activeUserId
+            Surface(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clickable {
+                        if (!isActive) {
+                            AccountStore.switchAccount(context, account.userId)
+                            onAccountSwitched()
+                        }
+                    }
+                    .pointerInput(account.userId) {
+                        detectTapGestures(
+                            onLongPress = {
+                                showRemoveConfirm = account.userId
+                            }
+                        )
+                    },
+                shape = RoundedCornerShape(14.dp),
+                color = if (isActive) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.03f),
+                border = BorderStroke(1.dp, if (isActive) Color.White.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.06f))
+            ) {
+                Row(
+                    Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Avatar
+                    Box(
+                        Modifier.size(36.dp).clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (account.avatarUrl != null && account.avatarUrl!!.isNotEmpty()) {
+                            coil.compose.AsyncImage(
+                                model = account.avatarUrl,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        } else {
+                            Text(
+                                (account.displayName.ifBlank { account.username.ifBlank { "?" } }).firstOrNull()?.uppercase() ?: "?",
+                                color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    // Name + email
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            account.displayName.ifBlank { account.username.ifBlank { "Unknown" } },
+                            color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily,
+                            maxLines = 1
+                        )
+                        if (account.email.isNotEmpty()) {
+                            Text(account.email, color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontFamily = InterFontFamily, maxLines = 1)
+                        }
+                    }
+                    // Active indicator
+                    if (isActive) {
+                        Icon(Icons.Rounded.CheckCircle, null, tint = Color(0xFF4ADE80), modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+        }
+
+        // Remove confirmation dialog
+        showRemoveConfirm?.let { removeId ->
+            val accountToRemove = accounts.find { it.userId == removeId }
+            AlertDialog(
+                onDismissRequest = { showRemoveConfirm = null },
+                title = { Text("Hapus Akun?", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) },
+                text = { Text("Akun ${accountToRemove?.displayName ?: ""} akan dihapus dari launcher. Anda bisa login lagi kapan saja.", color = Color.White.copy(alpha = 0.7f), fontFamily = InterFontFamily) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        AccountStore.removeAccount(context, removeId)
+                        accounts = AccountStore.listAccounts(context)
+                        showRemoveConfirm = null
+                        // If removed active account, switch to another or go to login
+                        if (removeId == activeUserId) {
+                            val remaining = AccountStore.listAccounts(context)
+                            if (remaining.isEmpty()) {
+                                onAddAccount()
+                            } else {
+                                onAccountSwitched()
+                            }
+                        }
+                    }) { Text("Hapus", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRemoveConfirm = null }) { Text("Batal", color = Color.White, fontFamily = InterFontFamily) }
+                },
+                containerColor = Carbon
+            )
+        }
+
+        // Add account button
+        if (accounts.size < 5) {
+            Spacer(Modifier.height(8.dp))
+            Surface(
+                Modifier.fillMaxWidth().clickable { onAddAccount() },
+                shape = RoundedCornerShape(14.dp),
+                color = Color.White.copy(alpha = 0.03f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
+            ) {
+                Row(
+                    Modifier.padding(12.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.PersonAdd, null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Tambah Akun", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFamily = InterFontFamily)
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun ProfileScreen(
@@ -6080,6 +6230,22 @@ fun ProfileScreen(
                 Spacer(Modifier.height(8.dp))
                 FcmDiagnosticCard(api = api, context = context)
             }
+
+            // ── v7.9.28: Multi-account switcher ──
+            AccountSwitcherSection(api = api, onAccountSwitched = {
+                // Restart activity to apply new account
+                context.startActivity(
+                    android.content.Intent(context, ModernLauncherActivity::class.java)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }, onAddAccount = {
+                // Go to login screen (add account mode)
+                api.logout()  // clear current session but keep accounts list
+                context.startActivity(
+                    android.content.Intent(context, DLavieGuidedActivity::class.java)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            })
 
             // ── Logout (pill button, bottom) ──
             AnimatedContent(targetState = confirmLogout, label = "logout") { confirm ->
