@@ -837,6 +837,20 @@ fun MainShell(
         initialPage = page.ordinal,
         pageCount = { Page.values().size }
     )
+
+    // ── DLavie Portal Connect: if deep link was triggered, navigate to Profile ──
+    LaunchedEffect(Unit) {
+        if (portalConnectPending) {
+            // Navigate to Profile tab
+            kotlinx.coroutines.delay(300)
+            pagePagerState.animateScrollToPage(Page.Me.ordinal)
+            // Show "DLavie Portal connected" status
+            android.widget.Toast.makeText(context, "✓ DLavie Portal Connected — Mengalihkan kembali ke web…", android.widget.Toast.LENGTH_LONG).show()
+            // Wait 1.5s for user to see the status, then redirect back to web
+            kotlinx.coroutines.delay(1500)
+            completePortalConnect(api)
+        }
+    }
     // v7.0.2 FIX: track apakah swipe sedang in-flight untuk avoid feedback loop.
     //   Sebelumnya: tap nav → set page → LaunchedEffect(page) animateScrollToPage
     //   → swipe selesai → LaunchedEffect(currentPage) set page lagi → re-trigger.
