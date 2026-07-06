@@ -43,16 +43,19 @@ data class GameItem(
 
 /**
  * Server status untuk game card — cloud gaming style.
+ * v7.9.13: BUSY dihapus dari manual config — sekarang auto-detect dari sinyal user.
+ *
  * - ONLINE: Server normal, game bisa dimainkan (green dot)
- * - BUSY: Server sibuk, mungkin ada delay (yellow dot)
  * - MAINTENANCE: Server maintenance, game tidak bisa dimainkan (red dot)
  * - OFFLINE: Server down (red dot)
+ * - BUSY: (auto) Sinyal user lemah — bukan status server, tapi status koneksi user
+ *         Auto-set saat user klik install/play jika sinyal lemah
  */
 enum class ServerStatus(val label: String, val dotColor: Color, val textColor: Color, val bgColor: Color) {
     ONLINE("Server Online", Color(0xFF4CAF50), Color(0xFF4CAF50), Color(0x1A4CAF50)),
-    BUSY("Server Sibuk", Color(0xFFFFC107), Color(0xFFFFC107), Color(0x1AFFC107)),
     MAINTENANCE("Maintenance", Color(0xFFFF5252), Color(0xFFFF5252), Color(0x1AFF5252)),
-    OFFLINE("Server Offline", Color(0xFFFF5252), Color(0xFFFF5252), Color(0x1AFF5252))
+    OFFLINE("Server Offline", Color(0xFFFF5252), Color(0xFFFF5252), Color(0x1AFF5252)),
+    BUSY("Sinyal Lemah", Color(0xFFFFC107), Color(0xFFFFC107), Color(0x1AFFC107))  // auto-detect, bukan dari Supabase
 }
 
 /**
@@ -78,6 +81,16 @@ enum class PingQuality(val label: String, val color: Color, val msThreshold: Lon
             ms < GOOD.msThreshold -> GOOD
             ms < FAIR.msThreshold -> FAIR
             else -> POOR
+        }
+
+        /**
+         * v7.9.13: Check apakah sinyal user lemah (untuk auto-set BUSY status).
+         * Return true kalau sinyal lemah (POOR atau UNKNOWN) — user akan dapat
+         * toast "Kekuatan sinyalmu lemah" saat klik install/play.
+         */
+        fun isWeakSignal(ms: Long?): Boolean {
+            if (ms == null) return false  // gagal test tapi bukan berarti sinyal lemah
+            return fromMs(ms) == POOR
         }
     }
 }

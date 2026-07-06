@@ -1237,12 +1237,55 @@ fun MainShell(
                                 game = currentGame,
                                 onBack = { showGameDetail = false },
                                 onPlay = {
-                                    launchGame(context, currentGame.packageName, currentGame.mainActivity)
-                                    showGameDetail = false
+                                    // v7.9.13: Cek server status + signal sebelum play
+                                    scope.launch {
+                                        when (currentGame.serverStatus) {
+                                            ServerStatus.MAINTENANCE -> {
+                                                android.widget.Toast.makeText(context, "${currentGame.title} sedang diperbaiki", android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                            ServerStatus.OFFLINE -> {
+                                                android.widget.Toast.makeText(context, "Server ${currentGame.title} sedang offline", android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                            else -> {
+                                                // Cek signal strength (auto-detect BUSY)
+                                                val pingMs = withContext(Dispatchers.IO) { pingGameServer(currentGame.packageName) }
+                                                if (PingQuality.isWeakSignal(pingMs)) {
+                                                    android.widget.Toast.makeText(context, "Kekuatan sinyalmu lemah, coba lagi nanti", android.widget.Toast.LENGTH_LONG).show()
+                                                } else {
+                                                    launchGame(context, currentGame.packageName, currentGame.mainActivity)
+                                                    showGameDetail = false
+                                                }
+                                            }
+                                        }
+                                    }
                                 },
                                 onInstall = {
-                                    // v7.9.3: Show GameActionPanel from detail (install flow)
-                                    detailShowActionPanel = true
+                                    // v7.9.13: Cek server status + signal sebelum install
+                                    scope.launch {
+                                        when (currentGame.serverStatus) {
+                                            ServerStatus.MAINTENANCE -> {
+                                                android.widget.Toast.makeText(context, "${currentGame.title} sedang diperbaiki", android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                            ServerStatus.OFFLINE -> {
+                                                android.widget.Toast.makeText(context, "Server ${currentGame.title} sedang offline", android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                            else -> {
+                                                // Cek signal strength (auto-detect BUSY)
+                                                val pingMs = withContext(Dispatchers.IO) { pingGameServer(currentGame.packageName) }
+                                                if (PingQuality.isWeakSignal(pingMs)) {
+                                                    android.widget.Toast.makeText(context, "Kekuatan sinyalmu lemah, coba lagi nanti", android.widget.Toast.LENGTH_LONG).show()
+                                                } else {
+                                                    // WiFi check before install
+                                                    if (!isWifiConnected(context)) {
+                                                        // Will show WiFi warning dialog (handled in GameDetailScreen)
+                                                        detailShowActionPanel = true
+                                                    } else {
+                                                        detailShowActionPanel = true
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 },
                                 onDelete = {
                                     // v7.9.3: Uninstall game via PackageManager
@@ -1349,74 +1392,95 @@ fun MainShell(
                                     Page.GameHub -> GameHubScreen(
                                             onNav = { page = it },
                                             onGameClick = { gamePackage ->
-                                                // v7.9.3: Find GameItem by packageName, set as detail target.
-                                                // Cek installed status, fetch rating, lalu buka detail.
-                                                val game = when (gamePackage) {
-                                                    GAME_PKG_16 -> GameItem(
-                                                        title = "FIFA 16 Mobile",
-                                                        subtitle = "DLavie 26 Mod · Sports",
-                                                        packageName = GAME_PKG_16,
-                                                        mainActivity = "com.byfen.downloadzipsdk.MainActivity",
-                                                        coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222)),
-                                                        coverText = "DL",
-                                                        coverImageRes = R.drawable.fifa16_cover,
-                                                        serverStatus = ServerStatus.ONLINE,
-                                                        description = "FIFA 16 Mobile dengan mod DLavie 26 — gameplay yang ditingkatkan, roster update musim 2025/2026, " +
-                                                            "dan fitur tambahan. Mainkan mode career, ultimate team, dan online match dengan komunitas DLavie.",
-                                                        developer = "DLavie Company",
-                                                        version = "v26.0",
-                                                        sizeMb = "34 MB",
-                                                        category = "Olahraga",
-                                                        ageRating = "9+",
-                                                        lastUpdate = "5 Juli 2026",
-                                                        features = listOf("Gameplay Realistis", "Roster Update 2025/2026", "Komunitas Aktif", "Update Rutin"),
-                                                        screenshots = listOf(
-                                                            R.drawable.fifa16_screenshot_1,
-                                                            R.drawable.fifa16_screenshot_2,
-                                                            R.drawable.fifa16_screenshot_3,
-                                                            R.drawable.fifa16_screenshot_4
-                                                        ),
-                                                        apkUrl = FIFA16_APK_URL
-                                                    )
-                                                    GAME_PKG_15 -> GameItem(
-                                                        title = "FIFA 15 Mobile",
-                                                        subtitle = "DLavie 15 Mod · Sports",
-                                                        packageName = GAME_PKG_15,
-                                                        mainActivity = FIFA15_MAIN_ACTIVITY,
-                                                        coverGradient = listOf(Color(0xFF1A1A2E), Color(0xFF16213E)),
-                                                        coverText = "D15",
-                                                        coverImageRes = R.drawable.fifa15_cover,
-                                                        serverStatus = ServerStatus.MAINTENANCE,
-                                                        description = "FIFA 15 Mobile dengan mod DLavie 15 — versi klasik dengan gameplay retro.",
-                                                        developer = "DLavie Company",
-                                                        version = "v15.0",
-                                                        sizeMb = "22 MB",
-                                                        category = "Olahraga",
-                                                        ageRating = "9+",
-                                                        lastUpdate = "4 Juli 2026",
-                                                        features = listOf("Gameplay Klasik", "Roster 2014/2015", "Mode Nostalgia", "Android 16 Ready"),
-                                                        apkUrl = FIFA15_APK_URL
-                                                    )
-                                                    else -> return@GameHubScreen
-                                                }
-                                                detailGameItem = game
-                                                // Cek installed status
-                                                detailGameInstalled = try {
-                                                    context.packageManager.getPackageInfo(game.packageName, 0); true
-                                                } catch (_: Throwable) { false }
-                                                // Fetch rating stats
+                                                // v7.9.13: Find GameItem by packageName, set as detail target.
+                                                // v7.9.13 FIX: Fetch server status dari Supabase (jangan hardcode!).
+                                                // Sebelumnya FIFA 16 di-hardcode ONLINE, FIFA 15 di-hardcode MAINTENANCE
+                                                // → status di detail screen tidak sesuai dengan Supabase.
+                                                // Sekarang fetch real-time dari app_config key='game_server_status'.
                                                 scope.launch {
+                                                    val baseGame = when (gamePackage) {
+                                                        GAME_PKG_16 -> GameItem(
+                                                            title = "FIFA 16 Mobile",
+                                                            subtitle = "DLavie 26 Mod · Sports",
+                                                            packageName = GAME_PKG_16,
+                                                            mainActivity = "com.byfen.downloadzipsdk.MainActivity",
+                                                            coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222)),
+                                                            coverText = "DL",
+                                                            coverImageRes = R.drawable.fifa16_cover,
+                                                            serverStatus = ServerStatus.ONLINE,  // placeholder, akan di-override
+                                                            description = "FIFA 16 Mobile dengan mod DLavie 26 — gameplay yang ditingkatkan, roster update musim 2025/2026, " +
+                                                                "dan fitur tambahan. Mainkan mode career, ultimate team, dan online match dengan komunitas DLavie.",
+                                                            developer = "DLavie Company",
+                                                            version = "v26.0",
+                                                            sizeMb = "34 MB",
+                                                            category = "Olahraga",
+                                                            ageRating = "9+",
+                                                            lastUpdate = "5 Juli 2026",
+                                                            features = listOf("Gameplay Realistis", "Roster Update 2025/2026", "Komunitas Aktif", "Update Rutin"),
+                                                            screenshots = listOf(
+                                                                R.drawable.fifa16_screenshot_1,
+                                                                R.drawable.fifa16_screenshot_2,
+                                                                R.drawable.fifa16_screenshot_3,
+                                                                R.drawable.fifa16_screenshot_4
+                                                            ),
+                                                            apkUrl = FIFA16_APK_URL
+                                                        )
+                                                        GAME_PKG_15 -> GameItem(
+                                                            title = "FIFA 15 Mobile",
+                                                            subtitle = "DLavie 15 Mod · Sports",
+                                                            packageName = GAME_PKG_15,
+                                                            mainActivity = FIFA15_MAIN_ACTIVITY,
+                                                            coverGradient = listOf(Color(0xFF1A1A2E), Color(0xFF16213E)),
+                                                            coverText = "D15",
+                                                            coverImageRes = R.drawable.fifa15_cover,
+                                                            serverStatus = ServerStatus.MAINTENANCE,  // placeholder
+                                                            description = "FIFA 15 Mobile dengan mod DLavie 15 — versi klasik dengan gameplay retro.",
+                                                            developer = "DLavie Company",
+                                                            version = "v15.0",
+                                                            sizeMb = "22 MB",
+                                                            category = "Olahraga",
+                                                            ageRating = "9+",
+                                                            lastUpdate = "4 Juli 2026",
+                                                            features = listOf("Gameplay Klasik", "Roster 2014/2015", "Mode Nostalgia", "Android 16 Ready"),
+                                                            apkUrl = FIFA15_APK_URL
+                                                        )
+                                                        else -> return@launch
+                                                    }
+
+                                                    // v7.9.13: Fetch REAL server status dari Supabase app_config
+                                                    val realStatus = withContext(Dispatchers.IO) {
+                                                        runCatching {
+                                                            val config = api.getAppConfig("game_server_status")
+                                                            val key = if (baseGame.packageName == GAME_PKG_16) "fifa16" else "fifa15"
+                                                            val statusStr = config.optString(key, if (baseGame.packageName == GAME_PKG_16) "online" else "maintenance").lowercase()
+                                                            when (statusStr) {
+                                                                "online" -> ServerStatus.ONLINE
+                                                                "maintenance" -> ServerStatus.MAINTENANCE
+                                                                "offline" -> ServerStatus.OFFLINE
+                                                                // v7.9.13: "busy" tidak lagi dari Supabase — auto-detect sinyal
+                                                                else -> if (baseGame.packageName == GAME_PKG_16) ServerStatus.ONLINE else ServerStatus.MAINTENANCE
+                                                            }
+                                                        }.getOrDefault(if (baseGame.packageName == GAME_PKG_16) ServerStatus.ONLINE else ServerStatus.MAINTENANCE)
+                                                    }
+
+                                                    val game = baseGame.copy(serverStatus = realStatus)
+                                                    detailGameItem = game
+                                                    // Cek installed status
+                                                    detailGameInstalled = try {
+                                                        context.packageManager.getPackageInfo(game.packageName, 0); true
+                                                    } catch (_: Throwable) { false }
+                                                    // Fetch rating stats
                                                     runCatching {
                                                         val stats = api.fetchRatingStats()
                                                         detailAvgRating   = stats.optDouble("avg", 0.0)
                                                         detailRatingCount = stats.optInt("count", 0)
                                                         detailMyRating    = api.getMyRating()
                                                     }
+                                                    // Cek maintenance — block install/play kalau maintenance atau offline
+                                                    detailMaintenanceBlocked = game.serverStatus == ServerStatus.MAINTENANCE ||
+                                                        game.serverStatus == ServerStatus.OFFLINE
+                                                    showGameDetail = true
                                                 }
-                                                // Cek maintenance
-                                                detailMaintenanceBlocked = game.serverStatus == ServerStatus.MAINTENANCE ||
-                                                    game.serverStatus == ServerStatus.OFFLINE
-                                                showGameDetail = true
                                             }
                                         )
                                     Page.Chat   -> CommunityScreen(
@@ -8190,19 +8254,18 @@ fun GameHubScreen(
             runCatching {
                 val api = CommunityApi(context)
                 // Fetch game_server_status dari app_config
+                // v7.9.13: "busy" tidak lagi dari Supabase — auto-detect dari sinyal user
                 val config = api.getAppConfig("game_server_status")
                 val fifa16 = config.optString("fifa16", "online").lowercase()
                 val fifa15 = config.optString("fifa15", "maintenance").lowercase()
                 fifa16Status = when (fifa16) {
                     "online" -> ServerStatus.ONLINE
-                    "busy" -> ServerStatus.BUSY
                     "maintenance" -> ServerStatus.MAINTENANCE
                     "offline" -> ServerStatus.OFFLINE
                     else -> ServerStatus.ONLINE
                 }
                 fifa15Status = when (fifa15) {
                     "online" -> ServerStatus.ONLINE
-                    "busy" -> ServerStatus.BUSY
                     "maintenance" -> ServerStatus.MAINTENANCE
                     "offline" -> ServerStatus.OFFLINE
                     else -> ServerStatus.MAINTENANCE
