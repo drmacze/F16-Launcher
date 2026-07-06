@@ -528,6 +528,7 @@ fun DLavieModernApp(initialPostId: String? = null) {
                         info = updateInfo!!,
                         downloading = updateDownloading,
                         progress = updateDownloadProgress,
+                        error = updateDownloadError,
                         onUpdate = {
                             if (!updateDownloading) {
                                 val currentInfo = updateInfo
@@ -545,6 +546,7 @@ fun DLavieModernApp(initialPostId: String? = null) {
                                 }
                                 updateDownloading = true
                                 updateDownloadProgress = 0f
+                                updateDownloadError = ""
                                 updateScope.launch {
                                     try {
                                         val apkFile = withContext(Dispatchers.IO) {
@@ -554,19 +556,26 @@ fun DLavieModernApp(initialPostId: String? = null) {
                                         }
                                         updateDownloading = false
                                         if (apkFile != null && apkFile.exists() && apkFile.length() > 0) {
-                                            // v7.2.8: installApk return Boolean — kalau gagal, tampilkan error (bukan browser)
+                                            // v7.5.4: grantUriPermission untuk Android 13+
+                                            runCatching {
+                                                context.grantUriPermission(
+                                                    "com.android.packageinstaller",
+                                                    androidx.core.content.FileProvider.getUriForFile(
+                                                        context, "${context.packageName}.files", apkFile
+                                                    ),
+                                                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                                )
+                                            }
                                             val installed = AppUpdateChecker.installApk(context, apkFile)
                                             if (!installed) {
-                                                updateDownloadError = "Gagal membuka installer APK. Coba lagi atau download manual dari DLavie Storage."
+                                                updateDownloadError = "Unable to open installer. Please try again."
                                             }
                                         } else {
-                                            // Download gagal — tampilkan error (bukan browser)
-                                            updateDownloadError = "Download gagal. Cek koneksi internet dan coba lagi."
+                                            updateDownloadError = "Download failed. Please try again."
                                         }
                                     } catch (e: Throwable) {
                                         updateDownloading = false
-                                        // v7.2.8: tampilkan error, bukan buka browser
-                                        updateDownloadError = "Error: ${e.message ?: "unknown"}. Coba lagi."
+                                        updateDownloadError = e.message ?: "Download failed. Check your connection."
                                     }
                                 }
                             }
@@ -7355,6 +7364,7 @@ fun AppUpdatePopup(
     info: AppUpdateChecker.UpdateInfo,
     downloading: Boolean,
     progress: Float,
+    error: String = "",
     onUpdate: () -> Unit,
     onLater: () -> Unit
 ) {
@@ -7423,9 +7433,25 @@ fun AppUpdatePopup(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Mengunduh... ${(progress * 100).toInt()}%",
+                        "Downloading... ${(progress * 100).toInt()}%",
                         color = SoftText, fontSize = 11.sp
                     )
+                }
+
+                // v7.5.4: Error display (modern, with icon)
+                if (error.isNotBlank()) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .background(DangerRed.copy(0.08f), RoundedCornerShape(12.dp))
+                            .border(1.dp, DangerRed.copy(0.20f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.ErrorOutline, null, tint = DangerRed, modifier = Modifier.size(16.dp).padding(top = 1.dp))
+                        Text(error, color = DangerRed, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.weight(1f))
+                    }
                 }
             }
         },
@@ -7442,11 +7468,11 @@ fun AppUpdatePopup(
                 if (downloading) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Carbon, strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
-                    Text("Mengunduh...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Downloading...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 } else {
                     Icon(Icons.Rounded.SystemUpdate, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Update Sekarang", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Update Now", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
         },
@@ -7455,7 +7481,7 @@ fun AppUpdatePopup(
                 onClick = onLater,
                 enabled = !downloading
             ) {
-                Text("Nanti saja", color = SubText, fontSize = 13.sp)
+                Text("Later", color = SubText, fontSize = 13.sp)
             }
         },
         containerColor = GlassBase

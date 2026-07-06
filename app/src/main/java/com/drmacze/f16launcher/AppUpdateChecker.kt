@@ -89,18 +89,19 @@ object AppUpdateChecker {
     /**
      * Download APK ke cache dir dengan progress callback.
      * Handles GitHub redirect (301/302) automatically.
+     * v7.5.4: Throw exception dengan pesan yang jelas kalau gagal (jangan swallow).
      */
     suspend fun downloadApk(context: Context, apkUrl: String, onProgress: ((Float) -> Unit)? = null): File? {
-        return try {
-            val cacheDir = File(context.cacheDir, "app-updates").also { it.mkdirs() }
-            val apkFile = File(cacheDir, "dlavie-update.apk")
-            if (apkFile.exists()) apkFile.delete()
+        val cacheDir = File(context.cacheDir, "app-updates").also { it.mkdirs() }
+        val apkFile = File(cacheDir, "dlavie-update.apk")
+        if (apkFile.exists()) apkFile.delete()
 
-            // Follow redirects manually (GitHub release URLs redirect to objects.githubusercontent.com)
-            var currentUrl = apkUrl
-            var redirectCount = 0
-            var conn: HttpURLConnection
+        // Follow redirects manually (GitHub release URLs redirect to objects.githubusercontent.com)
+        var currentUrl = apkUrl
+        var redirectCount = 0
+        var conn: HttpURLConnection? = null
 
+        try {
             while (true) {
                 val url = URL(currentUrl)
                 conn = (url.openConnection() as HttpURLConnection).apply {
@@ -117,7 +118,9 @@ object AppUpdateChecker {
                     // Redirect — follow Location header
                     val location = conn.getHeaderField("Location")
                     conn.disconnect()
-                    if (location.isNullOrBlank() || redirectCount >= 5) return null
+                    if (location.isNullOrBlank() || redirectCount >= 5) {
+                        throw Exception("Too many redirects. Download URL may be invalid.")
+                    }
                     currentUrl = location
                     redirectCount++
                     continue
@@ -125,9 +128,14 @@ object AppUpdateChecker {
                 break
             }
 
-            if (conn.responseCode !in 200..299) {
+            val responseCode = conn!!.responseCode
+            if (responseCode == 404) {
                 conn.disconnect()
-                return null
+                throw Exception("Update file not found on server. Release may not be published yet.")
+            }
+            if (responseCode !in 200..299) {
+                conn.disconnect()
+                throw Exception("Server returned HTTP $responseCode. Try again later.")
             }
 
             val total = conn.contentLengthLong.toFloat().coerceAtLeast(1f)
@@ -144,9 +152,19 @@ object AppUpdateChecker {
                 }
             }
             conn.disconnect()
-            apkFile
-        } catch (_: Throwable) {
-            null
+
+            // Verify file isn't empty or error page
+            if (apkFile.length() < 1_000_000) {
+                apkFile.delete()
+                throw Exception("Downloaded file too small. Server may have returned an error page.")
+            }
+
+            return apkFile
+        } catch (e: Exception) {
+            conn?.disconnect()
+            if (apkFile.exists()) apkFile.delete()
+            // Re-throw dengan pesan yang user-friendly
+            throw Exception(e.message ?: "Download failed. Check your connection.")
         }
     }
 
