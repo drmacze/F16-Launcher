@@ -229,7 +229,7 @@ public class CommunityApi {
 
     public JSONArray feedPosts() throws Exception {
         // Authenticated request — uses user's access token so RLS policies can resolve author + visibility.
-        return new JSONArray(request("GET", "/rest/v1/feed_posts?select=id,author_id,title,body,image_url,type,visibility,pinned,official,created_at&order=pinned.desc,created_at.desc&limit=10", null, true, (String) null));
+        return new JSONArray(request("GET", "/rest/v1/feed_posts?type=neq.issue&select=id,author_id,title,body,image_url,type,visibility,pinned,official,created_at&order=pinned.desc,created_at.desc&limit=10", null, true, (String) null));
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -279,7 +279,7 @@ public class CommunityApi {
         String order = "created_at.desc";
         if ("oldest".equals(sortBy)) order = "created_at.asc";
         return new JSONArray(request("GET",
-            "/rest/v1/feed_posts?official=eq.false&order=" + order + "&limit=" + limit +
+            "/rest/v1/feed_posts?official=eq.false&type=neq.issue&order=" + order + "&limit=" + limit +
             "&select=id,author_id,title,body,image_url,type,pinned,official,created_at",
             null, false, false));
     }
@@ -304,7 +304,7 @@ public class CommunityApi {
         }
 
         return new JSONArray(request("GET",
-            "/rest/v1/feed_posts?author_id=in.(" + inList + ")&official=eq.false&order=" + order + "&limit=" + limit +
+            "/rest/v1/feed_posts?type=neq.issue&author_id=in.(" + inList + ")&official=eq.false&order=" + order + "&limit=" + limit +
             "&select=id,author_id,title,body,image_url,type,pinned,official,created_at",
             null, true, false));
     }
@@ -544,7 +544,7 @@ public class CommunityApi {
         String sinceIso = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
             .format(new java.util.Date(sinceTimestamp));
         return new JSONArray(request("GET",
-            "/rest/v1/feed_posts?author_id=in.(" + inList + ")"
+            "/rest/v1/feed_posts?type=neq.issue&author_id=in.(" + inList + ")"
                 + "&created_at=gt." + enc(sinceIso)
                 + "&order=created_at.desc&limit=10"
                 + "&select=id,author_id,title,body,created_at",
