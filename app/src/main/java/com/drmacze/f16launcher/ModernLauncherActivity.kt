@@ -274,7 +274,7 @@ const val MARKER_PATH_16    = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie2
 
 // FIFA 15 (DLavie 15)
 const val GAME_PKG_15       = "com.ea.game.fifa14_row"
-const val FIFA15_APK_URL    = "${DLAVIE_PROXY_URL}?f=fifa15-apk"
+const val FIFA15_APK_URL    = "https://github.com/drmacze/F15/releases/download/v2.1.8/DLavie15-Android16-Compatible.apk"
 const val FIFA15_DATA_URL   = "${DLAVIE_PROXY_URL}?f=fifa15-data"
 const val FIFA15_OBB_URL    = "${DLAVIE_PROXY_URL}?f=fifa15-obb"
 const val MARKER_PATH_15    = "/sdcard/Android/data/com.ea.game.fifa14_row/.dlavie15_data_installed"
