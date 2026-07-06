@@ -6321,10 +6321,10 @@ fun ProfileScreen(
                     label = "FAQ",
                     onClick = {
                         // Open the DLavie FAQ web page in the user's default browser.
-                        // Hosted on GitHub Pages: https://drmacze.github.io/dlavie-faq/
+                        // Hosted on GitHub Pages: https://drmacze.github.io/dlavie-web/#/faq
                         val intent = android.content.Intent(
                             android.content.Intent.ACTION_VIEW,
-                            android.net.Uri.parse("https://drmacze.github.io/dlavie-faq/")
+                            android.net.Uri.parse("https://drmacze.github.io/dlavie-web/#/faq")
                         ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                         runCatching { context.startActivity(intent) }
                     }
