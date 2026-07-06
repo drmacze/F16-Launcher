@@ -73,57 +73,30 @@ class ShinySplashActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         // ── DLavie Portal Connect: check for deep link ──
-        // When user clicks "Connect to DLavie" on the web FAQ page,
-        // Android opens this activity via dlavie://connect?callback=URL
-        // We handle it IMMEDIATELY — before splash animation.
-        // ── DLavie Portal Connect: check for deep link ──
-        // Inline ALL logic here — no separate function (avoids scope issues)
         val portalData = intent?.data
         if (portalData != null && portalData.scheme == "dlavie" && portalData.host == "connect") {
             val callback = portalData.getQueryParameter("callback")
             val api = CommunityApi(this)
-
-            if (callback == null || !api.loggedIn()) {
-                android.widget.Toast.makeText(this,
-                    "Silakan login dulu di launcher, lalu coba Connect lagi dari web.",
-                    android.widget.Toast.LENGTH_LONG).show()
-                val loginIntent = android.content.Intent(this, DLavieGuidedActivity::class.java)
-                loginIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                startActivity(loginIntent)
+            if (callback != null && api.loggedIn()) {
+                val pToken = api.token()
+                val pUid = api.userId()
+                getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
+                    .edit().putBoolean("portal_connected", true)
+                    .putString("portal_connected_at", System.currentTimeMillis().toString()).apply()
+                android.widget.Toast.makeText(this, "DLavie Portal Connected! Mengalihkan ke web...", android.widget.Toast.LENGTH_LONG).show()
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    try {
+                        val rUrl = "$callback?token=$pToken&uid=$pUid"
+                        startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(rUrl)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (e: Exception) { android.widget.Toast.makeText(this, "Gagal: ${e.message}", android.widget.Toast.LENGTH_SHORT).show() }
+                    finish()
+                }, 2000)
+            } else {
+                android.widget.Toast.makeText(this, "Login dulu di launcher, lalu coba Connect lagi.", android.widget.Toast.LENGTH_LONG).show()
+                startActivity(android.content.Intent(this, DLavieGuidedActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK))
                 finish()
-                return
             }
-
-            val portalToken = api.token()
-            val portalUid = api.userId()
-
-            // Mark portal as connected
-            getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
-                .edit()
-                .putBoolean("portal_connected", true)
-                .putString("portal_connected_at", System.currentTimeMillis().toString())
-                .apply()
-
-            // Show status
-            android.widget.Toast.makeText(this,
-                "✓ DLavie Portal Connected! Mengalihkan kembali ke web…",
-                android.widget.Toast.LENGTH_LONG).show()
-
-            // Redirect back to web after 2s
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                try {
-                    val redirectUrl = "$callback?token=$portalToken&uid=$portalUid"
-                    val browserIntent = android.content.Intent(
-                        android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse(redirectUrl)
-                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(browserIntent)
-                } catch (e: Exception) {
-                    android.widget.Toast.makeText(this, "Gagal redirect: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                }
-                finish()
-            }, 2000)
-            return  // Don't start splash
+            return
         }
 
         setContent {
@@ -171,6 +144,15 @@ class ShinySplashActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val data = intent.data
+        if (data != null && data.scheme == "dlavie" && data.host == "connect") {
+            recreate()
         }
     }
 }
@@ -368,10 +350,13 @@ private fun LoadingDots(modifier: Modifier = Modifier) {
         Dot(alpha = dot2)
         Dot(alpha = dot3)
     }
-
-    // ── DLavie Portal Connect handler ──
-    // Called when deep link dlavie://connect?callback=URL is received.
-    // Shows "DLavie Portal Connected" status, then redirects back to web
-    // with the user's auth token so the web can auto-login.
 }
+
+@Composable
+private fun Dot(alpha: Float) {
+    Box(
+        Modifier
+            .size(6.dp)
+            .background(Color.White.copy(alpha = alpha), CircleShape)   // pure white
+    )
 }
