@@ -6201,9 +6201,21 @@ fun ProfileScreen(
             Spacer(Modifier.height(8.dp))
 
             // ── DLavie Portal Connect — modern status card ──
-            val portalConnected = remember {
+            // Re-read on every ON_RESUME so status updates after connect via web
+            var portalConnected by remember { mutableStateOf(
                 context.getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
                     .getBoolean("portal_connected", false)
+            ) }
+            val portalLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+            LaunchedEffect(portalLifecycleOwner) {
+                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                        portalConnected = context.getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
+                            .getBoolean("portal_connected", false)
+                    }
+                }
+                portalLifecycleOwner.lifecycle.addObserver(observer)
+                try { kotlinx.coroutines.awaitCancellation() } finally { portalLifecycleOwner.lifecycle.removeObserver(observer) }
             }
             val portalGradient = if (portalConnected) {
                 Brush.horizontalGradient(listOf(Color(0xFF00D26A).copy(0.12f), Color(0xFF00D26A).copy(0.04f)))
