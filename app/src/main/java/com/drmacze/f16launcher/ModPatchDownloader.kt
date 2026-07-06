@@ -20,9 +20,9 @@ import java.util.zip.ZipInputStream
  * 4. writeMarker() — tulis marker file dengan version patch
  *
  * Supports ALL file types di repo F16:
- * - data/sceneassets/faces/*.rx3 (face mods)
- * - data/sceneassets/kit/*.rx3 (kit mods)
- * - data/attribdb/* (database mods)
+ * - data/sceneassets/faces/ (face mods)
+ * - data/sceneassets/kit/ (kit mods)
+ * - data/attribdb/ (database mods)
  * - ai.ini, cl.ini, dll (config mods)
  * - Semua file di ZIP akan di-extract preserving relative path
  *
