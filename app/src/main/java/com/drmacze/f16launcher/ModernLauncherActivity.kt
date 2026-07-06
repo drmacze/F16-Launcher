@@ -265,7 +265,7 @@ const val GAME_PKG_16       = "com.ea.gp.fifaworld"
 // OBB/Data/Manifest dari release v26 (original).
 const val DLAVIE_PROXY_URL  = "https://lvmucsxbmadtsgrxuwmo.supabase.co/functions/v1/apk-proxy"
 const val DLAVIE_DATA_BASE  = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26"
-const val FIFA16_APK_URL    = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26.apk"
+const val FIFA16_APK_URL    = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v27-android16-fix/DLavie26.apk"
 const val FIFA16_MANIFEST   = "${DLAVIE_DATA_BASE}/manifest.json"
 const val FIFA16_OBB_MAIN   = "${DLAVIE_DATA_BASE}/main.13.com.ea.gp.fifaworld.obb"
 const val FIFA16_OBB_PATCH  = "${DLAVIE_DATA_BASE}/patch.26.com.ea.gp.fifaworld.obb"
