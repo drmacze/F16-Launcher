@@ -84,12 +84,12 @@ fun FloatingChatBot(api: CommunityApi) {
         Box(
             Modifier
                 .fillMaxSize()
-                // v7.9.1: bottom = 168.dp — stack di atas Post FAB (yang ada di 96.dp).
-                // Sebelumnya 96.dp → overlap dengan Post FAB di halaman Komunitas.
-                // Sekarang Live Chat FAB selalu di atas Post FAB dengan gap 16dp.
-                // Untuk page lain (tanpa Post FAB), posisi ini aman karena masih
-                // di atas FloatingNav (yang ada di bottom=16dp+64dp+center button 22dp).
-                .padding(end = 16.dp, bottom = 168.dp),
+                // v7.9.2: bottom = 188.dp — stack di atas Post FAB (yang ada di 112.dp).
+                // Post FAB = 112dp + 56dp height = 168dp top edge.
+                // Live Chat FAB = 188dp (20dp gap di atas Post FAB top edge).
+                // Clearance dari FloatingNav center button (102dp) = 188-102 = 86dp (safe).
+                // v7.9.1: sebelumnya 168dp → gap hanya 16dp, terlihat seperti overlap.
+                .padding(end = 16.dp, bottom = 188.dp),
             contentAlignment = Alignment.BottomEnd
         ) {
             Box(

@@ -3809,7 +3809,7 @@ fun CommunityScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(
                                     start = TTSpacing.lg, end = TTSpacing.lg,
-                                    top = TTSpacing.md, bottom = 140.dp  // v7.8.2: tambah padding untuk floating navbar
+                                    top = TTSpacing.md, bottom = 200.dp  // v7.9.2: tambah padding untuk floating navbar + Post FAB + Live Chat FAB
                                 ),
                                 verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
                             ) {
@@ -3911,14 +3911,16 @@ fun CommunityScreen(
                 }
 
                 // ── FAB: create new post (bottom-right, circular white bg + black +) ──
-                // v7.9.1: Pindah ke bottom = 96.dp (di atas FloatingNav) supaya
-                // tidak overlap dengan FloatingNav pill (yang ada di bottom=16dp+64dp).
-                // Live Chat FAB (di FloatingChatBot.kt) akan stack di atas Post FAB
-                // ini dengan bottom = 168.dp (gap 16dp antar FAB).
+                // v7.9.2: FIX OVERLAP — FloatingNav center button (64dp, offset -22dp)
+                // extends to 16+64+22=102dp from bottom. Post FAB sebelumnya di 96dp
+                // → overlap 6dp dengan center button. Sekarang di bottom=112dp
+                // (10dp clearance di atas center button top edge).
+                // Live Chat FAB (di FloatingChatBot.kt) stack di atas dengan bottom=188dp
+                // (112 + 56 Post FAB height + 20dp gap).
                 Box(
                     Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = TTSpacing.lg, bottom = 96.dp)
+                        .padding(end = TTSpacing.lg, bottom = 112.dp)
                         .size(56.dp)
                         .clip(CircleShape)
                         .background(Color.White)
