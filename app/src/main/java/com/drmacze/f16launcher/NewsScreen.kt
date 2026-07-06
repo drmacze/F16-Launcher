@@ -5,7 +5,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -72,7 +71,7 @@ fun NewsScreen(api: CommunityApi) {
         return
     }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxWidth()) {
         // ── News Hero Carousel (top 3 news) ──
         if (news.isNotEmpty()) {
             val heroNews = news.take(3)
@@ -98,6 +97,10 @@ fun NewsScreen(api: CommunityApi) {
         }
 
         // ── News Feed List ──
+        // v7.9.5 FIX: Use Column (NOT LazyColumn) because NewsScreen is embedded
+        // inside HomeScreen's verticalScroll Column. LazyColumn inside verticalScroll
+        // = crash "Vertically scrollable component was measured with infinity height".
+        // Since news max ~25 items, Column is fine (no perf issue).
         if (loading && news.isEmpty()) {
             // Loading skeleton
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -107,7 +110,7 @@ fun NewsScreen(api: CommunityApi) {
             }
         } else if (news.isEmpty()) {
             // Empty state
-            Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Rounded.Article, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(48.dp))
                     Spacer(Modifier.height(12.dp))
@@ -117,19 +120,18 @@ fun NewsScreen(api: CommunityApi) {
                 }
             }
         } else {
-            LazyColumn(
-                Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(news) { item ->
+                news.forEach { item ->
                     NewsCard(
                         news = item,
                         onClick = { selectedNews = it }
                     )
                 }
                 // Bottom spacer for floating nav
-                item { Spacer(Modifier.height(120.dp)) }
+                Spacer(Modifier.height(120.dp))
             }
         }
     }
