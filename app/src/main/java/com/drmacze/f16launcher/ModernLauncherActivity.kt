@@ -934,6 +934,10 @@ fun MainShell(
     var detailGameItem          by remember { mutableStateOf<GameItem?>(null) }
     // v7.9.3: Show GameActionPanel dari GameDetailScreen (untuk install flow).
     var detailShowActionPanel   by remember { mutableStateOf(false) }
+    // v7.9.34: Save game auto-backup sebelum play
+    var showSaveLabelDialog     by remember { mutableStateOf(false) }
+    var saveLabelInput          by remember { mutableStateOf("") }
+    var pendingGameLaunch       by remember { mutableStateOf<GameItem?>(null) }
 
     // ── Phase 4: Settings overlay state + lifted Profile expand state ──
     // profileExpandedSection di-lift ke MainShell supaya SettingsScreen bisa
@@ -1306,7 +1310,7 @@ fun MainShell(
                                 game = currentGame,
                                 onBack = { showGameDetail = false },
                                 onPlay = {
-                                    // v7.9.13: Cek server status + signal sebelum play
+                                    // v7.9.34: Auto-backup save sebelum play + cek server status
                                     scope.launch {
                                         when (currentGame.serverStatus) {
                                             ServerStatus.MAINTENANCE -> {
@@ -1316,13 +1320,30 @@ fun MainShell(
                                                 android.widget.Toast.makeText(context, "Server ${currentGame.title} sedang offline", android.widget.Toast.LENGTH_LONG).show()
                                             }
                                             else -> {
-                                                // Cek signal strength (auto-detect BUSY)
                                                 val pingMs = withContext(Dispatchers.IO) { pingGameServer(currentGame.packageName) }
                                                 if (PingQuality.isWeakSignal(pingMs)) {
                                                     android.widget.Toast.makeText(context, "Kekuatan sinyalmu lemah, coba lagi nanti", android.widget.Toast.LENGTH_LONG).show()
                                                 } else {
-                                                    launchGame(context, currentGame.packageName, currentGame.mainActivity)
-                                                    showGameDetail = false
+                                                    // v7.9.34: Auto-backup save game sebelum launch
+                                                    val prefs = context.getSharedPreferences("dlavie_save_prefs", android.content.Context.MODE_PRIVATE)
+                                                    val hasLabel = prefs.getBoolean("save_label_set", false)
+                                                    if (!hasLabel) {
+                                                        // First time — suruh user isi label save satu kali
+                                                        pendingGameLaunch = currentGame
+                                                        saveLabelInput = ""
+                                                        showSaveLabelDialog = true
+                                                    } else {
+                                                        // Sudah pernah isi label — auto-backup + langsung play
+                                                        val label = prefs.getString("save_label", "My Save") ?: "My Save"
+                                                        withContext(Dispatchers.IO) {
+                                                            val result = SaveGameManager.backupSave(context, 0, label)
+                                                            if (result.success) {
+                                                                android.util.Log.i("DLavie", "Auto-backup: ${result.message}")
+                                                            }
+                                                        }
+                                                        launchGame(context, currentGame.packageName, currentGame.mainActivity)
+                                                        showGameDetail = false
+                                                    }
                                                 }
                                             }
                                         }
@@ -1648,6 +1669,66 @@ fun MainShell(
             OnboardingModal(
                 api = api,
                 onComplete = { showOnboardingModal = false }
+            )
+        }
+
+        // v7.9.34: Save game label dialog — muncul sekali saat pertama kali klik Play
+        if (showSaveLabelDialog) {
+            AlertDialog(
+                onDismissRequest = { showSaveLabelDialog = false; pendingGameLaunch = null },
+                title = { Text("Save Game Label", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) },
+                text = {
+                    Column {
+                        Text("Beri nama untuk save game Anda. Ini hanya diisi sekali.", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, fontFamily = InterFontFamily)
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = saveLabelInput,
+                            onValueChange = { saveLabelInput = it },
+                            placeholder = { Text("Contoh: Career Mode Saya", color = Color.White.copy(alpha = 0.3f), fontSize = 14.sp) },
+                            singleLine = true,
+                            colors = androidx.compose.material3.TextFieldDefaults.colors(
+                                focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                cursorColor = Color.White
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val label = saveLabelInput.ifBlank { "My Save" }
+                        // Save label ke prefs (hanya sekali)
+                        context.getSharedPreferences("dlavie_save_prefs", android.content.Context.MODE_PRIVATE)
+                            .edit().putBoolean("save_label_set", true).putString("save_label", label).apply()
+                        showSaveLabelDialog = false
+                        // Auto-backup + launch game
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                SaveGameManager.backupSave(context, 0, label)
+                            }
+                            pendingGameLaunch?.let { game ->
+                                launchGame(context, game.packageName, game.mainActivity)
+                                showGameDetail = false
+                            }
+                            pendingGameLaunch = null
+                        }
+                    }) { Text("Simpan & Main", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        // Skip save, langsung main
+                        showSaveLabelDialog = false
+                        pendingGameLaunch?.let { game ->
+                            launchGame(context, game.packageName, game.mainActivity)
+                            showGameDetail = false
+                        }
+                        pendingGameLaunch = null
+                    }) { Text("Lewati", color = Color.White.copy(alpha = 0.5f), fontFamily = InterFontFamily) }
+                },
+                containerColor = Carbon
             )
         }
 

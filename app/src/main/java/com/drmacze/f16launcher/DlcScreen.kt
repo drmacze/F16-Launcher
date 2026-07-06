@@ -829,8 +829,6 @@ private fun SaveGameSection(context: android.content.Context) {
     var slots by remember { mutableStateOf(SaveGameManager.listSlots()) }
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
-    var showLabelDialog by remember { mutableStateOf(0) }  // slot number for backup
-    var slotLabel by remember { mutableStateOf("") }
     var showRestoreConfirm by remember { mutableStateOf(0) }  // slot for restore
     var showDeleteConfirm by remember { mutableStateOf(0) }  // slot for delete
 
@@ -911,11 +909,18 @@ private fun SaveGameSection(context: android.content.Context) {
                             }
                         }
                     } else {
-                        // Backup button
+                        // Backup button — langsung backup tanpa dialog label (v7.9.34)
                         Surface(
                             Modifier.size(32.dp).clickable {
-                                slotLabel = ""
-                                showLabelDialog = slot.slotNumber
+                                loading = true
+                                scope.launch(Dispatchers.IO) {
+                                    val label = context.getSharedPreferences("dlavie_save_prefs", android.content.Context.MODE_PRIVATE)
+                                        .getString("save_label", "My Save") ?: "My Save"
+                                    val result = SaveGameManager.backupSave(context, slot.slotNumber, label)
+                                    loading = false
+                                    message = result.message
+                                    slots = SaveGameManager.listSlots()
+                                }
                             },
                             shape = CircleShape,
                             color = Color(0xFF4CAF50).copy(alpha = 0.1f)
@@ -933,8 +938,15 @@ private fun SaveGameSection(context: android.content.Context) {
         Spacer(Modifier.height(8.dp))
         Surface(
             Modifier.fillMaxWidth().clickable {
-                slotLabel = ""
-                showLabelDialog = 0  // 0 = auto slot
+                loading = true
+                scope.launch(Dispatchers.IO) {
+                    val label = context.getSharedPreferences("dlavie_save_prefs", android.content.Context.MODE_PRIVATE)
+                        .getString("save_label", "My Save") ?: "My Save"
+                    val result = SaveGameManager.backupSave(context, 0, label)
+                    loading = false
+                    message = result.message
+                    slots = SaveGameManager.listSlots()
+                }
             },
             shape = RoundedCornerShape(12.dp),
             color = Color(0xFF4CAF50).copy(alpha = 0.08f),
@@ -958,54 +970,7 @@ private fun SaveGameSection(context: android.content.Context) {
         }
     }
 
-    // Label dialog (sebelum backup)
-    if (showLabelDialog > 0 || showLabelDialog == 0 && showLabelDialog != -1) {
-        if (showLabelDialog != -1) {
-            AlertDialog(
-                onDismissRequest = { showLabelDialog = -1 },
-                title = { Text("Backup Save Game", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) },
-                text = {
-                    Column {
-                        Text("Slot ${if (showLabelDialog == 0) "otomatis" else showLabelDialog}", color = DlcMuted, fontSize = 12.sp, fontFamily = InterFontFamily)
-                        Spacer(Modifier.height(8.dp))
-                        Text("Beri label untuk save ini (opsional):", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp, fontFamily = InterFontFamily)
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = slotLabel,
-                            onValueChange = { slotLabel = it },
-                            placeholder = { Text("Contoh: Career Mode Musim 3", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
-                            singleLine = true,
-                            colors = androidx.compose.material3.TextFieldDefaults.colors(
-                                focusedContainerColor = Color.White.copy(alpha = 0.05f),
-                                unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                cursorColor = Color.White
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        val slot = showLabelDialog
-                        showLabelDialog = -1
-                        loading = true
-                        scope.launch(Dispatchers.IO) {
-                            val result = SaveGameManager.backupSave(context, slot, slotLabel)
-                            loading = false
-                            message = result.message
-                            slots = SaveGameManager.listSlots()
-                        }
-                    }) { Text("Backup", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showLabelDialog = -1 }) { Text("Batal", color = Color.White, fontFamily = InterFontFamily) }
-                },
-                containerColor = Carbon
-            )
-        }
-    }
+    // v7.9.34: Label dialog dihapus dari DLC screen — sekarang ada di MainShell (saat klik Play)
 
     // Restore confirm
     if (showRestoreConfirm > 0) {
