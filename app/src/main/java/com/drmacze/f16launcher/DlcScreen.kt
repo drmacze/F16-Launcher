@@ -157,6 +157,11 @@ fun DlcScreen(
     var loadingMods by remember { mutableStateOf(true) }
     var modsError by remember { mutableStateOf("") }
 
+    // v7.9.31: Mod patch apply state
+    var applyingMod by remember { mutableStateOf<ModPatch?>(null) }
+    var applyProgress by remember { mutableStateOf(0f) }
+    var applyError by remember { mutableStateOf("") }
+
     // ── Refresh functions ──
     fun refreshStatus() {
         scope.launch(Dispatchers.IO) {
@@ -357,13 +362,42 @@ fun DlcScreen(
                     isInstalled = installedMarker.startsWith("v26") && installedMarker.contains(mod.versionName, ignoreCase = true),
                     canApply = gameInstalled,  // permission auto-requested on tap
                     onApply = {
-                        // v7.2.4: Auto-request permission saat tap Update (no separate card)
+                        // v7.9.31: Apply mod patch — download ZIP + extract to game data
                         if (!StorageAccess.isGranted()) {
                             StorageAccess.request(context)
                             return@DlcModCard
                         }
-                        // Apply via existing patch system — open UpdateScreen overlay
-                        onNav(Page.DLC)
+                        // Check patch_url exists
+                        if (mod.patchUrl.isBlank()) {
+                            android.widget.Toast.makeText(context, "Patch URL tidak tersedia", android.widget.Toast.LENGTH_SHORT).show()
+                            return@DlcModCard
+                        }
+                        // Show progress dialog
+                        applyingMod = mod
+                        applyProgress = 0f
+                        applyError = ""
+                        scope.launch {
+                            val result = ModPatchDownloader.applyPatch(
+                                context = context,
+                                patchUrl = mod.patchUrl,
+                                sha256 = if (mod.patchSha256.isNotBlank()) mod.patchSha256 else null,
+                                versionName = mod.versionName
+                            ) { progress ->
+                                applyProgress = progress
+                            }
+                            if (result.success) {
+                                android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
+                                // Refresh installed marker
+                                val markerFile = java.io.File("/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie_patch_installed")
+                                if (markerFile.exists()) {
+                                    installedMarker = markerFile.readText()
+                                }
+                            } else {
+                                applyError = result.message
+                                android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
+                            }
+                            applyingMod = null
+                        }
                     }
                 )
             }
@@ -372,11 +406,47 @@ fun DlcScreen(
         // ─── Footer ───
         Spacer(Modifier.height(4.dp))
         Text(
-            "DLavie Launcher v7.0.7 — Mod Manager",
+            "DLavie Launcher v7.9.31 — Mod Manager",
             color = DlcMuted,
             fontSize = 11.sp,
             fontFamily = InterFontFamily,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        )
+    }
+
+    // v7.9.31: Progress dialog saat apply mod
+    if (applyingMod != null) {
+        AlertDialog(
+            onDismissRequest = { /* prevent dismiss while applying */ },
+            title = {
+                Text("Mengapply Mod", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+            },
+            text = {
+                Column {
+                    Text(applyingMod?.title ?: "", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, fontFamily = InterFontFamily)
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(
+                        progress = applyProgress,
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color.White,
+                        trackColor = Color.White.copy(alpha = 0.1f)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    val statusText = when {
+                        applyProgress < 0.5f -> "Downloading... ${(applyProgress * 200).toInt()}%"
+                        applyProgress < 0.6f -> "Verifying..."
+                        applyProgress < 0.95f -> "Extracting files... ${((applyProgress - 0.6f) * 250).toInt()}%"
+                        else -> "Finalizing..."
+                    }
+                    Text(statusText, color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp, fontFamily = InterFontFamily)
+                    if (applyError.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(applyError, color = Color(0xFFFF5252), fontSize = 11.sp, fontFamily = InterFontFamily)
+                    }
+                }
+            },
+            confirmButton = {},
+            containerColor = Carbon
         )
     }
 }
