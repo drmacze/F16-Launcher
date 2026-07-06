@@ -77,10 +77,13 @@ fun FloatingChatBot(api: CommunityApi) {
     }
 
     if (!expanded) {
-        // Floating button with auto-hide (slides to edge after 3 seconds)
+        // v7.9.24: Redesign FloatingChatBot — dark pill bar dengan orbit FAB (per reference).
+        // Dark bar berisi 4 icon (Report, Live Chat, Riwayat, Assistant).
+        // Oversized FAB (purple gradient) offset ke kanan — orbit effect.
+        // Tap icon → langsung buka fitur. Tap FAB → buka menu.
         var isHidden by remember { mutableStateOf(false) }
         val offsetX by animateDpAsState(
-            targetValue = if (isHidden) 24.dp else 0.dp,
+            targetValue = if (isHidden) 40.dp else 0.dp,
             animationSpec = tween(400, easing = FastOutSlowInEasing),
             label = "fab_offset"
         )
@@ -95,55 +98,104 @@ fun FloatingChatBot(api: CommunityApi) {
         Box(
             Modifier
                 .fillMaxSize()
-                // v7.9.2: bottom = 188.dp — stack di atas Post FAB (yang ada di 112.dp).
-                // Post FAB = 112dp + 56dp height = 168dp top edge.
-                // Live Chat FAB = 188dp (20dp gap di atas Post FAB top edge).
-                // Clearance dari FloatingNav center button (102dp) = 188-102 = 86dp (safe).
-                // v7.9.1: sebelumnya 168dp → gap hanya 16dp, terlihat seperti overlap.
                 .padding(end = 16.dp, bottom = 188.dp),
             contentAlignment = Alignment.BottomEnd
         ) {
             Box(
-                Modifier
-                    .size(56.dp)
-                    .offset(x = offsetX)
-                    .clip(CircleShape)
-                    .background(Color.White)
-                    .border(2.dp, Color.White.copy(alpha = 0.3f), CircleShape)
-                    .clickable {
-                        isHidden = false
-                        expanded = true
-                        mode = null
-                    },
-                contentAlignment = Alignment.Center
+                Modifier.offset(x = offsetX)
             ) {
-                Icon(
-                    if (isHidden) Icons.Rounded.ChatBubbleOutline else Icons.Rounded.ChatBubble,
-                    contentDescription = "DLavie Assistant",
-                    tint = Color.Black,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
+                // ── Dark pill bar with 4 icons + orbit FAB ──
+                Box(contentAlignment = Alignment.CenterEnd) {
+                    // Dark pill bar
+                    Surface(
+                        shape = RoundedCornerShape(28.dp),
+                        color = Color(0xFF1E1E1E),
+                        shadowElevation = 8.dp
+                    ) {
+                        Row(
+                            Modifier.height(48.dp).padding(start = 8.dp, end = 36.dp),  // end padding for FAB overlap
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Icon: Report
+                            FloatingChatIcon(
+                                icon = Icons.Rounded.BugReport,
+                                label = "Report",
+                                onClick = { isHidden = false; expanded = true; mode = "report" }
+                            )
+                            // Icon: Live Chat
+                            FloatingChatIcon(
+                                icon = Icons.Rounded.SupportAgent,
+                                label = "Live Chat",
+                                onClick = { isHidden = false; expanded = true; mode = "live_chat" }
+                            )
+                            // Icon: Riwayat
+                            FloatingChatIcon(
+                                icon = Icons.Rounded.History,
+                                label = "Riwayat",
+                                badge = if (unreadCount > 0) unreadCount else 0,
+                                onClick = { isHidden = false; expanded = true; mode = "history" }
+                            )
+                            // Icon: Assistant
+                            FloatingChatIcon(
+                                icon = Icons.Rounded.AutoAwesome,
+                                label = "Assistant",
+                                onClick = { isHidden = false; expanded = true; mode = "assistant" }
+                            )
+                        }
+                    }
 
-            // v7.9.0: Notification dot — merah, menandakan ada pesan baru dari developer
-            if (unreadCount > 0) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .offset(x = 2.dp, y = (-2).dp)
-                        .size(if (unreadCount > 9) 22.dp else 18.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFFF4444))
-                        .border(2.dp, Color.Black, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        if (unreadCount > 9) "9+" else unreadCount.toString(),
-                        color = Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = InterFontFamily
-                    )
+                    // ── Oversized FAB (purple gradient, offset right — orbit effect) ──
+                    Box(
+                        Modifier
+                            .offset(x = 16.dp)  // orbit: partially outside bar
+                            .size(52.dp)  // oversized: bigger than bar height (48dp)
+                            .shadow(
+                                elevation = 12.dp,
+                                shape = CircleShape,
+                                ambientColor = Color.Black.copy(alpha = 0.3f),
+                                spotColor = Color(0xFF7C4DFF).copy(alpha = 0.4f)
+                            )
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(Color(0xFF7C4DFF), Color(0xFF651FFF))
+                                )
+                            )
+                            .clickable {
+                                isHidden = false
+                                expanded = true
+                                mode = null  // opens ChatBotMenu
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Rounded.ChatBubble,
+                            contentDescription = "DLavie Assistant",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        // Red badge on FAB if unread
+                        if (unreadCount > 0) {
+                            Box(
+                                Modifier.align(Alignment.TopEnd)
+                                    .offset(x = 2.dp, y = (-2).dp)
+                                    .size(if (unreadCount > 9) 20.dp else 16.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFFF4444))
+                                    .border(2.dp, Color(0xFF1E1E1E), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    if (unreadCount > 9) "9+" else unreadCount.toString(),
+                                    color = Color.White,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Black,
+                                    fontFamily = InterFontFamily
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -184,6 +236,45 @@ fun FloatingChatBot(api: CommunityApi) {
                 onOpenActiveChat = { mode = "live_chat" },
                 onReadUpdate = { refreshTrigger++ }  // v7.9.22: trigger recount after read
             )
+        }
+    }
+}
+
+// ─── v7.9.24: FloatingChatIcon — icon inside dark pill bar ──────────────────
+@Composable
+private fun FloatingChatIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    badge: Int = 0,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = label, tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(20.dp))
+        // Badge per icon
+        if (badge > 0) {
+            Box(
+                Modifier.align(Alignment.TopEnd)
+                    .offset(x = 2.dp, y = (-2).dp)
+                    .size(14.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFFF4444))
+                    .border(1.5.dp, Color(0xFF1E1E1E), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    if (badge > 9) "9+" else badge.toString(),
+                    color = Color.White,
+                    fontSize = 7.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = InterFontFamily
+                )
+            }
         }
     }
 }

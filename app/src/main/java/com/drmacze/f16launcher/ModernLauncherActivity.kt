@@ -1730,119 +1730,130 @@ private fun PartialMaintenanceOverlay(
 // inactive hanya icon dengan muted color. Smooth transition antar tabs via
 // animateColorAsState + animateFloatAsState + AnimatedVisibility label.
 @Composable
-/**
- * v7.9.23: FloatingNav — redesigned per reference design (orbit effect FAB).
- *
- * Design: dark pill-shaped nav bar with oversized FAB offset to the right.
- * The FAB sits partially outside the bar creating a "floating orbit" effect.
- *
- * Layout:
- * - Dark (#1E1E1E) pill bar, 56dp height, rounded corners
- * - 4 nav icons inside bar (Home, DLC, Komunitas, Profile)
- * - Oversized FAB (60dp) offset to right, partially outside bar
- * - FAB: purple gradient (#7C4DFF → #651FFF) with white GameHub icon
- * - Active icon: purple tint + small dot below
- * - Shadow: bar 8dp, FAB 16dp (stronger for tactile presence)
- */
 fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifier) {
     val haptic = LocalHapticFeedback.current
     val pages = Page.values().toList()
     val centerPage = Page.GameHub
-    val sidePages = pages.filter { it != centerPage }  // Home, DLC, Chat, Me
-    val activeColor = Color(0xFF7C4DFF)  // vibrant purple
-    val inactiveColor = Color.White.copy(alpha = 0.4f)
 
+    // ─── Layout per screenshot IMG_4449 ───────────────────────────────────────
+    // • Pill-shaped navbar (rounded rectangle, full radius)
+    // • White background with subtle shadow elevation
+    // • 4 side buttons (2 left + 2 right) — icon + small label below
+    // • Center button: solid BLACK circle, ELEVATED (overlaps top edge of navbar),
+    //   with white PLAY/TRIANGLE icon (PS-style)
+    // • Center button has its own shadow for depth
     Box(
         modifier = modifier
-            .widthIn(max = 420.dp)
-            .padding(horizontal = 24.dp)
+            .widthIn(max = 600.dp)
+            .padding(horizontal = 16.dp)
     ) {
-        // ── Main pill bar (dark, rounded) ──
+        // ── Main pill bar ────────────────────────────────────────────────────
         Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = Color(0xFF1E1E1E),
-            shadowElevation = 8.dp,
+            shape = RoundedCornerShape(999.dp),
+            color = Color.White,
+            shadowElevation = 16.dp,
             tonalElevation = 0.dp
         ) {
             Row(
                 Modifier
-                    .height(56.dp)
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                    .height(64.dp)
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(0.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 4 nav icons inside bar
-                sidePages.forEach { item ->
-                    val isSelected = page == item
-                    val iconTint by animateColorAsState(
-                        if (isSelected) activeColor else inactiveColor,
-                        tween(300), label = "nav_tint_${item.label}"
-                    )
+                // ── Left side: first 2 non-center pages (Home, DLC) ──
+                pages.filter { it != centerPage }.take(2).forEach { item ->
+                    NavSideButton(item, page == item) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onPage(item)
+                    }
+                }
 
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onPage(item)
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                item.navIcon,
-                                contentDescription = item.label,
-                                tint = iconTint,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(Modifier.height(3.dp))
-                            // Active dot (purple, below icon)
-                            Box(
-                                Modifier.size(if (isSelected) 4.dp else 0.dp)
-                                    .clip(CircleShape)
-                                    .background(activeColor)
-                            )
-                        }
+                // ── Spacer for elevated center button ──
+                Spacer(Modifier.width(64.dp))
+
+                // ── Right side: remaining 2 non-center pages (Chat, Me) ──
+                pages.filter { it != centerPage }.drop(2).forEach { item ->
+                    NavSideButton(item, page == item) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onPage(item)
                     }
                 }
             }
         }
 
-        // ── Oversized FAB (offset right — orbit effect) ──
-        // Sits partially outside the bar (right edge), creating floating illusion.
-        // The offset creates the "orbit" motion feel even when static.
+        // ── Elevated center button (overlaps top edge of pill bar) ────────────
+        // Per screenshot: solid black circle, white triangle/play icon, raised
+        // so half of it sits above the navbar (creates "floating" effect).
         Box(
             Modifier
-                .align(Alignment.CenterEnd)
-                .offset(x = 20.dp)  // offset right — orbit effect
-                .size(60.dp)  // oversized: bigger than bar height (56dp)
+                .align(Alignment.Center)
+                .size(64.dp)
+                .offset(y = (-22).dp)  // elevate: half above navbar top edge
                 .shadow(
-                    elevation = 16.dp,
+                    elevation = 20.dp,
                     shape = CircleShape,
-                    ambientColor = Color.Black.copy(alpha = 0.3f),
-                    spotColor = activeColor.copy(alpha = 0.4f)  // purple-tinted shadow
+                    ambientColor = Color.Black.copy(alpha = 0.4f),
+                    spotColor = Color.Black.copy(alpha = 0.6f)
                 )
                 .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(Color(0xFF7C4DFF), Color(0xFF651FFF))  // purple gradient
-                    )
-                )
+                .background(Color.Black)
+                .border(3.dp, Color.White, CircleShape)  // white ring separator
                 .clickable {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onPage(centerPage)
                 },
             contentAlignment = Alignment.Center
         ) {
+            // PS-style PLAY TRIANGLE icon (white on black)
             Icon(
-                Icons.Rounded.SportsEsports,
+                Icons.Rounded.PlayArrow,
                 contentDescription = "GameHub",
                 tint = Color.White,
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(34.dp)
+            )
+        }
+    }
+}
+
+/** Side button for floating navbar: icon + small label below. */
+@Composable
+private fun NavSideButton(item: Page, selected: Boolean, onClick: () -> Unit) {
+    val iconTint by animateColorAsState(
+        if (selected) Color.Black else Color.Gray,
+        tween(300), label = "nav_tint_${item.label}"
+    )
+    val labelColor by animateColorAsState(
+        if (selected) Color.Black else Color.Gray.copy(alpha = 0.7f),
+        tween(300), label = "nav_label_${item.label}"
+    )
+
+    Box(
+        modifier = Modifier
+            .width(72.dp)
+            .height(52.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                item.navIcon,
+                contentDescription = item.label,
+                tint = iconTint,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                item.label,
+                fontSize = 9.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                color = labelColor,
+                maxLines = 1,
+                fontFamily = InterFontFamily
             )
         }
     }
