@@ -9015,7 +9015,7 @@ fun IssueManagerCard(api: CommunityApi, context: android.content.Context) {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             runCatching {
-                val resp = api.requestPublic("GET", "/rest/v1/feed_posts?type=eq.issue&order=created_at.desc&limit=20&select=id,title,body,created_at")
+                val resp = api.adminGet("/rest/v1/feed_posts?type=eq.issue&order=created_at.desc&limit=20&select=id,title,body,created_at")
                 val arr = JSONArray(resp)
                 val list = mutableListOf<JSONObject>()
                 for (i in 0 until arr.length()) { list.add(arr.getJSONObject(i)) }
@@ -9072,15 +9072,22 @@ fun IssueManagerCard(api: CommunityApi, context: android.content.Context) {
                                 .clickable {
                                     deletingId = issueId
                                     scope.launch {
-                                        withContext(Dispatchers.IO) {
-                                            runCatching {
-                                                api.requestPublic("DELETE", "/rest/v1/feed_comments?post_id=eq.$issueId")
-                                                api.requestPublic("DELETE", "/rest/v1/feed_posts?id=eq.$issueId")
+                                        val errorMsg = withContext(Dispatchers.IO) {
+                                            try {
+                                                api.adminDelete("/rest/v1/feed_comments?post_id=eq.$issueId")
+                                                api.adminDelete("/rest/v1/feed_posts?id=eq.$issueId")
+                                                null  // success
+                                            } catch (e: Exception) {
+                                                e.message ?: "Gagal menghapus issue"
                                             }
                                         }
-                                        issues = issues.filterNot { it.optString("id") == issueId }
+                                        if (errorMsg == null) {
+                                            issues = issues.filterNot { it.optString("id") == issueId }
+                                            android.widget.Toast.makeText(context, "Issue dihapus", android.widget.Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            android.widget.Toast.makeText(context, "Gagal: $errorMsg", android.widget.Toast.LENGTH_LONG).show()
+                                        }
                                         deletingId = null
-                                        android.widget.Toast.makeText(context, "Issue dihapus", android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                 },
                             color = DangerRed.copy(0.15f),

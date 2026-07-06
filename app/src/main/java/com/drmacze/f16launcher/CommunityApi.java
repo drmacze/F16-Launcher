@@ -1460,6 +1460,18 @@ public class CommunityApi {
         return request(method, path, null, auth, false);
     }
 
+    // ── Admin delete — for Issue Manager (admin/dev only) ──
+    // Uses the user's auth token to DELETE records. RLS allows DELETE for all,
+    // so this works for admin/developer to delete any issue.
+    public String adminDelete(String path) throws Exception {
+        return request("DELETE", path, null, true, null);
+    }
+
+    // ── Admin get — for Issue Manager to fetch issues ──
+    public String adminGet(String path) throws Exception {
+        return request("GET", path, null, true, null);
+    }
+
     private String doRequest(String method, String path, Object body, boolean auth, String prefer) throws Exception {
         URL url = new URL(SUPABASE_URL + path);
         HttpURLConnection c = (HttpURLConnection) url.openConnection();
