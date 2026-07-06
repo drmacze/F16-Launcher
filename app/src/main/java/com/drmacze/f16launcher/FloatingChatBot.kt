@@ -139,10 +139,10 @@ fun FloatingChatBot(api: CommunityApi) {
                     )
 
                     Row(
-                        // v7.9.26: Fix terpotong — offset lebih besar + padding kanan
+                        // v7.9.27: Fix tertimpa — padding end besar supaya icon tidak tertimpa FAB
                         Modifier
                             .offset(x = if (isExpanded) 0.dp else 60.dp)
-                            .padding(end = 8.dp),
+                            .padding(end = 36.dp),  // v7.9.27: 36dp supaya icon tidak tertimpa FAB (FAB 52dp + offset 16dp)
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
