@@ -215,6 +215,12 @@ public class CommunityApi {
             .putString("avatar_url", p.optString("avatar_url", ""))
             .putString("role", p.optString("role", "member"));
         if (!country.isEmpty()) e.putString("country", country);
+        // v7.9.17: cache user_type, use_case, android_version untuk onboarding check
+        e.putString("user_type", p.optString("user_type", ""));
+        e.putString("use_case", p.optString("use_case", ""));
+        if (!p.optString("android_version", "").isEmpty()) {
+            e.putString("android_version", p.optString("android_version", ""));
+        }
         e.apply();
     }
 
@@ -706,6 +712,64 @@ public class CommunityApi {
         if (arr.length() > 0) return arr.getJSONObject(0);
         return new JSONObject();
     }
+
+    /**
+     * v7.9.17: PATCH user_type column (e.g., "player", "modder", "explorer").
+     * Dipanggil dari OnboardingModal setelah user pilih role.
+     */
+    public JSONObject updateUserType(String userType) throws Exception {
+        if (userId().isEmpty()) throw new IllegalStateException("Belum login.");
+        JSONObject body = new JSONObject();
+        body.put("user_type", userType == null ? "" : userType.trim());
+        JSONArray arr = new JSONArray(request("PATCH", "/rest/v1/profiles?id=eq." + enc(userId()) + "&select=id,user_type", body, true, "return=representation"));
+        if (arr.length() > 0) return arr.getJSONObject(0);
+        return new JSONObject();
+    }
+
+    /**
+     * v7.9.17: PATCH use_case column (e.g., "playing", "personal", "community").
+     * Dipanggil dari OnboardingModal setelah user pilih use case.
+     */
+    public JSONObject updateUseCase(String useCase) throws Exception {
+        if (userId().isEmpty()) throw new IllegalStateException("Belum login.");
+        JSONObject body = new JSONObject();
+        body.put("use_case", useCase == null ? "" : useCase.trim());
+        JSONArray arr = new JSONArray(request("PATCH", "/rest/v1/profiles?id=eq." + enc(userId()) + "&select=id,use_case", body, true, "return=representation"));
+        if (arr.length() > 0) return arr.getJSONObject(0);
+        return new JSONObject();
+    }
+
+    /**
+     * v7.9.17: PATCH android_version column (user input dari onboarding).
+     * Hanya angka + titik yang diterima (keyboard numeric).
+     */
+    public JSONObject updateAndroidVersion(String version) throws Exception {
+        if (userId().isEmpty()) throw new IllegalStateException("Belum login.");
+        JSONObject body = new JSONObject();
+        body.put("android_version", version == null ? "" : version.trim());
+        JSONArray arr = new JSONArray(request("PATCH", "/rest/v1/profiles?id=eq." + enc(userId()) + "&select=id,android_version", body, true, "return=representation"));
+        if (arr.length() > 0) return arr.getJSONObject(0);
+        return new JSONObject();
+    }
+
+    /**
+     * v7.9.17: PATCH country column (user input dari onboarding, pindah dari register form).
+     */
+    public JSONObject updateCountryFromOnboarding(String country) throws Exception {
+        return updateCountry(country);  // reuse existing updateCountry
+    }
+
+    /** v7.9.17: Get current user_type dari prefs (cached from loadMyProfile). */
+    public String userType() { return prefs.getString("user_type", ""); }
+    public void setUserType(String ut) { prefs.edit().putString("user_type", ut == null ? "" : ut).apply(); }
+
+    /** v7.9.17: Get current use_case dari prefs (cached from loadMyProfile). */
+    public String useCase() { return prefs.getString("use_case", ""); }
+    public void setUseCase(String uc) { prefs.edit().putString("use_case", uc == null ? "" : uc).apply(); }
+
+    /** v7.9.17: Get current android_version dari prefs (cached). */
+    public String androidVersion() { return prefs.getString("android_version", ""); }
+    public void setAndroidVersion(String av) { prefs.edit().putString("android_version", av == null ? "" : av).apply(); }
 
     /**
      * Fetch a single key from app_config (e.g. "maintenance").

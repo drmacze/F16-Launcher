@@ -198,14 +198,15 @@ private data class MaintenanceState(
 )
 
 // ─── Country picker list (21 entries per spec) ──────────────────────────────────
-private val COUNTRY_LIST: List<String> = listOf(
+// v7.9.17: Made public supaya OnboardingModal bisa akses
+val COUNTRY_LIST: List<String> = listOf(
     "Indonesia", "Malaysia", "Singapore", "Philippines", "Thailand",
     "Vietnam", "India", "USA", "UK", "Japan",
     "South Korea", "Brazil", "Germany", "France", "Canada",
     "Australia", "Saudi Arabia", "UAE", "Netherlands", "Spain",
     "Other"
 )
-private const val DEFAULT_COUNTRY = "Indonesia"
+const val DEFAULT_COUNTRY = "Indonesia"
 
 private enum class GuidedTab(val label: String, val icon: String) {
     Home("Home", "⌂"), Data("Data", "▣"), Update("Update", "◎"), Me("Me", "♙")
@@ -346,7 +347,7 @@ private fun GuidedLoginScreen(
     var confirmPassword by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
-    var country by remember { mutableStateOf(DEFAULT_COUNTRY) }
+    // v7.9.17: country state dihapus — pindah ke onboarding modal
     var showPass by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
     // v6.8.4: Init message dari deep link callback (Google OAuth result)
@@ -497,46 +498,7 @@ private fun GuidedLoginScreen(
                 )
                 Spacer(Modifier.height(12.dp))
 
-                // 3. Guest button (tertiary, subtle — text only with border)
-                AuthProviderButton(
-                    label = t.continueAsGuest,
-                    icon = {
-                        Icon(
-                            Icons.Rounded.Person,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.6f),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    },
-                    containerColor = Color.Transparent,
-                    contentColor = Color.White.copy(alpha = 0.7f),
-                    borderColor = Color.White.copy(alpha = 0.08f),
-                    onClick = {
-                        // v6.8.3: set guest mode → go to launcher
-                        val api = CommunityApi(context)
-                        api.setGuest(true)
-                        message = "Mode guest aktif"
-                        isSuccess = true
-                        // Navigate to launcher (no session, just guest flag)
-                        context.startActivity(
-                            Intent(context, ModernLauncherActivity::class.java)
-                                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    },
-                    enabled = !working
-                )
-
-                // Guest mode notice
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    t.guestNotice,
-                    color = Color.White.copy(alpha = 0.3f),
-                    fontSize = 10.sp,
-                    fontFamily = GuideFont,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 14.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
+                // v7.9.17: Guest button DIHAPUS — user harus login/register untuk akses launcher
             }
 
             // ── Mode: LOGIN / REGISTER / FORGOT (email form) ──
@@ -654,7 +616,7 @@ private fun GuidedLoginScreen(
                                     Icon(Icons.Rounded.Person, null, tint = GuideMuted, modifier = Modifier.size(18.dp))
                                 }
                             )
-                            CountryPickerDropdown(selected = country, onSelect = { country = it })
+                            // v7.9.17: Country picker DIHAPUS dari register — pindah ke onboarding modal
                         }
 
                         if (mode == "login") {
@@ -733,7 +695,7 @@ private fun GuidedLoginScreen(
                                     val result = withContext(Dispatchers.IO) {
                                         when (mode) {
                                             "login"    -> loginWithPassword(context, email, password)
-                                            "register" -> registerWithUsernamePassword(context, email, password, username.trim(), displayName.trim(), country)
+                                            "register" -> registerWithUsernamePassword(context, email, password, username.trim(), displayName.trim())
                                             "forgot"   -> {
                                                 try {
                                                     val msg = AuthManager.requestPasswordReset(email)
@@ -1262,8 +1224,9 @@ private fun userIdFromJwt(token: String): String { return try { val payload = to
 private fun syncToCommunityPrefs(context: Context, session: AuthSession) { val userId = userIdFromJwt(session.accessToken); context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE).edit().putString("access_token", session.accessToken).putString("refresh_token", session.refreshToken).putString("user_id", userId).apply() }
 private fun loginWithPassword(context: Context, email: String, password: String): AuthResult = authPassword(context, "/auth/v1/token?grant_type=password", email, password, "OK: login berhasil.")
 private fun registerWithPassword(context: Context, email: String, password: String): AuthResult = authPassword(context, "/auth/v1/signup", email, password, "OK: akun dibuat.")
-private fun registerWithUsernamePassword(context: Context, email: String, password: String, username: String, displayName: String, country: String = DEFAULT_COUNTRY): AuthResult = try {
-    val meta = JSONObject().put("username", username).put("display_name", displayName).put("country", country)
+private fun registerWithUsernamePassword(context: Context, email: String, password: String, username: String, displayName: String): AuthResult = try {
+    // v7.9.17: country dihapus dari register — pindah ke onboarding modal
+    val meta = JSONObject().put("username", username).put("display_name", displayName)
     val signupBody = JSONObject().put("email", email).put("password", password).put("data", meta)
     val json = httpPost("/auth/v1/signup", null, signupBody)
     val token = json.optString("access_token", "")
@@ -1316,11 +1279,7 @@ private fun registerWithUsernamePassword(context: Context, email: String, passwo
                     .putString("user_id", userId)
                     .apply()
             }
-            // Best-effort: PATCH country (fire-and-forget).
-            runCatching {
-                if (api.loggedIn()) api.updateCountry(country)
-                else httpPatch("/rest/v1/profiles?id=eq." + userId, token, JSONObject().put("country", country))
-            }
+            // v7.9.17: country update dihapus dari sini — pindah ke onboarding modal
         } catch (_: Exception) {
             // CommunityApi totally broken — last resort: manual prefs save.
             val prefs = context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE)

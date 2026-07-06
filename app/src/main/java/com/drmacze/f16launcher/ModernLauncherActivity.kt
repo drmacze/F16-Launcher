@@ -875,6 +875,8 @@ fun MainShell(
     var showSettings           by remember { mutableStateOf(false) }
     var showEditProfile        by remember { mutableStateOf(false) }
     var profileExpandedSection by remember { mutableStateOf<String?>(null) }
+    // v7.9.17: Onboarding modal — show setelah login/register jika user_type masih kosong
+    var showOnboardingModal    by remember { mutableStateOf(false) }
 
     // ── Visit Profile (Task 4): user ID being viewed in UserProfileScreen overlay.
     // null = not visiting anyone; non-null = overlay shown on top of current page.
@@ -2136,6 +2138,23 @@ fun HomeScreen(
                     .putBoolean("has_seen_onboarding_v6", true)
                     .apply()
             }
+        )
+    }
+
+    // ── v7.9.17: Onboarding modal (post-login) ──────────────────────────────
+    // Show jika user sudah login TAPI user_type masih kosong (belum isi onboarding).
+    // Cek dilakukan di sini (HomeScreen scope) supaya modal muncul di atas HomeScreen.
+    LaunchedEffect(api.loggedIn()) {
+        if (api.loggedIn() && api.userType().isBlank()) {
+            // Small delay supaya HomeScreen sempat render dulu
+            kotlinx.coroutines.delay(800)
+            showOnboardingModal = true
+        }
+    }
+    if (showOnboardingModal && api.loggedIn()) {
+        OnboardingModal(
+            api = api,
+            onComplete = { showOnboardingModal = false }
         )
     }
 
