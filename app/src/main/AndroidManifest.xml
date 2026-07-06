@@ -27,7 +27,6 @@
         android:roundIcon="@mipmap/dlavie_launcher_icon"
         android:label="@string/app_name"
         android:theme="@style/AppTheme.Splash"
-        android:debuggable="false"
         android:usesCleartextTraffic="false">
 
         <meta-data
