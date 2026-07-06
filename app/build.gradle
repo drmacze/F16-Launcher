@@ -39,6 +39,15 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
+
+    // v7.9.10: Force debuggable=false untuk debug build.
+    // Android 16 menolak APK dengan debuggable=true dari unknown sources.
+    // assembleDebug default set debuggable=true, override ke false di sini.
+    buildTypes {
+        debug {
+            debuggable false
+        }
+    }
 }
 
 dependencies {
