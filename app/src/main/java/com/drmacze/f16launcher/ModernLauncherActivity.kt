@@ -5952,6 +5952,108 @@ fun ProfileScreen(
 
             Spacer(Modifier.height(8.dp))
 
+            // ── DLavie Portal Connect — modern status card ──
+            val portalConnected = remember {
+                context.getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
+                    .getBoolean("portal_connected", false)
+            }
+            val portalGradient = if (portalConnected) {
+                Brush.horizontalGradient(listOf(Color(0xFF00D26A).copy(0.12f), Color(0xFF00D26A).copy(0.04f)))
+            } else {
+                Brush.horizontalGradient(listOf(Color.White.copy(0.04f), Color.White.copy(0.01f)))
+            }
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(18.dp),
+                color = Color.Transparent,
+                border = BorderStroke(
+                    1.dp,
+                    if (portalConnected) Brush.horizontalGradient(listOf(Color(0xFF00D26A).copy(0.5f), Color(0xFF00D26A).copy(0.15f)))
+                    else Brush.horizontalGradient(listOf(Color.White.copy(0.12f), Color.White.copy(0.04f)))
+                )
+            ) {
+                Box(
+                    modifier = Modifier
+                        .background(portalGradient)
+                        .padding(18.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Status icon with glow
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (portalConnected) Brush.radialGradient(listOf(Color(0xFF00D26A), Color(0xFF00A050)))
+                                    else Brush.radialGradient(listOf(Color.White.copy(0.12f), Color.White.copy(0.04f)))
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (portalConnected) {
+                                Icon(
+                                    Icons.Rounded.CheckCircle,
+                                    contentDescription = "Connected",
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Rounded.Language,
+                                    contentDescription = "Not connected",
+                                    tint = Color.White.copy(0.6f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "DLavie Portal",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = (-0.01).sp
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (portalConnected) Color(0xFF00D26A) else Color(0xFF666666))
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    if (portalConnected) "Connected to Web FAQ" else "Not connected — Visit web FAQ to connect",
+                                    color = if (portalConnected) Color(0xFF00D26A) else SubText,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                        // Right side: status badge or chevron
+                        if (portalConnected) {
+                            Surface(
+                                shape = RoundedCornerShape(999.dp),
+                                color = Color(0xFF00D26A).copy(0.15f),
+                                border = BorderStroke(1.dp, Color(0xFF00D26A).copy(0.3f))
+                            ) {
+                                Text(
+                                    "ACTIVE",
+                                    color = Color(0xFF00D26A),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = 0.08.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
             // Block 3: Info (FAQ, Terms, Policy)
             SettingsContainer {
                 SettingsRow(
