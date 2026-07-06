@@ -564,14 +564,28 @@ fun DLavieModernApp(initialPostId: String? = null) {
                 // Reusable logout lambda — fires telemetry before clearing session.
                 val logoutAction: () -> Unit = {
                     Telemetry.track(api, context, Telemetry.EVT_LOGOUT)
+                    // v7.9.29: Remove current account from list, then logout
+                    val currentUserId = api.userId()
+                    if (currentUserId.isNotEmpty()) {
+                        AccountStore.removeAccount(context, currentUserId)
+                    }
                     api.logout()
                     context.getSharedPreferences("dlavie_auth_session", Context.MODE_PRIVATE).edit().clear().apply()
-                    // Also clear PIN on logout for security
                     PinManager.clearPin(context)
-                    context.startActivity(
-                        Intent(context, DLavieGuidedActivity::class.java)
-                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
+                    // v7.9.29: If there are remaining accounts, switch to first one instead of going to login
+                    val remaining = AccountStore.listAccounts(context)
+                    if (remaining.isNotEmpty()) {
+                        AccountStore.switchAccount(context, remaining[0].userId)
+                        context.startActivity(
+                            Intent(context, ModernLauncherActivity::class.java)
+                                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    } else {
+                        context.startActivity(
+                            Intent(context, DLavieGuidedActivity::class.java)
+                                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
                 }
 
                 // ── App Update Popup ──
@@ -6245,8 +6259,16 @@ fun ProfileScreen(
                         .addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
             }, onAddAccount = {
-                // Go to login screen (add account mode)
-                api.logout()  // clear current session but keep accounts list
+                // v7.9.29: Don't call api.logout() — it clears ALL prefs including accounts list.
+                // Instead, just clear session tokens but keep accounts list.
+                val prefs = context.getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
+                val savedAccounts = prefs.getString("accounts", "[]")  // preserve accounts list
+                val savedActiveId = prefs.getString("active_user_id", "")  // preserve active id
+                prefs.edit().clear().apply()  // clear everything
+                prefs.edit().putString("accounts", savedAccounts).putString("active_user_id", savedActiveId).apply()  // restore accounts
+                // Also clear auth session
+                context.getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE).edit().clear().apply()
+                // Go to login screen
                 context.startActivity(
                     android.content.Intent(context, DLavieGuidedActivity::class.java)
                         .addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
