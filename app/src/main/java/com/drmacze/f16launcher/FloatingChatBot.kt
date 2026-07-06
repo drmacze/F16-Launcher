@@ -56,15 +56,17 @@ fun FloatingChatBot(api: CommunityApi) {
     var expanded by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf<String?>(null) } // null = menu, "report", "live_chat", "assistant"
 
-    // v7.9.0: Unread message count — check saat app dibuka + periodic poll
+    // v7.9.20: Unread message count — check saat app dibuka + periodic poll (15s)
     var unreadCount by remember { mutableStateOf(0) }
-    LaunchedEffect(Unit) {
-        // Initial check
-        unreadCount = countUnreadMessages(api)
-        // Poll every 30 seconds
-        while (true) {
-            delay(30_000)
+    LaunchedEffect(api.loggedIn()) {
+        if (api.loggedIn()) {
+            // Initial check immediately
             unreadCount = countUnreadMessages(api)
+            // Poll every 15 seconds (lebih cepat supaya badge cepat muncul)
+            while (true) {
+                delay(15_000)
+                unreadCount = countUnreadMessages(api)
+            }
         }
     }
 
@@ -145,7 +147,8 @@ fun FloatingChatBot(api: CommunityApi) {
                 onSelect = { selected ->
                     mode = selected
                 },
-                onClose = { expanded = false }
+                onClose = { expanded = false },
+                unreadCount = unreadCount
             )
             "report" -> ReportForm(
                 api = api,
@@ -181,7 +184,7 @@ fun FloatingChatBot(api: CommunityApi) {
 // ─── Menu ───────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ChatBotMenu(onSelect: (String) -> Unit, onClose: () -> Unit) {
+private fun ChatBotMenu(onSelect: (String) -> Unit, onClose: () -> Unit, unreadCount: Int = 0) {
     Dialog(onDismissRequest = onClose) {
         Surface(
             shape = RoundedCornerShape(24.dp),
@@ -225,13 +228,35 @@ private fun ChatBotMenu(onSelect: (String) -> Unit, onClose: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
 
                 // v7.9.1: Riwayat Chat button — list semua chat sebelumnya
-                // (open + closed). User bisa lihat balasan developer di sesi lama.
-                ChatBotMenuItem(
-                    icon = Icons.Rounded.History,
-                    title = "Riwayat Chat",
-                    subtitle = "Lihat chat sebelumnya dengan developer",
-                    onClick = { onSelect("history") }
-                )
+                // v7.9.20: Show badge if unreadCount > 0
+                Box {
+                    ChatBotMenuItem(
+                        icon = Icons.Rounded.History,
+                        title = "Riwayat Chat",
+                        subtitle = "Lihat chat sebelumnya dengan developer",
+                        onClick = { onSelect("history") }
+                    )
+                    // v7.9.20: Red badge on Riwayat Chat if unread
+                    if (unreadCount > 0) {
+                        Box(
+                            Modifier.align(Alignment.TopEnd)
+                                .offset(x = 8.dp, y = (-4).dp)
+                                .size(20.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFF4444))
+                                .border(2.dp, PureBlack, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                if (unreadCount > 9) "9+" else unreadCount.toString(),
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                fontFamily = InterFontFamily
+                            )
+                        }
+                    }
+                }
                 Spacer(Modifier.height(12.dp))
 
                 // Assistant button
