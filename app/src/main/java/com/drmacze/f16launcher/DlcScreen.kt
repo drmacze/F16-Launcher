@@ -404,10 +404,14 @@ fun DlcScreen(
             }
         }
 
+        // ─── v7.9.32: Save Game Manager ───
+        Spacer(Modifier.height(24.dp))
+        SaveGameSection(context = context)
+
         // ─── Footer ───
         Spacer(Modifier.height(4.dp))
         Text(
-            "DLavie Launcher v7.9.31 — Mod Manager",
+            "DLavie Launcher v7.9.32 — Mod Manager + Save Game",
             color = DlcMuted,
             fontSize = 11.sp,
             fontFamily = InterFontFamily,
@@ -808,4 +812,249 @@ private fun formatBytesHelper(bytes: Long): String {
         unit++
     }
     return String.format(Locale.US, "%.1f %s", size, units[unit])
+}
+
+// ─── v7.9.32: Save Game Manager Section ──────────────────────────────────────
+
+@Composable
+private fun SaveGameSection(context: Context) {
+    val scope = rememberCoroutineScope()
+    var slots by remember { mutableStateOf(SaveGameManager.listSlots()) }
+    var loading by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("") }
+    var showLabelDialog by remember { mutableStateOf(0) }  // slot number for backup
+    var slotLabel by remember { mutableStateOf("") }
+    var showRestoreConfirm by remember { mutableStateOf(0) }  // slot for restore
+    var showDeleteConfirm by remember { mutableStateOf(0) }  // slot for delete
+
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        // Section header
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(width = 3.dp, height = 18.dp).clip(RoundedCornerShape(2.dp)).background(DlcAccent))
+            Spacer(Modifier.width(8.dp))
+            Text("Save Game", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+            Spacer(Modifier.weight(1f))
+            Text("Career Mode Backup", color = DlcMuted, fontSize = 10.sp, fontFamily = InterFontFamily)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Backup & restore progress career mode FIFA 16. Max 5 slot.", color = DlcMuted, fontSize = 11.sp, fontFamily = InterFontFamily)
+        Spacer(Modifier.height(12.dp))
+
+        // Save slots
+        slots.forEach { slot ->
+            Surface(
+                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color.White.copy(alpha = 0.03f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f))
+            ) {
+                Row(
+                    Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Slot number
+                    Box(
+                        Modifier.size(32.dp).clip(CircleShape)
+                            .background(if (slot.exists) DlcAccent.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            slot.slotNumber.toString(),
+                            color = if (slot.exists) DlcAccent else Color.White.copy(alpha = 0.3f),
+                            fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+
+                    // Slot info
+                    Column(Modifier.weight(1f)) {
+                        if (slot.exists) {
+                            Text(slot.label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
+                            Text(
+                                "${formatPatchSize(slot.sizeBytes)} • ${slot.fileCount} file • ${java.text.SimpleDateFormat("dd MMM yyyy HH:mm", java.util.Locale("id", "ID")).format(java.util.Date(slot.timestamp))}",
+                                color = DlcMuted, fontSize = 10.sp, fontFamily = InterFontFamily, maxLines = 1
+                            )
+                        } else {
+                            Text("Slot ${slot.slotNumber} — Kosong", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp, fontFamily = InterFontFamily)
+                            Text("Tap Backup untuk simpan save", color = DlcMuted, fontSize = 10.sp, fontFamily = InterFontFamily)
+                        }
+                    }
+
+                    // Actions
+                    if (slot.exists) {
+                        // Restore button
+                        Surface(
+                            Modifier.size(32.dp).clickable { showRestoreConfirm = slot.slotNumber },
+                            shape = CircleShape,
+                            color = DlcAccent.copy(alpha = 0.1f)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Restore, null, tint = DlcAccent, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        // Delete button
+                        Surface(
+                            Modifier.size(32.dp).clickable { showDeleteConfirm = slot.slotNumber },
+                            shape = CircleShape,
+                            color = Color(0xFFFF5252).copy(alpha = 0.1f)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Delete, null, tint = Color(0xFFFF5252), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    } else {
+                        // Backup button
+                        Surface(
+                            Modifier.size(32.dp).clickable {
+                                slotLabel = ""
+                                showLabelDialog = slot.slotNumber
+                            },
+                            shape = CircleShape,
+                            color = DlcAccent.copy(alpha = 0.1f)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Save, null, tint = DlcAccent, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Backup all button
+        Spacer(Modifier.height(8.dp))
+        Surface(
+            Modifier.fillMaxWidth().clickable {
+                slotLabel = ""
+                showLabelDialog = 0  // 0 = auto slot
+            },
+            shape = RoundedCornerShape(12.dp),
+            color = DlcAccent.copy(alpha = 0.08f),
+            border = BorderStroke(1.dp, DlcAccent.copy(alpha = 0.2f))
+        ) {
+            Row(
+                Modifier.padding(12.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Rounded.SaveAlt, null, tint = DlcAccent, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Backup ke Slot Kosong", color = DlcAccent, fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFamily = InterFontFamily)
+            }
+        }
+
+        // Message
+        if (message.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text(message, color = if (message.startsWith("Error") || message.startsWith("Gagal")) Color(0xFFFF5252) else DlcAccent, fontSize = 11.sp, fontFamily = InterFontFamily, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        }
+    }
+
+    // Label dialog (sebelum backup)
+    if (showLabelDialog > 0 || showLabelDialog == 0 && showLabelDialog != -1) {
+        if (showLabelDialog != -1) {
+            AlertDialog(
+                onDismissRequest = { showLabelDialog = -1 },
+                title = { Text("Backup Save Game", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) },
+                text = {
+                    Column {
+                        Text("Slot ${if (showLabelDialog == 0) "otomatis" else showLabelDialog}", color = DlcMuted, fontSize = 12.sp, fontFamily = InterFontFamily)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Beri label untuk save ini (opsional):", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp, fontFamily = InterFontFamily)
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = slotLabel,
+                            onValueChange = { slotLabel = it },
+                            placeholder = { Text("Contoh: Career Mode Musim 3", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
+                            singleLine = true,
+                            colors = androidx.compose.material3.TextFieldDefaults.colors(
+                                focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                cursorColor = Color.White
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val slot = showLabelDialog
+                        showLabelDialog = -1
+                        loading = true
+                        scope.launch(Dispatchers.IO) {
+                            val result = SaveGameManager.backupSave(context, slot, slotLabel)
+                            loading = false
+                            message = result.message
+                            slots = SaveGameManager.listSlots()
+                        }
+                    }) { Text("Backup", color = DlcAccent, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showLabelDialog = -1 }) { Text("Batal", color = Color.White, fontFamily = InterFontFamily) }
+                },
+                containerColor = Carbon
+            )
+        }
+    }
+
+    // Restore confirm
+    if (showRestoreConfirm > 0) {
+        AlertDialog(
+            onDismissRequest = { showRestoreConfirm = 0 },
+            title = { Text("Restore Save Game?", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) },
+            text = { Text("Save game saat ini akan ditimpa dengan save dari Slot $showRestoreConfirm. Pastikan game tidak sedang berjalan.", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, fontFamily = InterFontFamily) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val slot = showRestoreConfirm
+                    showRestoreConfirm = 0
+                    loading = true
+                    scope.launch(Dispatchers.IO) {
+                        val result = SaveGameManager.restoreSave(context, slot)
+                        loading = false
+                        message = result.message
+                    }
+                }) { Text("Restore", color = DlcAccent, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreConfirm = 0 }) { Text("Batal", color = Color.White, fontFamily = InterFontFamily) }
+            },
+            containerColor = Carbon
+        )
+    }
+
+    // Delete confirm
+    if (showDeleteConfirm > 0) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = 0 },
+            title = { Text("Hapus Save Slot $showDeleteConfirm?", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) },
+            text = { Text("Save game di slot ini akan dihapus permanen.", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, fontFamily = InterFontFamily) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val slot = showDeleteConfirm
+                    showDeleteConfirm = 0
+                    val result = SaveGameManager.deleteSlot(slot)
+                    message = result.message
+                    slots = SaveGameManager.listSlots()
+                }) { Text("Hapus", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = 0 }) { Text("Batal", color = Color.White, fontFamily = InterFontFamily) }
+            },
+            containerColor = Carbon
+        )
+    }
+
+    // Loading overlay
+    if (loading) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Memproses...", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) },
+            text = { CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp)) },
+            confirmButton = {},
+            containerColor = Carbon
+        )
+    }
 }
