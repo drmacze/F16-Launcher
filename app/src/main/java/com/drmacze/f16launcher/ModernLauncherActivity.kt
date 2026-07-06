@@ -5570,14 +5570,16 @@ private fun AccountSwitcherSection(
                 Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
-                    .clickable {
-                        if (!isActive) {
-                            AccountStore.switchAccount(context, account.userId)
-                            onAccountSwitched()
-                        }
-                    }
+                    // v7.9.30: Fix — pakai detectTapGestures untuk BOTH onTap + onLongPress
+                    // Sebelumnya clickable + pointerInput bersaing → tap tidak terdaftar.
                     .pointerInput(account.userId) {
                         detectTapGestures(
+                            onTap = {
+                                if (!isActive) {
+                                    AccountStore.switchAccount(context, account.userId)
+                                    onAccountSwitched()
+                                }
+                            },
                             onLongPress = {
                                 showRemoveConfirm = account.userId
                             }
