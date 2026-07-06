@@ -8235,7 +8235,7 @@ private fun GameCard(game: GameItem, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .width(280.dp)
-            .height(160.dp)
+            .height(180.dp)
             .clickable {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 onClick()
@@ -8257,9 +8257,9 @@ private fun GameCard(game: GameItem, onClick: () -> Unit) {
                 Box(
                     Modifier.fillMaxSize().background(
                         Brush.verticalGradient(
-                            0f to Color.Transparent,
+                            0f to Color.Black.copy(alpha = 0.3f),
                             0.5f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = 0.85f)
+                            1f to Color.Black.copy(alpha = 0.9f)
                         )
                     )
                 )
@@ -8283,18 +8283,64 @@ private fun GameCard(game: GameItem, onClick: () -> Unit) {
                     )
                 }
             }
+
+            // v7.8.0: Server status badge (top-right, cloud gaming style)
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(10.dp),
+                shape = RoundedCornerShape(999.dp),
+                color = game.serverStatus.bgColor,
+                border = BorderStroke(1.dp, game.serverStatus.dotColor.copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    // Pulsing dot
+                    Box(
+                        Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(game.serverStatus.dotColor)
+                    )
+                    Text(
+                        game.serverStatus.label,
+                        color = game.serverStatus.textColor,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = InterFontFamily,
+                        maxLines = 1
+                    )
+                }
+            }
+
             // Bottom info
             Column(
-                Modifier.align(Alignment.BottomStart).padding(16.dp)
+                Modifier.align(Alignment.BottomStart).padding(14.dp)
             ) {
-                Text(game.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
+                Text(game.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
                 Text(game.subtitle, color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp, fontFamily = InterFontFamily, maxLines = 1)
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(6.dp))
+                // Play button — cloud gaming style
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                     color = Color.White
                 ) {
-                    Text("Play", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.PlayArrow,
+                            null,
+                            tint = Color.Black,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text("Play", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                    }
                 }
             }
         }
@@ -8338,6 +8384,26 @@ private fun GameListItem(game: GameItem, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(game.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
             Text(game.subtitle, color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontFamily = InterFontFamily, maxLines = 1)
+            // v7.8.0: Server status indicator (cloud gaming style)
+            Spacer(Modifier.height(4.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Box(
+                    Modifier.size(5.dp)
+                        .clip(CircleShape)
+                        .background(game.serverStatus.dotColor)
+                )
+                Text(
+                    game.serverStatus.label,
+                    color = game.serverStatus.textColor,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = InterFontFamily,
+                    maxLines = 1
+                )
+            }
         }
         Icon(Icons.Rounded.ChevronRight, null, tint = Color.White.copy(alpha = 0.3f), modifier = Modifier.size(20.dp))
     }
