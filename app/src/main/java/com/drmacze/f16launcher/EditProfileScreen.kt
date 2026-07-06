@@ -93,10 +93,26 @@ fun EditProfileScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     // ── Load current email + bio on first launch ──
+    // Email is decoded from the Supabase JWT (auth.users.email claim).
+    // The profiles table has no email column, so we extract from token.
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            runCatching { email = api.getMyEmail().orEmpty() }
-            runCatching { bio   = api.getMyBio().orEmpty() }
+            runCatching {
+                val jwt = api.token()
+                if (jwt.isNotEmpty()) {
+                    val payload = jwt.split('.')
+                    if (payload.size >= 2) {
+                        // JWT payload is base64url — pad + URL-decode
+                        var b64 = payload[1].replace('-', '+').replace('_', '/')
+                        while (b64.length % 4 != 0) b64 += '='
+                        val json = String(android.util.Base64.decode(b64, android.util.Base64.DEFAULT))
+                        // Extract "email":"..." with a minimal regex (no JSON dep needed)
+                        val m = Regex("\"email\":\"([^\"]+)\"").find(json)
+                        email = m?.groupValues?.getOrNull(1).orEmpty()
+                    }
+                }
+            }
+            runCatching { bio = api.getMyBio().orEmpty() }
         }
     }
 
@@ -262,7 +278,7 @@ fun EditProfileScreen(
             Spacer(Modifier.height(28.dp))
 
             // ── Form fields ──
-            EditProfileField(t.fullName, fullName) { raw -> fullName = it.take(40) }
+            EditProfileField(t.fullName, fullName) { raw -> fullName = raw.take(40) }
             Spacer(Modifier.height(12.dp))
             EditProfileField(t.phoneNumber, phone) { raw -> phone = raw.filter { c -> c.isDigit() || c == '-' || c == '+' }.take(20) }
             Spacer(Modifier.height(12.dp))
