@@ -1339,10 +1339,11 @@ fun MainShell(
         }
 
         // ── v7.0.9 redesign: FloatingNav pill (PS5-style with elevated center play button) ──
-        // Tetap accessible dari Home (tidak tampil saat GameDetail/Settings/Visit aktif).
-        // v7.1.0: Hide saat page Chat (Komunitas) karena menutupi FAB "+" buat post.
-        // User tetap bisa navigasi via swipe pager atau system back.
-        if (!showGameDetail && !showSettings && visitingUserId == null && page != Page.Chat) {
+        // v7.8.2: Tampilkan FloatingNav di SEMUA page (termasuk Chat/Komunitas).
+        // Sebelumnya di-hidden di Chat karena menutupi FAB, tapi FAB sudah dihapus.
+        // User butuh navbar untuk navigasi dari Komunitas ke page lain.
+        // Tambah bottom padding di CommunityScreen supaya content tidak tertutup navbar.
+        if (!showGameDetail && !showSettings && visitingUserId == null) {
             FloatingNav(
                 page     = page,
                 onPage   = { page = it },
@@ -1354,8 +1355,8 @@ fun MainShell(
         }
 
         // ── Floating ChatBot (v6.4) — always visible when logged in ──
-        // v7.1.0: Hide saat page Chat (Komunitas) karena menutupi FAB "+" buat post.
-        if (!showGameDetail && !showSettings && visitingUserId == null && api.loggedIn() && page != Page.Chat) {
+        // v7.8.2: Tampilkan di SEMUA page (tidak di-hidden di Chat).
+        if (!showGameDetail && !showSettings && visitingUserId == null && api.loggedIn()) {
             FloatingChatBot(api = api)
         }
 
@@ -3799,7 +3800,7 @@ fun CommunityScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(
                                     start = TTSpacing.lg, end = TTSpacing.lg,
-                                    top = TTSpacing.md, bottom = 96.dp
+                                    top = TTSpacing.md, bottom = 140.dp  // v7.8.2: tambah padding untuk floating navbar
                                 ),
                                 verticalArrangement = Arrangement.spacedBy(TTSpacing.md)
                             ) {

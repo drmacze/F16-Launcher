@@ -15,22 +15,22 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 36
-        versionCode 167
-        versionName "7.8.1-fifa15-maintenance"
-        versionCode 167
-        versionName "7.8.1-fifa15-maintenance"
-        versionCode 167
-        versionName "7.8.1-fifa15-maintenance"
-        versionCode 167
-        versionName "7.8.1-fifa15-maintenance"
-        versionCode 167
-        versionName "7.8.1-fifa15-maintenance"
-        versionCode 167
-        versionName "7.8.1-fifa15-maintenance"
-        versionCode 167
-        versionName "7.8.1-fifa15-maintenance"
-        versionCode 167
-        versionName "7.8.1-fifa15-maintenance"
+        versionCode 168
+        versionName "7.8.2-fix-komunitas-navbar"
+        versionCode 168
+        versionName "7.8.2-fix-komunitas-navbar"
+        versionCode 168
+        versionName "7.8.2-fix-komunitas-navbar"
+        versionCode 168
+        versionName "7.8.2-fix-komunitas-navbar"
+        versionCode 168
+        versionName "7.8.2-fix-komunitas-navbar"
+        versionCode 168
+        versionName "7.8.2-fix-komunitas-navbar"
+        versionCode 168
+        versionName "7.8.2-fix-komunitas-navbar"
+        versionCode 168
+        versionName "7.8.2-fix-komunitas-navbar"
         buildConfigField "String", "SUPABASE_URL", '"https://lvmucsxbmadtsgrxuwmo.supabase.co"'
         buildConfigField "String", "SUPABASE_ANON_KEY", '"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2bXVjc3hibWFkdHNncnh1d21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODUyODksImV4cCI6MjA5ODU2MTI4OX0.y-1sE6uYTn4Wbter6g6NozY6uojzD5x9YVeYif-5nJs"'
         buildConfigField "String", "SUPABASE_PUB_KEY", '"sb_publishable_aYFlbWVJMErOHwPsli33QQ_INJD9mhx"'
