@@ -260,10 +260,13 @@ import java.net.URL
 //     causes infinite download loop because user installs launcher (same package)
 //     instead of FIFA 16 game → FIFA 16 never detected as installed.
 const val GAME_PKG_16       = "com.ea.gp.fifaworld"
-// v7.7.0: APK FIFA 16 dari GitHub DLavie-Launcher-Data release v26-compatible.
-// APK sudah di-modify: targetSdk=34, requiredAccountType dihapus, LAUNCHER dihapus,
-// V1+V2+V3 signed dengan DLavie keystore. Compatible Android 7-16.
-// OBB/Data/Manifest dari release v26 (original).
+// v7.7.0: APK FIFA 16 ORIGINAL dari ChatGPT (DLavie26.apk) — hosted di GitHub
+// DLavie-Launcher-Data release v26. APK TIDAK dimodify (signature original,
+// targetSdk=26 native). Compatible Android 7-16 (verified working on Android 16).
+// Repackaging APK akan break signature → "App not installed as app isn't
+// compatible with your phone" error (lihat IMG_4623.png). JANGAN repack APK.
+// OBB/Data/Manifest juga dari release v26 (original).
+// SHA-256: acb0ce50554d13d6d36aa75e7e84ade69e52f4b130f8316af4505cc255acd176
 const val DLAVIE_PROXY_URL  = "https://lvmucsxbmadtsgrxuwmo.supabase.co/functions/v1/apk-proxy"
 const val DLAVIE_DATA_BASE  = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26"
 const val FIFA16_APK_URL    = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26.apk"
