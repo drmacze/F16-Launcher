@@ -87,8 +87,9 @@ object DLavieIntegrityAnalyzer {
 
     /**
      * File yang HARUS ada kalau game data original DLavie sudah terinstall.
+     * Public supaya IntegrityAnalysisDialog bisa display count ke user.
      */
-    private val DLAVIE_ORIGINAL_FILES = listOf(
+    val DLAVIE_ORIGINAL_FILES = listOf(
         "$GAME_FILES_PATH/data/db/fifa_ng_db.db",  // save file utama
         "$GAME_FILES_PATH/cl.ini",                  // config utama
         "$DLAVIE_OBB_PATH/main.13.com.ea.gp.fifaworld.obb",
@@ -127,7 +128,7 @@ object DLavieIntegrityAnalyzer {
                 AnalysisStatus.BLOCKED
             apkVerification == ApkVerificationStatus.NOT_INSTALLED && gameDataStatus.hasForeignData ->
                 AnalysisStatus.NEEDS_CLEANUP
-            apkVerification == ApkVerificationStatus.VERIFIED && gameDataStatus.hasForeignData && !gameDataStatus.hasDlavieMarker ->
+            apkVerification == ApkVerificationStatus.VERIFIED && gameDataStatus.hasForeignData && !gameDataStatus.hasDlavieDataMarker ->
                 AnalysisStatus.NEEDS_CLEANUP
             permissionAudit.missingCritical.isNotEmpty() ->
                 AnalysisStatus.NEEDS_PERMISSIONS
