@@ -1500,31 +1500,6 @@ fun MainShell(
                                     Page.DLC -> DlcScreen(
                                         api,
                                         maintenanceInfo = maintenanceInfo,
-                                        onCheckForUpdate = {
-                                            // v7.9.42: Manual check update — force check, ignore dismissed
-                                            manualCheckLoading = true
-                                            manualCheckMessage = "Mengecek update..."
-                                            updateScope.launch {
-                                                withContext(Dispatchers.IO) {
-                                                    runCatching {
-                                                        val info = AppUpdateChecker.checkForUpdate(api)
-                                                        if (info != null && info.isUpdateAvailable) {
-                                                            updateInfo = info
-                                                            showUpdatePopup = true
-                                                            manualCheckMessage = "Update tersedia: v${info.versionName}"
-                                                        } else {
-                                                            manualCheckMessage = "Launcher sudah versi terbaru (v${BuildConfig.VERSION_CODE})"
-                                                        }
-                                                    }.onFailure { e ->
-                                                        manualCheckMessage = "Gagal cek update: ${e.message}"
-                                                        android.util.Log.w("AppUpdate", "Manual check failed", e)
-                                                    }
-                                                }
-                                                manualCheckLoading = false
-                                                kotlinx.coroutines.delay(5000L)
-                                                manualCheckMessage = ""
-                                            }
-                                        },
                                         onNav  = { page = it }
                                     )
                                     Page.GameHub -> GameHubScreen(
