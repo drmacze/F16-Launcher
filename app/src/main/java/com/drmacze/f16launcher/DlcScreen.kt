@@ -170,6 +170,10 @@ fun DlcScreen(
     var applyProgress by remember { mutableStateOf(0f) }
     var applyError by remember { mutableStateOf("") }
 
+    // v7.9.39: Integrity Analysis state — popup analisis DLavie sebelum apply mod
+    var integrityResult by remember { mutableStateOf<DLavieIntegrityAnalyzer.AnalysisResult?>(null) }
+    var pendingModAfterAnalysis by remember { mutableStateOf<ModPatch?>(null) }
+
     // v7.9.36: Auto-request storage permission saat buka DLC tab
     var showPermissionPopup by remember { mutableStateOf(false) }
     LaunchedEffect(filesAccessGranted) {
@@ -421,41 +425,52 @@ fun DlcScreen(
                     isInstalled = installedMarker.startsWith("v26") && installedMarker.contains(mod.versionName, ignoreCase = true),
                     canApply = gameInstalled,  // permission auto-requested on tap
                     onApply = {
-                        // v7.9.31: Apply mod patch — download ZIP + extract to game data
-                        if (!StorageAccess.isGranted()) {
-                            StorageAccess.request(context)
-                            return@DlcModCard
-                        }
-                        // Check patch_url exists
-                        if (mod.patchUrl.isBlank()) {
-                            android.widget.Toast.makeText(context, "Patch URL tidak tersedia", android.widget.Toast.LENGTH_SHORT).show()
-                            return@DlcModCard
-                        }
-                        // Show progress dialog
-                        applyingMod = mod
-                        applyProgress = 0f
-                        applyError = ""
-                        scope.launch {
-                            val result = ModPatchDownloader.applyPatch(
-                                context = context,
-                                patchUrl = mod.patchUrl,
-                                sha256 = if (mod.patchSha256.isNotBlank()) mod.patchSha256 else null,
-                                versionName = mod.versionName
-                            ) { progress ->
-                                applyProgress = progress
-                            }
-                            if (result.success) {
-                                android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
-                                // Refresh installed marker
-                                val markerFile = java.io.File("/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie_patch_installed")
-                                if (markerFile.exists()) {
-                                    installedMarker = markerFile.readText()
+                        // v7.9.39: Run integrity analysis BEFORE apply mod
+                        // Jika ada data foreign atau APK non-DLavie → tampilkan popup analisis
+                        // User harus resolve dulu sebelum bisa apply mod
+                        scope.launch(Dispatchers.IO) {
+                            val analysis = DLavieIntegrityAnalyzer.analyze(context)
+                            withContext(Dispatchers.Main) {
+                                if (analysis.canProceed) {
+                                    // All clear, langsung apply mod tanpa popup
+                                    if (!StorageAccess.isGranted()) {
+                                        StorageAccess.request(context)
+                                        return@withContext
+                                    }
+                                    if (mod.patchUrl.isBlank()) {
+                                        android.widget.Toast.makeText(context, "Patch URL tidak tersedia", android.widget.Toast.LENGTH_SHORT).show()
+                                        return@withContext
+                                    }
+                                    applyingMod = mod
+                                    applyProgress = 0f
+                                    applyError = ""
+                                    scope.launch {
+                                        val result = ModPatchDownloader.applyPatch(
+                                            context = context,
+                                            patchUrl = mod.patchUrl,
+                                            sha256 = if (mod.patchSha256.isNotBlank()) mod.patchSha256 else null,
+                                            versionName = mod.versionName
+                                        ) { progress ->
+                                            applyProgress = progress
+                                        }
+                                        if (result.success) {
+                                            android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
+                                            val markerFile = java.io.File("/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie_patch_installed")
+                                            if (markerFile.exists()) {
+                                                installedMarker = markerFile.readText()
+                                            }
+                                        } else {
+                                            applyError = result.message
+                                            android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
+                                        }
+                                        applyingMod = null
+                                    }
+                                } else {
+                                    // Ada masalah, tampilkan popup analisis
+                                    pendingModAfterAnalysis = mod
+                                    integrityResult = analysis
                                 }
-                            } else {
-                                applyError = result.message
-                                android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
                             }
-                            applyingMod = null
                         }
                     }
                 )
@@ -474,6 +489,62 @@ fun DlcScreen(
             fontSize = 11.sp,
             fontFamily = InterFontFamily,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        )
+    }
+
+    // v7.9.39: Integrity Analysis Dialog — muncul saat user klik Update mod
+    // dan ada masalah (foreign data, signature mismatch, dll)
+    integrityResult?.let { result ->
+        IntegrityAnalysisDialog(
+            result = result,
+            onDismiss = {
+                integrityResult = null
+                pendingModAfterAnalysis = null
+            },
+            onCancel = {
+                integrityResult = null
+                pendingModAfterAnalysis = null
+            },
+            onContinue = {
+                // User sudah agree + cleanup done, lanjut apply mod
+                integrityResult = null
+                pendingModAfterAnalysis?.let { modToApply ->
+                    pendingModAfterAnalysis = null
+                    // Apply mod setelah cleanup selesai
+                    if (!StorageAccess.isGranted()) {
+                        StorageAccess.request(context)
+                        return@IntegrityAnalysisDialog
+                    }
+                    if (modToApply.patchUrl.isBlank()) {
+                        android.widget.Toast.makeText(context, "Patch URL tidak tersedia", android.widget.Toast.LENGTH_SHORT).show()
+                        return@IntegrityAnalysisDialog
+                    }
+                    applyingMod = modToApply
+                    applyProgress = 0f
+                    applyError = ""
+                    scope.launch {
+                        val result = ModPatchDownloader.applyPatch(
+                            context = context,
+                            patchUrl = modToApply.patchUrl,
+                            sha256 = if (modToApply.patchSha256.isNotBlank()) modToApply.patchSha256 else null,
+                            versionName = modToApply.versionName
+                        ) { progress ->
+                            applyProgress = progress
+                        }
+                        if (result.success) {
+                            android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
+                            val markerFile = java.io.File("/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie_patch_installed")
+                            if (markerFile.exists()) {
+                                installedMarker = markerFile.readText()
+                            }
+                        } else {
+                            applyError = result.message
+                            android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
+                        }
+                        applyingMod = null
+                    }
+                }
+            }
         )
     }
 
