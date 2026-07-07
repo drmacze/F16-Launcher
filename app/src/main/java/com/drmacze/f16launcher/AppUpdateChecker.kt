@@ -44,46 +44,89 @@ object AppUpdateChecker {
      * - Regular user: hanya dapat published releases
      * - Staff (admin/developer): dapat draft + published releases
      *
+     * v7.9.40: Fallback ke manifest.json (GitHub raw) kalau app_releases kosong/error.
+     * Manifest berisi info launcher terbaru, jadi user tetap dapat popup update
+     * tanpa perlu SQL insert manual ke app_releases.
+     *
      * @param api CommunityApi instance (untuk auth + role check)
      * @return UpdateInfo atau null kalau tidak ada update
      */
     suspend fun checkForUpdate(api: CommunityApi): UpdateInfo? {
-        return try {
-            val currentCode = BuildConfig.VERSION_CODE
+        val currentCode = BuildConfig.VERSION_CODE
 
-            // HANYA cek PUBLISHED releases — draft tidak show popup ke siapapun
-            // (termasuk admin/developer — mereka test via Dev Dashboard)
+        // ── Strategy 1: Cek dari Supabase app_releases (primary) ──
+        try {
             val filter = "version_code=gt.$currentCode&is_published=eq.true"
-
             val response = api.requestPublic(
                 "GET",
                 "/rest/v1/app_releases?$filter&order=version_code.desc&limit=1&select=version_code,version_name,tag_name,apk_download_url,changelog,is_published"
             )
 
             val arr = JSONArray(response)
-            if (arr.length() == 0) return null
-
-            val release = arr.getJSONObject(0)
-            val versionCode = release.optInt("version_code", 0)
-            // Jika versionCode <= currentCode, tidak ada update
-            if (versionCode <= currentCode) return null
-
-            // Jika apk_download_url kosong, jangan tampilkan popup (tidak bisa download)
-            val apkUrl = release.optString("apk_download_url", "")
-            if (apkUrl.isBlank()) return null
-
-            UpdateInfo(
-                versionName = release.optString("version_name", "unknown"),
-                versionCode = versionCode,
-                releaseNotes = release.optString("changelog", ""),
-                apkUrl = apkUrl,
-                isPublished = release.optBoolean("is_published", false),
-                isUpdateAvailable = true
-            )
-        } catch (_: Throwable) {
-            // Tabel app_releases belum ada atau error → tidak show popup (bukan error fatal)
-            null
+            if (arr.length() > 0) {
+                val release = arr.getJSONObject(0)
+                val versionCode = release.optInt("version_code", 0)
+                if (versionCode > currentCode) {
+                    val apkUrl = release.optString("apk_download_url", "")
+                    if (apkUrl.isNotBlank()) {
+                        android.util.Log.i("AppUpdate", "Update found via Supabase: v$versionCode")
+                        return UpdateInfo(
+                            versionName = release.optString("version_name", "unknown"),
+                            versionCode = versionCode,
+                            releaseNotes = release.optString("changelog", ""),
+                            apkUrl = apkUrl,
+                            isPublished = release.optBoolean("is_published", false),
+                            isUpdateAvailable = true
+                        )
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            android.util.Log.w("AppUpdate", "Supabase check failed, fallback to manifest: ${e.message}")
         }
+
+        // ── Strategy 2: Fallback ke manifest.json (GitHub raw URL) ──
+        // v7.9.40: Manifest berisi launcher info, jadi user tetap dapat update
+        // notification tanpa perlu SQL insert ke app_releases
+        try {
+            val manifestUrl = "https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/manifest.json?t=${System.currentTimeMillis()}"
+            val conn = (URL(manifestUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 10_000
+                readTimeout = 15_000
+                setRequestProperty("Cache-Control", "no-cache")
+                setRequestProperty("User-Agent", "DLavie-Launcher")
+                connect()
+            }
+            try {
+                if (conn.responseCode in 200..299) {
+                    val text = conn.inputStream.bufferedReader().use { it.readText() }
+                    val manifest = JSONObject(text)
+                    val launcher = manifest.optJSONObject("launcher") ?: return null
+                    val latestCode = launcher.optInt("latest_version_code", 0)
+                    if (latestCode > currentCode) {
+                        val apkUrl = launcher.optString("apk_url", "")
+                        if (apkUrl.isNotBlank()) {
+                            android.util.Log.i("AppUpdate", "Update found via manifest: v$latestCode")
+                            return UpdateInfo(
+                                versionName = launcher.optString("latest_version_name", "unknown"),
+                                versionCode = latestCode,
+                                releaseNotes = launcher.optString("release_notes", "Update terbaru tersedia").toString(),
+                                apkUrl = apkUrl,
+                                isPublished = true,
+                                isUpdateAvailable = true
+                            )
+                        }
+                    }
+                }
+            } finally {
+                conn.disconnect()
+            }
+        } catch (e: Throwable) {
+            android.util.Log.w("AppUpdate", "Manifest check failed: ${e.message}")
+        }
+
+        return null
     }
 
     /**
