@@ -499,6 +499,7 @@ private fun GuidedLoginScreen(
                 // Check latest version from GitHub Releases API
                 var latestVersionCode by remember { mutableStateOf<Int?>(null) }
                 var latestVersionName by remember { mutableStateOf<String?>(null) }
+                var latestApkUrl by remember { mutableStateOf<String?>(null) }
                 var updateAvailable by remember { mutableStateOf(false) }
                 var checkingUpdate by remember { mutableStateOf(true) }
 
@@ -522,6 +523,19 @@ private fun GuidedLoginScreen(
                                 latestVersionCode = tagNum
                                 latestVersionName = releaseName
                                 updateAvailable = tagNum > currentVersionCode
+                                // v7.9.55: Ambil APK URL dari assets untuk direct download
+                                val assets = json.optJSONArray("assets")
+                                if (assets != null) {
+                                    for (i in 0 until assets.length()) {
+                                        val asset = assets.optJSONObject(i)
+                                        val name = asset?.optString("name", "") ?: ""
+                                        val dlUrl = asset?.optString("browser_download_url", "") ?: ""
+                                        if (name.endsWith(".apk", ignoreCase = true) && dlUrl.isNotBlank()) {
+                                            latestApkUrl = dlUrl
+                                            break
+                                        }
+                                    }
+                                }
                             }
                         } catch (_: Exception) {
                             // Network error — silent fail, just don't show update button
@@ -592,30 +606,166 @@ private fun GuidedLoginScreen(
                     }
                 }
 
-                // Update button (hanya kalau update tersedia)
+                // Update button (hanya kalau update tersedia) — v7.9.55: with download progress + install
                 if (updateAvailable && latestVersionCode != null) {
-                    Button(
-                        onClick = {
-                            // Buka halaman releases/latest di browser
-                            val updateUrl = "https://github.com/drmacze/F16-Launcher/releases/latest"
-                            val intent = android.content.Intent(
-                                android.content.Intent.ACTION_VIEW,
-                                android.net.Uri.parse(updateUrl)
-                            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                            runCatching { context.startActivity(intent) }
-                        },
+                    var downloadProgress by remember { mutableStateOf(0f) }
+                    var downloadState by remember { mutableStateOf("idle") }  // idle | downloading | downloaded | installing | error
+                    var downloadError by remember { mutableStateOf("") }
+                    val scope = rememberCoroutineScope()
+
+                    Surface(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                        color = Color(0xFFFF5252).copy(0.1f),
                         shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFF5252),
-                            contentColor = Color.White
-                        )
+                        border = BorderStroke(1.dp, Color(0xFFFF5252).copy(0.4f))
                     ) {
-                        Icon(Icons.Rounded.SystemUpdate, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Column {
-                            Text("Update ke Versi Terbaru", fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont)
-                            Text("v$latestVersionName (build $latestVersionCode) — tap untuk download", fontSize = 10.sp, fontFamily = GuideFont)
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Rounded.SystemUpdate,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFF5252),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("Update ke Versi Terbaru", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont)
+                                    Text(
+                                        "v$latestVersionName (build $latestVersionCode)",
+                                        color = Color.White.copy(0.7f),
+                                        fontSize = 10.sp,
+                                        fontFamily = GuideFont
+                                    )
+                                }
+                            }
+
+                            // Progress bar (visible saat downloading/installing)
+                            if (downloadState == "downloading" || downloadState == "installing") {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    LinearProgressIndicator(
+                                        progress = { if (downloadState == "downloading") downloadProgress else 1f },
+                                        modifier = Modifier.fillMaxWidth().height(6.dp),
+                                        color = Color(0xFFFF5252),
+                                        trackColor = Color.White.copy(0.1f)
+                                    )
+                                    Text(
+                                        if (downloadState == "downloading")
+                                            "Downloading... ${(downloadProgress * 100).toInt()}%"
+                                        else "Installing APK...",
+                                        color = Color.White.copy(0.7f),
+                                        fontSize = 10.sp,
+                                        fontFamily = GuideFont
+                                    )
+                                }
+                            }
+
+                            // Error message
+                            if (downloadState == "error" && downloadError.isNotEmpty()) {
+                                Text(
+                                    downloadError,
+                                    color = Color(0xFFFFAA00),
+                                    fontSize = 10.sp,
+                                    fontFamily = GuideFont
+                                )
+                            }
+
+                            // Action button
+                            Button(
+                                onClick = {
+                                    when (downloadState) {
+                                        "idle", "error" -> {
+                                            downloadState = "downloading"
+                                            downloadProgress = 0f
+                                            downloadError = ""
+                                            scope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    try {
+                                                        // Fallback kalau latestApkUrl null (API gagal sebelumnya)
+                                                        val apkUrl = latestApkUrl
+                                                            ?: "https://github.com/drmacze/F16-Launcher/releases/latest/download/DLavie26-Launcher-debug.apk"
+                                                        val apkFile = AppUpdateChecker.downloadApk(context, apkUrl) { progress ->
+                                                            downloadProgress = progress
+                                                        }
+                                                        if (apkFile != null && apkFile.exists() && apkFile.length() > 1_000_000) {
+                                                            downloadState = "installing"
+                                                            withContext(Dispatchers.Main) {
+                                                                // Small delay supaya user lihat 100% progress
+                                                                kotlinx.coroutines.delay(500)
+                                                                val installed = AppUpdateChecker.installApk(context, apkFile)
+                                                                if (!installed) {
+                                                                    downloadState = "error"
+                                                                    downloadError = "Gagal buka installer. Buka browser untuk download manual."
+                                                                }
+                                                            }
+                                                        } else {
+                                                            downloadState = "error"
+                                                            downloadError = "Download gagal — file tidak valid."
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        downloadState = "error"
+                                                        downloadError = e.message ?: "Download gagal. Cek koneksi internet."
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        "downloading", "installing" -> {
+                                            // Tidak bisa cancel mid-download (APK sedang ditulis)
+                                        }
+                                        "downloaded" -> {
+                                            // Re-trigger install
+                                            downloadState = "installing"
+                                            scope.launch {
+                                                val apkFile = java.io.File(context.cacheDir, "app-updates/dlavie-update.apk")
+                                                val installed = AppUpdateChecker.installApk(context, apkFile)
+                                                if (!installed) {
+                                                    downloadState = "error"
+                                                    downloadError = "Gagal buka installer."
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                enabled = downloadState != "downloading" && downloadState != "installing",
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFFF5252),
+                                    contentColor = Color.White,
+                                    disabledContainerColor = Color(0xFFFF5252).copy(0.5f),
+                                    disabledContentColor = Color.White.copy(0.5f)
+                                )
+                            ) {
+                                Text(
+                                    when (downloadState) {
+                                        "idle" -> "Download & Install"
+                                        "downloading" -> "Downloading..."
+                                        "installing" -> "Installing..."
+                                        "downloaded" -> "Install APK"
+                                        "error" -> "Retry Download"
+                                        else -> "Download & Install"
+                                    },
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = GuideFont
+                                )
+                            }
+
+                            // Fallback: open browser
+                            Text(
+                                "Tidak bisa update otomatis? Buka browser →",
+                                color = Color.White.copy(0.5f),
+                                fontSize = 10.sp,
+                                fontFamily = GuideFont,
+                                textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                                modifier = Modifier.clickable {
+                                    val updateUrl = "https://github.com/drmacze/F16-Launcher/releases/latest"
+                                    val intent = android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse(updateUrl)
+                                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    runCatching { context.startActivity(intent) }
+                                }
+                            )
                         }
                     }
                 }
@@ -1090,17 +1240,79 @@ private fun GuidedLoginScreen(
                 )
             }
 
-            // ── Legal text (bottom) ──
+            // ── Legal text (bottom) — v7.9.55: clickable Terms & Privacy links ──
             Spacer(Modifier.height(32.dp))
-            Text(
-                t.legalNotice,
-                color = Color.White.copy(alpha = 0.25f),
-                fontSize = 10.sp,
-                fontFamily = GuideFont,
-                textAlign = TextAlign.Center,
-                lineHeight = 14.sp,
-                modifier = Modifier.padding(horizontal = 24.dp)
+            // Split legalNotice jadi 3 bagian: prefix, terms link, mid, privacy link, suffix
+            // Support multiple languages: detect "Ketentuan Layanan" / "Terms of Service" / etc.
+            val termsUrl = "https://drmacze.github.io/dlavie-web/#/terms"
+            val privacyUrl = "https://drmacze.github.io/dlavie-web/#/privacy"
+
+            // Detect language-specific terms/privacy phrases
+            val termsPhrases = listOf(
+                "Ketentuan Layanan", "Terms of Service", "Terma Perkhidmatan",
+                "Termos de Serviço", "Términos de Servicio", "Nutzungsbedingungen",
+                "Conditions d'utilisation", "利用規約", "服务条款"
             )
+            val privacyPhrases = listOf(
+                "Kebijakan Privasi", "Privacy Policy", "Dasar Privasi",
+                "Política de Privacidade", "Política de Privacidad", "Datenschutzrichtlinie",
+                "Politique de confidentialité", "プライバシーポリシー", "隐私政策"
+            )
+
+            val legalText = t.legalNotice
+            // Cari posisi terms & privacy phrase di legalText
+            val termsPhrase = termsPhrases.firstOrNull { legalText.contains(it) }
+            val privacyPhrase = privacyPhrases.firstOrNull { legalText.contains(it) }
+
+            if (termsPhrase != null && privacyPhrase != null) {
+                val termsStart = legalText.indexOf(termsPhrase)
+                val termsEnd = termsStart + termsPhrase.length
+                val privacyStart = legalText.indexOf(privacyPhrase)
+                val privacyEnd = privacyStart + privacyPhrase.length
+
+                val annotated = androidx.compose.ui.text.AnnotatedString.Builder().apply {
+                    append(legalText.substring(0, termsStart))
+                    withLink(androidx.compose.ui.text.LinkAnnotation.Url(termsUrl)) {
+                        withStyle(androidx.compose.ui.text.SpanStyle(
+                            color = Color.White.copy(alpha = 0.6f),
+                            textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
+                        )) {
+                            append(termsPhrase)
+                        }
+                    }
+                    append(legalText.substring(termsEnd, privacyStart))
+                    withLink(androidx.compose.ui.text.LinkAnnotation.Url(privacyUrl)) {
+                        withStyle(androidx.compose.ui.text.SpanStyle(
+                            color = Color.White.copy(alpha = 0.6f),
+                            textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
+                        )) {
+                            append(privacyPhrase)
+                        }
+                    }
+                    append(legalText.substring(privacyEnd))
+                }.toAnnotatedString()
+
+                Text(
+                    annotated,
+                    color = Color.White.copy(alpha = 0.25f),
+                    fontSize = 10.sp,
+                    fontFamily = GuideFont,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 14.sp,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+            } else {
+                // Fallback: plain text kalau phrase tidak ketemu
+                Text(
+                    legalText,
+                    color = Color.White.copy(alpha = 0.25f),
+                    fontSize = 10.sp,
+                    fontFamily = GuideFont,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 14.sp,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+            }
         }
 
         // ── Working overlay (top-center spinner) ──
