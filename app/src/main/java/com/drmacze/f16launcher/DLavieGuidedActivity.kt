@@ -465,55 +465,58 @@ private fun GuidedLoginScreen(
             )
             Spacer(Modifier.height(48.dp))
 
-            // ── Mode: CHOOSER (default — Grok-style stacked auth buttons) ──
+            // ── Mode: CHOOSER — single "Connect via DLavie Portal" button ──
+            // v8.0: Auth sekarang via web DLavie Portal. User login/register di web,
+            // lalu klik "Connect to Launcher" → token dikirim ke launcher via deep link.
+            // Launcher terima token → simpan di EncryptedSharedPreferences → auto-login.
+            // Token persist across app updates (EncryptedSharedPreferences tidak dihapus saat update).
             if (mode == "chooser") {
-                // 1. Google Sign-In button (primary, white bg)
-                AuthProviderButton(
-                    label = t.loginWithGoogle,
-                    icon = { GoogleIcon() },
-                    containerColor = Color.White,
-                    contentColor = Color.Black,
-                    onClick = {
-                        // v6.8.3: launch Supabase OAuth Google via Custom Tabs
-                        scope.launch {
-                            working = true; message = ""
-                            val result = withContext(Dispatchers.IO) {
-                                startGoogleOAuth(context)
-                            }
-                            working = false
-                            if (result.startsWith("OK:")) {
-                                message = "Membuka Google login di browser..."
-                                isSuccess = true
-                            } else {
-                                message = result
-                                isSuccess = false
-                            }
-                        }
-                    },
-                    enabled = !working
+                // Info text
+                Text(
+                    "Login/register akun DLavie Anda melalui website portal.",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 13.sp,
+                    fontFamily = GuideFont,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 32.dp, vertical = 16.dp)
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
 
-                // 2. Email button (secondary, dark glass)
+                // 1. Connect via DLavie Portal (primary, white bg)
                 AuthProviderButton(
-                    label = t.loginWithEmail,
+                    label = "Connect via DLavie Portal",
                     icon = {
                         Icon(
-                            Icons.Rounded.Email,
+                            Icons.Rounded.Language,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = Color.Black,
                             modifier = Modifier.size(20.dp)
                         )
                     },
-                    containerColor = Color(0xFF1A1A1A),
-                    contentColor = Color.White,
-                    borderColor = Color.White.copy(alpha = 0.12f),
-                    onClick = { mode = "login"; message = "" },
+                    containerColor = Color.White,
+                    contentColor = Color.Black,
+                    onClick = {
+                        // Open DLavie Portal website in browser
+                        val portalUrl = "https://drmacze.github.io/dlavie-web/#/portal?from=launcher"
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(portalUrl)
+                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runCatching { context.startActivity(intent) }
+                    },
                     enabled = !working
                 )
                 Spacer(Modifier.height(12.dp))
 
-                // v7.9.17: Guest button DIHAPUS — user harus login/register untuk akses launcher
+                // 2. Already connected? Check token
+                Text(
+                    "Sudah pernah connect? Launcher akan auto-login jika token masih valid.",
+                    color = Color.White.copy(alpha = 0.3f),
+                    fontSize = 11.sp,
+                    fontFamily = GuideFont,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 32.dp)
+                )
             }
 
             // ── Mode: LOGIN / REGISTER / FORGOT (email form) ──

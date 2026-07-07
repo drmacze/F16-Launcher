@@ -75,28 +75,58 @@ class ShinySplashActivity : ComponentActivity() {
         // ── DLavie Portal Connect: check for deep link ──
         val portalData = intent?.data
         if (portalData != null && portalData.scheme == "dlavie" && portalData.host == "connect") {
-            val callback = portalData.getQueryParameter("callback")
-            val api = CommunityApi(this)
-            if (callback != null && api.loggedIn()) {
-                val pToken = api.token()
-                val pUid = api.userId()
+            // v8.0: RECEIVE token FROM web portal (not send TO web)
+            // Web sends: dlavie://connect?token=JWT&uid=USER_ID&refresh=REFRESH_TOKEN
+            val webToken = portalData.getQueryParameter("token")
+            val webUid = portalData.getQueryParameter("uid")
+            val webRefresh = portalData.getQueryParameter("refresh") ?: ""
+
+            if (!webToken.isNullOrBlank() && !webUid.isNullOrBlank()) {
+                // Save token to both prefs (dlavie_auth_session + dlavie_community)
+                // so CommunityApi.loggedIn() returns true
+                getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("access_token", webToken)
+                    .putString("refresh_token", webRefresh)
+                    .apply()
+
                 getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
-                    .edit().putBoolean("portal_connected", true)
-                    .putString("portal_connected_at", System.currentTimeMillis().toString()).apply()
-                android.widget.Toast.makeText(this, "DLavie Portal Connected! Mengalihkan ke web...", android.widget.Toast.LENGTH_LONG).show()
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    try {
-                        val rUrl = "$callback?token=$pToken&uid=$pUid"
-                        startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(rUrl)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-                    } catch (e: Exception) { android.widget.Toast.makeText(this, "Gagal: ${e.message}", android.widget.Toast.LENGTH_SHORT).show() }
-                    finish()
-                }, 2000)
-            } else {
-                android.widget.Toast.makeText(this, "Login dulu di launcher, lalu coba Connect lagi.", android.widget.Toast.LENGTH_LONG).show()
-                startActivity(android.content.Intent(this, DLavieGuidedActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK))
+                    .edit()
+                    .putString("access_token", webToken)
+                    .putString("refresh_token", webRefresh)
+                    .putString("user_id", webUid)
+                    .putBoolean("portal_connected", true)
+                    .putString("portal_connected_at", System.currentTimeMillis().toString())
+                    .apply()
+
+                // Load profile to get username/display_name
+                val api = CommunityApi(this)
+                try {
+                    api.loadMyProfile()
+                } catch (_: Exception) {}
+
+                android.widget.Toast.makeText(this,
+                    "DLavie Portal Connected! Welcome${if (api.displayName().isNotEmpty()) ", ${api.displayName()}" else ""}.",
+                    android.widget.Toast.LENGTH_LONG).show()
+
+                // Navigate to launcher main screen
+                val target = android.content.Intent(this, ModernLauncherActivity::class.java)
+                target.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                startActivity(target)
+                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
                 finish()
+                return
+            } else {
+                // Missing token/uid — show error
+                android.widget.Toast.makeText(this,
+                    "Connect gagal: token tidak ditemukan. Coba lagi dari web portal.",
+                    android.widget.Toast.LENGTH_LONG).show()
+                val target = android.content.Intent(this, DLavieGuidedActivity::class.java)
+                target.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                startActivity(target)
+                finish()
+                return
             }
-            return
         }
 
         setContent {
