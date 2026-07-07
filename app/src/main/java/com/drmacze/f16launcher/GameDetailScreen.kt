@@ -282,12 +282,25 @@ fun GameDetailScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(Modifier.weight(1f)) {
-                            val rating10 = String.format("%.1f", avgRating * 2.0)
+                            val rating5 = String.format("%.1f", avgRating)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.Star, null, tint = AmberWarn, modifier = Modifier.size(28.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text(rating10, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
-                                Text("/10", color = SoftText, fontSize = 16.sp, fontFamily = InterFontFamily)
+                                Text(rating5, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
+                                Text("/5", color = SoftText, fontSize = 16.sp, fontFamily = InterFontFamily)
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            // v7.9.60: Visual stars berdasarkan rating
+                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                for (i in 1..5) {
+                                    val filled = i <= kotlin.math.round(avgRating).toInt()
+                                    Icon(
+                                        if (filled) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                        contentDescription = null,
+                                        tint = if (filled) AmberWarn else SoftText.copy(alpha = 0.3f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                             Spacer(Modifier.height(4.dp))
                             Text(
@@ -308,7 +321,7 @@ fun GameDetailScreen(
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Icon(Icons.Rounded.CheckCircle, null, tint = AmberWarn, modifier = Modifier.size(18.dp))
-                                    Text("Rated $myRating", color = AmberWarn, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                                    Text("Rated $myRating★", color = AmberWarn, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
                                 }
                             }
                         }
@@ -388,7 +401,7 @@ fun GameDetailScreen(
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Detail Game", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
-                    DetailRow(Icons.Rounded.Star, "Rating", "${String.format("%.1f", avgRating * 2.0)}/10 · $ratingCount penilaian")
+                    DetailRow(Icons.Rounded.Star, "Rating", "${String.format("%.1f", avgRating)}/5 · $ratingCount penilaian")
                     DetailRow(Icons.Rounded.Person, "Pengembang", game.developer)
                     DetailRow(Icons.Rounded.Language, "Bahasa", game.language)
                     DetailRow(Icons.Rounded.Info, "Rating Usia", game.ageRating)
