@@ -48,13 +48,17 @@ fun IntegrityAnalysisDialog(
     result: DLavieIntegrityAnalyzer.AnalysisResult,
     onDismiss: () -> Unit,
     onContinue: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onRequestPermission: () -> Unit = {},
+    onInstallGame: () -> Unit = {},
+    onInstallApk: () -> Unit = {}
 ) {
     var agreeCleanup by remember { mutableStateOf(false) }
     var agreeBackup by remember { mutableStateOf(false) }
     var isProcessing by remember { mutableStateOf(false) }
     var processLog by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Dialog(
         onDismissRequest = { if (!isProcessing) onDismiss() },
@@ -183,6 +187,23 @@ fun IntegrityAnalysisDialog(
                             "Tidak bisa memverifikasi signature APK (error). Coba lagi."
                     }
                 )
+                // v7.9.47: Button install APK jika NOT_INSTALLED
+                if (result.apkVerification == DLavieIntegrityAnalyzer.ApkVerificationStatus.NOT_INSTALLED) {
+                    Button(
+                        onClick = { onInstallApk() },
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF4CAF50),
+                            contentColor = Color.Black
+                        ),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Install APK FIFA 16 Sekarang", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                    }
+                }
 
                 // ─── Game Data Status ───
                 SectionHeader("Status Game Data", Icons.Rounded.Folder)
@@ -208,6 +229,24 @@ fun IntegrityAnalysisDialog(
                             "Sebaiknya reinstall data DLavie."
                     }
                 )
+                // v7.9.47: Button install game data jika NO_DATA atau INCOMPLETE
+                if (gameData.status == DLavieIntegrityAnalyzer.GameDataStatusType.NO_DATA ||
+                    gameData.status == DLavieIntegrityAnalyzer.GameDataStatusType.INCOMPLETE) {
+                    Button(
+                        onClick = { onInstallGame() },
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF4CAF50),
+                            contentColor = Color.Black
+                        ),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Install Game Data Sekarang", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                    }
+                }
 
                 if (gameData.suspiciousFiles.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
@@ -253,13 +292,65 @@ fun IntegrityAnalysisDialog(
                         color = Color(0xFFFFB74D).copy(alpha = 0.1f),
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB74D).copy(alpha = 0.3f))
                     ) {
-                        Text(
-                            "⚠ MANAGE_EXTERNAL_STORAGE perlu di-enable via Settings Android (Android 11+)",
-                            color = Color(0xFFFFB74D),
-                            fontSize = 10.sp,
-                            fontFamily = InterFontFamily,
-                            modifier = Modifier.padding(10.dp)
-                        )
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "⚠ MANAGE_EXTERNAL_STORAGE perlu di-enable via Settings Android (Android 11+)",
+                                color = Color(0xFFFFB74D),
+                                fontSize = 10.sp,
+                                fontFamily = InterFontFamily
+                            )
+                            // v7.9.47: Button langsung buka Settings Android
+                            Button(
+                                onClick = {
+                                    try {
+                                        val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                            data = android.net.Uri.parse("package:${context.packageName}")
+                                            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        // Fallback: buka general storage settings
+                                        try {
+                                            val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
+                                                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                            }
+                                            context.startActivity(intent)
+                                        } catch (_: Exception) {
+                                            android.widget.Toast.makeText(context, "Buka Settings > Apps > DLavie > Storage", android.widget.Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFFFB74D),
+                                    contentColor = Color.Black
+                                ),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Buka Settings untuk Grant", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                            }
+                        }
+                    }
+                }
+                // v7.9.47: Button untuk request permission umum (POST_NOTIFICATIONS, dll)
+                if (perms.missingCritical.isNotEmpty() || perms.missingOptional.isNotEmpty()) {
+                    if (!perms.needsManageStorageSettings) {
+                        Button(
+                            onClick = { onRequestPermission() },
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF4CAF50),
+                                contentColor = Color.Black
+                            ),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Grant Permissions Sekarang", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                        }
                     }
                 }
 
@@ -414,6 +505,22 @@ fun IntegrityAnalysisDialog(
                         )
                     ) {
                         Text("Batal", fontFamily = InterFontFamily, fontSize = 12.sp)
+                    }
+
+                    // v7.9.47: Re-Check button — re-run analysis setelah user install/grant permission
+                    // User bisa klik ini setelah install APK/data/permission untuk refresh status
+                    OutlinedButton(
+                        onClick = { if (!isProcessing) onDismiss() },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isProcessing,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color(0xFF4CAF50)
+                        )
+                    ) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Re-Check", fontFamily = InterFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
 
                     // Continue button (conditional enabled)
