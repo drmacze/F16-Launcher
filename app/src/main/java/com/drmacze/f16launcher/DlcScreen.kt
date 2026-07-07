@@ -136,6 +136,7 @@ data class ModPatch(
 fun DlcScreen(
     api: CommunityApi,
     maintenanceInfo: MaintenanceInfo? = null,
+    onCheckForUpdate: () -> Unit = {},
     onNav: (Page) -> Unit
 ) {
     val context = LocalContext.current
@@ -671,6 +672,32 @@ private fun DlcHeader() {
                 fontFamily = InterFontFamily,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        // v7.9.42: Tombol "Cek Update Launcher" — manual trigger popup update
+        // User bisa force check kalau popup tidak muncul otomatis
+        OutlinedButton(
+            onClick = { onCheckForUpdate() },
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = DlcAccent,
+                containerColor = Color.Transparent
+            ),
+            border = androidx.compose.foundation.BorderStroke(1.dp, DlcAccent.copy(alpha = 0.4f)),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Icon(
+                Icons.Rounded.SystemUpdate,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "Cek Update Launcher",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = InterFontFamily
             )
         }
     }

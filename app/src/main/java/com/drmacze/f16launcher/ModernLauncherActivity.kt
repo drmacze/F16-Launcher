@@ -471,6 +471,8 @@ fun DLavieModernApp(initialPostId: String? = null) {
     var updateDownloading by remember { mutableStateOf(false) }
     var updateDownloadProgress by remember { mutableStateOf(0f) }
     var updateDownloadError by remember { mutableStateOf("") }  // v7.2.8: error state (no browser fallback)
+    var manualCheckLoading by remember { mutableStateOf(false) }
+    var manualCheckMessage by remember { mutableStateOf("") }
     val updateScope = rememberCoroutineScope()
 
     // ── Staff bypass (Bug 3): admin/developer/moderator/owner skip maintenance entirely ──
@@ -498,20 +500,59 @@ fun DLavieModernApp(initialPostId: String? = null) {
     }
 
     // ── Cek app update saat app dibuka ──
-    // Cek SharedPreferences: kalau user sudah dismiss versi ini, jangan show lagi
+    // v7.9.42: Auto-reset dismissed_version_code kalau ada versi baru
+    // Sebelumnya: kalau user dismiss v208, popup v209/v210 tidak muncul (BUG)
+    // Sekarang: dismissed hanya berlaku untuk versi yang sama. Versi baru tetap show popup.
     val updatePrefs = remember { context.getSharedPreferences("dlavie_update_prefs", Context.MODE_PRIVATE) }
+
+    /**
+     * v7.9.42: Fungsi manual check update — bisa dipanggil dari UI (tombol "Cek Update")
+     * Force check ke server, ignore dismissed_version_code, tampilkan popup kalau ada update.
+     */
+    fun manualCheckForUpdate() {
+        manualCheckLoading = true
+        manualCheckMessage = "Mengecek update..."
+        updateScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val info = AppUpdateChecker.checkForUpdate(api)
+                    if (info != null && info.isUpdateAvailable) {
+                        // v7.9.42: Manual check ALWAYS show popup (ignore dismissed)
+                        updateInfo = info
+                        showUpdatePopup = true
+                        manualCheckMessage = "Update tersedia: v${info.versionName}"
+                    } else {
+                        manualCheckMessage = "Launcher sudah versi terbaru (v${BuildConfig.VERSION_CODE})"
+                    }
+                }.onFailure { e ->
+                    manualCheckMessage = "Gagal cek update: ${e.message}"
+                    android.util.Log.w("AppUpdate", "Manual check failed", e)
+                }
+            }
+            manualCheckLoading = false
+            // Clear message after 5 seconds
+            kotlinx.coroutines.delay(5000L)
+            manualCheckMessage = ""
+        }
+    }
+
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             runCatching {
                 val info = AppUpdateChecker.checkForUpdate(api)
                 if (info != null && info.isUpdateAvailable) {
-                    // Cek apakah user sudah dismiss versi ini
+                    // v7.9.42: Auto-reset dismissed kalau versi baru tersedia
+                    // Jadi kalau user dismiss v208, popup v210 tetap muncul
                     val dismissedVersion = updatePrefs.getInt("dismissed_version_code", -1)
                     if (dismissedVersion != info.versionCode) {
                         updateInfo = info
                         showUpdatePopup = true
+                    } else {
+                        android.util.Log.i("AppUpdate", "Update v${info.versionCode} tersedia tapi user sudah dismiss. Manual check untuk force show.")
                     }
                 }
+            }.onFailure { e ->
+                android.util.Log.w("AppUpdate", "Auto check failed (non-fatal)", e)
             }
         }
     }
@@ -1481,7 +1522,7 @@ fun MainShell(
                                                 showGameDetail           = true
                                             }
                                         )
-                                    Page.DLC -> DlcScreen(api, maintenanceInfo = maintenanceInfo, onNav  = { page = it })
+                                    Page.DLC -> DlcScreen(api, maintenanceInfo = maintenanceInfo, onCheckForUpdate = { manualCheckForUpdate() }, onNav  = { page = it })
                                     Page.GameHub -> GameHubScreen(
                                             onNav = { page = it },
                                             onGameClick = { gamePackage ->
