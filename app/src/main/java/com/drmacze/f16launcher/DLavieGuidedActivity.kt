@@ -68,6 +68,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.blur
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -263,19 +270,26 @@ private data class GuidedUpdateState(
     val knownIssues: List<String> = emptyList()
 )
 
-// v3.0 monochrome palette — match DLavie logo (white-on-black, halftone)
-// GuideGreen tetap vibrant (functional status: success/download).
-// GuideCyan/GuideRed/GuideAmber tetap vibrant untuk status indicators minimal.
-private val GuideGreen = Color(0xFF22E678)
+// v7.9.56 palette — match DLavie website (dlavie-web) CSS variables
+// Pure black base, glass-stroke borders, soft white text, subtle accent colors
+private val GuideGreen = Color(0xFF00D26A)        // --success
 private val GuideCyan = Color(0xFF2ED3F6)
-private val GuideRed = Color(0xFFFF5B64)
-private val GuideAmber = Color(0xFFFFB84E)
-private val GuideWhite = Color(0xFFF4F7F5)
-private val GuideMuted = Color(0xFF8E9491)
-private val GuideDark = Color(0xFF0A0A0A)        // v3.0 near pure black (match logo)
-private val GuideCard = Color(0xDD111111)        // v3.0 monochrome card
-private val GuideBorder = Color(0x30FFFFFF)      // v3.0 subtle white border (halftone-like)
-private val GuideFont = FontFamily.SansSerif
+private val GuideRed = Color(0xFFFF4444)          // --danger
+private val GuideAmber = Color(0xFFFFAA00)        // --amber
+private val GuideWhite = Color(0xFFFFFFFF)        // --text-white
+private val GuideSoftText = Color(0xFFCCCCCC)     // --soft-text
+private val GuideMuted = Color(0xFF888888)        // --sub-text
+private val GuideDim = Color(0xFF555555)          // --dim-text
+private val GuideDark = Color(0xFF000000)         // --pure-black
+private val GuideCarbon = Color(0xFF0A0A0A)       // --carbon
+private val GuideSurface1 = Color(0xFF0E0E0E)     // --surface-1
+private val GuideSurface2 = Color(0xFF141414)     // --surface-2
+private val GuideCard = Color(0xFF0E0E0E)         // --surface-1 (portal-card bg)
+private val GuideGlassStroke = Color(0x1AFFFFFF)  // --glass-stroke (rgba 0.10)
+private val GuideGlassStrokeHi = Color(0x33FFFFFF)// --glass-stroke-hi (rgba 0.20)
+private val GuideHairline = Color(0x0DFFFFFF)     // --hairline (rgba 0.05)
+private val GuideFont = FontFamily.SansSerif      // Web pakai Clash Display + Space Grotesk, tapi Android pakai system sans (cukup similar)
+private val GuideEase = androidx.compose.animation.core.CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
 
 @Composable
 private fun DLavieGuidedApp(deepLinkResult: String? = null) {
@@ -382,23 +396,23 @@ private fun GuidedLoginScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xFF000000))   // pure-black base
+            .background(GuideDark)   // --pure-black base
     ) {
-        // ── Background: black → dark gray vertical gradient + halftone particle matrix ──
-        // v6.8.3: gradient adds depth (pure black top → #1A1A1A bottom), halftone dots
-        // overlay adds the "matrix titik titik putih" texture requested by user.
+        // ── v7.9.56: Background match DLavie web ──
+        // Layer 1: carbon gradient (pure black → carbon → surface-2)
         Box(
             Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color(0xFF000000),
-                        0.5f to Color(0xFF0A0A0A),
-                        1f to Color(0xFF1A1A1A)
+                        0f to GuideDark,
+                        0.5f to GuideCarbon,
+                        1f to GuideSurface2
                     )
                 )
         )
-        // Halftone particle matrix — dense white dots, varying opacity (radial vignette)
+
+        // Layer 2: Halftone particle matrix (existing — match web .halftone-canvas)
         HalftoneBackground(
             modifier = Modifier.fillMaxSize(),
             dotSize = 2.8f,
@@ -406,73 +420,170 @@ private fun GuidedLoginScreen(
             baseColor = HalftoneBright,
             alpha = 0.75f
         )
-        // Subtle top spotlight (white radial glow behind logo)
+
+        // Layer 3: Glow orbs (match web .glow-orb-1 + .glow-orb-2)
+        // Orb 1: top-right, white radial, animated
+        val orbAnim1 = rememberInfiniteTransition(label = "orb1")
+        val orbX1 by orbAnim1.animateFloat(
+            initialValue = 0f, targetValue = -200f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(20000, easing = GuideEase),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb1x"
+        )
+        val orbScale1 by orbAnim1.animateFloat(
+            initialValue = 1f, targetValue = 1.2f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(20000, easing = GuideEase),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb1s"
+        )
         Box(
             Modifier
-                .fillMaxWidth()
-                .height(280.dp)
-                .align(Alignment.TopCenter)
+                .size(800.dp)
+                .align(Alignment.TopEnd)
+                .offset(x = (orbX1).dp, y = (-200 + orbX1 * 0.5f).dp)
+                .graphicsLayer { scaleX = orbScale1; scaleY = orbScale1 }
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.10f),
+                            Color.White.copy(alpha = 0.08f),
+                            Color.White.copy(alpha = 0.02f),
                             Color.Transparent
                         )
                     )
                 )
+                .blur(80.dp)
         )
 
+        // Orb 2: bottom-left, animated
+        val orbAnim2 = rememberInfiniteTransition(label = "orb2")
+        val orbX2 by orbAnim2.animateFloat(
+            initialValue = 0f, targetValue = 200f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(25000, easing = GuideEase),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb2x"
+        )
+        val orbScale2 by orbAnim2.animateFloat(
+            initialValue = 1f, targetValue = 0.9f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(25000, easing = GuideEase),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb2s"
+        )
+        Box(
+            Modifier
+                .size(800.dp)
+                .align(Alignment.BottomStart)
+                .offset(x = (-200 + orbX2).dp, y = (200 - orbX2 * 0.5f).dp)
+                .graphicsLayer { scaleX = orbScale2; scaleY = orbScale2 }
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.08f),
+                            Color.White.copy(alpha = 0.02f),
+                            Color.Transparent
+                        )
+                    )
+                )
+                .blur(80.dp)
+        )
+
+        // Layer 4: Vignette (match web .vignette — radial darkening at edges)
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        0f to Color.Transparent,
+                        0.5f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.6f)
+                    )
+                )
+        )
+
+        // ── Main content column ──
         Column(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(top = 80.dp, bottom = 40.dp),
+                .padding(top = 100.dp, bottom = 40.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── Logo: "DLavie 26" text + star icon (centered top) ──
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+            // ── v7.9.56: Portal-style logo (match web .portal-logo) ──
+            // White square dengan "D" letter, pulse animation
+            val logoPulse = rememberInfiniteTransition(label = "logoPulse")
+            val logoAlpha by logoPulse.animateFloat(
+                initialValue = 1f, targetValue = 0.7f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(3000, easing = GuideEase),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "logoAlpha"
+            )
+            Surface(
+                modifier = Modifier
+                    .size(72.dp)
+                    .graphicsLayer { alpha = logoAlpha },
+                shape = RoundedCornerShape(18.dp),
+                color = Color.White,
+                shadowElevation = 12.dp,
+                tonalElevation = 0.dp
             ) {
-                Text(
-                    "DLavie",
-                    color = Color.White,
-                    fontSize = 42.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = GuideFont,
-                    letterSpacing = (-1.5).sp
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "26",
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 42.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = GuideFont,
-                    letterSpacing = (-1.5).sp
-                )
-                Spacer(Modifier.width(4.dp))
-                Icon(
-                    Icons.Rounded.Star,
-                    null,
-                    tint = Color.White.copy(alpha = 0.7f),
-                    modifier = Modifier.size(22.dp)
-                )
+                Box(
+                    Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "D",
+                        color = Color.Black,
+                        fontSize = 38.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = GuideFont
+                    )
+                }
             }
-            Spacer(Modifier.height(10.dp))
+
+            Spacer(Modifier.height(20.dp))
+
+            // ── Title: "DLavie Portal" (match web .portal-title) ──
             Text(
                 when (mode) {
-                    "chooser"  -> t.loginTitle
+                    "chooser"  -> "DLavie Portal"
                     "login"    -> t.loginSubtitle
                     "register" -> t.registerAccount
                     "forgot"   -> t.forgotPassword
-                    else       -> t.loginTitle
+                    else       -> "DLavie Portal"
                 },
-                color = Color.White.copy(alpha = 0.5f),
-                fontSize = 13.sp,
-                fontFamily = GuideFont
+                color = GuideWhite,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = GuideFont,
+                letterSpacing = (-0.5).sp
             )
+
+            Spacer(Modifier.height(8.dp))
+
+            // Subtitle (match web .portal-sub)
+            Text(
+                when (mode) {
+                    "chooser" -> "Login atau connect akun DLavie Launcher untuk mengakses semua fitur web."
+                    else -> ""
+                },
+                color = GuideSoftText,
+                fontSize = 13.sp,
+                fontFamily = GuideFont,
+                textAlign = TextAlign.Center,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+
             Spacer(Modifier.height(48.dp))
 
             // ── Mode: CHOOSER — single "Connect via DLavie Portal" button ──
