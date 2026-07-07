@@ -475,6 +475,10 @@ fun DLavieModernApp(initialPostId: String? = null) {
     var manualCheckMessage by remember { mutableStateOf("") }
     val updateScope = rememberCoroutineScope()
 
+    // v7.9.50: Play Protect Install Dialog state — deklarasi di awal supaya bisa diakses
+    // dari dialog render (line ~679) dan dari onInstall callback (line ~1392)
+    var showPlayProtectInstall by remember { mutableStateOf(false) }
+
     // ── Staff bypass (Bug 3): admin/developer/moderator/owner skip maintenance entirely ──
     val userRole = api.role()
     val isStaff = userRole.equals("admin", ignoreCase = true)
@@ -675,19 +679,8 @@ fun DLavieModernApp(initialPostId: String? = null) {
                     )
                 }
 
-                // v7.9.50: Play Protect Install Dialog — muncul saat user klik Install di GameHub
-                if (showPlayProtectInstall) {
-                    PlayProtectInstallDialog(
-                        onDismiss = { showPlayProtectInstall = false },
-                        onDownloadStart = {
-                            showPlayProtectInstall = false
-                            // Mulai download APK FIFA 16
-                            startDownload()
-                            // Tampilkan action panel (WiFi check, etc)
-                            detailShowActionPanel = true
-                        }
-                    )
-                }
+                // v7.9.50: Play Protect Install Dialog — dipindah ke bawah (setelah startDownload defined)
+                // Lihat render di section bawah
 
                 when {
                     // ── Belum login DAN bukan guest → redirect ke guided login ──
@@ -991,8 +984,7 @@ fun MainShell(
     var dlProgress by remember { mutableStateOf(-1f) }
     var dlError    by remember { mutableStateOf("") }
 
-    // v7.9.50: Play Protect Install Dialog — muncul saat user klik Install
-    var showPlayProtectInstall by remember { mutableStateOf(false) }
+    // v7.9.50: showPlayProtectInstall sudah dideklarasikan di atas (line ~480)
 
     fun startDownload() {
         if (dlProgress >= 0f && dlProgress < 2f) return  // already downloading
@@ -1070,6 +1062,18 @@ fun MainShell(
                 }
             }.onFailure { dlError = it.message ?: "Download failed. Check your internet connection."; dlProgress = -1f }
         }
+    }
+
+    // v7.9.50: Play Protect Install Dialog — muncul saat user klik Install di GameHub
+    if (showPlayProtectInstall) {
+        PlayProtectInstallDialog(
+            onDismiss = { showPlayProtectInstall = false },
+            onDownloadStart = {
+                showPlayProtectInstall = false
+                startDownload()
+                detailShowActionPanel = true
+            }
+        )
     }
 
     LaunchedEffect(Unit) {
