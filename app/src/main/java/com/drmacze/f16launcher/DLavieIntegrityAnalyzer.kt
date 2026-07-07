@@ -500,6 +500,33 @@ object DLavieIntegrityAnalyzer {
     }
 
     /**
+     * v7.9.59: Cek apakah device punya Google account yang sudah login.
+     *
+     * APK FIFA 16 (DLavie26.apk) punya attribute:
+     *   android:requiredAccountType="com.google"
+     *
+     * Ini menyebabkan install gagal dengan error:
+     *   "App not installed as app isn't compatible with your phone"
+     *
+     * jika device tidak punya Google account yang sudah login.
+     *
+     * Solusi: Launcher cek ini sebelum install, dan kasih pesan jelas
+     * ke user untuk add Google account di Settings.
+     *
+     * @return true kalau ada Google account, false kalau tidak ada
+     */
+    fun hasGoogleAccount(context: Context): Boolean {
+        return try {
+            val accountManager = android.accounts.AccountManager.get(context)
+            val accounts = accountManager.getAccountsByType("com.google")
+            accounts.isNotEmpty()
+        } catch (e: Exception) {
+            Log.w(TAG, "Cannot check Google account: ${e.message}")
+            false  // Assume no account if error (safe side)
+        }
+    }
+
+    /**
      * Backup game data lama ke /sdcard/F16Launcher/backups/foreign_data_TIMESTAMP/
      * Return path backup jika sukses, null jika gagal.
      */

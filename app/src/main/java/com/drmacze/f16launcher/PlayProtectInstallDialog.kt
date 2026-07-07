@@ -68,10 +68,13 @@ fun PlayProtectInstallDialog(
         "Initializing DLavie Play Protect...",
         "Checking permissions...",
         "DLavie Play Protect running...",
-        "Verifying game data integrity...",
-        "Checking APK signature...",
+        "Verifying Google account...",
+        "Checking game data integrity...",
         "Preparing download..."
     )
+
+    // v7.9.59: State untuk Google account check
+    var googleAccountMissing by remember { mutableStateOf(false) }
 
     // Run analysis saat dialog muncul
     LaunchedEffect(Unit) {
@@ -94,6 +97,25 @@ fun PlayProtectInstallDialog(
                 // Cek apakah ada masalah
                 if (result.status != DLavieIntegrityAnalyzer.AnalysisStatus.OK) {
                     hasIssue = true
+                    // Tandai step selanjutnya sebagai SKIPPED
+                    for (j in (i + 1) until steps.size) {
+                        stepStatuses = stepStatuses + StepStatus.SKIPPED
+                    }
+                    return@LaunchedEffect
+                }
+            } else if (i == 3) {
+                // v7.9.59: Step "Verifying Google account" — cek Google account
+                val hasGoogle = withContext(Dispatchers.IO) {
+                    DLavieIntegrityAnalyzer.hasGoogleAccount(context)
+                }
+                delay(300L)
+                if (hasGoogle) {
+                    stepStatuses = stepStatuses.dropLast(1) + StepStatus.DONE
+                } else {
+                    // Google account tidak ada → block install
+                    googleAccountMissing = true
+                    hasIssue = true
+                    stepStatuses = stepStatuses.dropLast(1) + StepStatus.SKIPPED
                     // Tandai step selanjutnya sebagai SKIPPED
                     for (j in (i + 1) until steps.size) {
                         stepStatuses = stepStatuses + StepStatus.SKIPPED
@@ -182,9 +204,82 @@ fun PlayProtectInstallDialog(
                     }
                 }
 
-                // Jika ada masalah, tampilkan detail + action
+                // v7.9.59: Google account missing warning
                 AnimatedVisibility(
-                    visible = hasIssue && analysisResult != null,
+                    visible = googleAccountMissing,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFFF5252).copy(alpha = 0.1f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.4f))
+                    ) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.Warning, null, tint = Color(0xFFFF5252), modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Google Account Diperlukan",
+                                    color = Color(0xFFFF5252),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = InterFontFamily
+                                )
+                            }
+                            Text(
+                                "APK FIFA 16 memerlukan Google account untuk diinstall. " +
+                                "Device Anda belum memiliki Google account yang login.\n\n" +
+                                "Cara menambahkan:\n" +
+                                "1. Buka Settings Android\n" +
+                                "2. Cari 'Accounts' atau 'Users & accounts'\n" +
+                                "3. Tap 'Add account' > 'Google'\n" +
+                                "4. Login dengan Gmail Anda\n" +
+                                "5. Kembali ke Launcher dan tap 'Re-Check'",
+                                color = Color(0xFFB8BCC8),
+                                fontSize = 11.sp,
+                                fontFamily = InterFontFamily,
+                                lineHeight = 15.sp
+                            )
+                            Button(
+                                onClick = {
+                                    try {
+                                        val intent = android.content.Intent(android.provider.Settings.ACTION_ADD_ACCOUNT).apply {
+                                            putExtra(android.provider.Settings.EXTRA_ACCOUNT_TYPES, arrayOf("com.google"))
+                                            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        try {
+                                            val intent = android.content.Intent(android.provider.Settings.ACTION_SETTINGS).apply {
+                                                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                            }
+                                            context.startActivity(intent)
+                                            android.widget.Toast.makeText(context, "Buka Settings > Accounts > Add account > Google", android.widget.Toast.LENGTH_LONG).show()
+                                        } catch (_: Exception) {
+                                            android.widget.Toast.makeText(context, "Buka Settings > Accounts > Add Google account", android.widget.Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFFF5252),
+                                    contentColor = Color.White
+                                ),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)
+                            ) {
+                                Icon(Icons.Rounded.AccountCircle, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Tambah Google Account", fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                            }
+                        }
+                    }
+                }
+
+                // Jika ada masalah (Play Protect), tampilkan detail + action
+                AnimatedVisibility(
+                    visible = hasIssue && analysisResult != null && !googleAccountMissing,
                     enter = fadeIn(),
                     exit = fadeOut()
                 ) {
