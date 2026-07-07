@@ -45,6 +45,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -1260,7 +1261,6 @@ private fun GuidedLoginScreen(
             )
 
             val legalText = t.legalNotice
-            // Cari posisi terms & privacy phrase di legalText
             val termsPhrase = termsPhrases.firstOrNull { legalText.contains(it) }
             val privacyPhrase = privacyPhrases.firstOrNull { legalText.contains(it) }
 
@@ -1270,39 +1270,58 @@ private fun GuidedLoginScreen(
                 val privacyStart = legalText.indexOf(privacyPhrase)
                 val privacyEnd = privacyStart + privacyPhrase.length
 
-                val annotated = androidx.compose.ui.text.AnnotatedString.Builder().apply {
+                // Build annotated string dengan clickable spans
+                val annotated = androidx.compose.ui.text.buildAnnotatedString {
                     append(legalText.substring(0, termsStart))
-                    withLink(androidx.compose.ui.text.LinkAnnotation.Url(termsUrl)) {
-                        withStyle(androidx.compose.ui.text.SpanStyle(
-                            color = Color.White.copy(alpha = 0.6f),
+                    withStyle(
+                        androidx.compose.ui.text.SpanStyle(
+                            color = Color.White.copy(alpha = 0.7f),
                             textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
-                        )) {
-                            append(termsPhrase)
-                        }
+                        )
+                    ) {
+                        // Tag untuk detect tap
+                        pushStringAnnotation(tag = "URL", annotation = termsUrl)
+                        append(termsPhrase)
+                        pop()
                     }
                     append(legalText.substring(termsEnd, privacyStart))
-                    withLink(androidx.compose.ui.text.LinkAnnotation.Url(privacyUrl)) {
-                        withStyle(androidx.compose.ui.text.SpanStyle(
-                            color = Color.White.copy(alpha = 0.6f),
+                    withStyle(
+                        androidx.compose.ui.text.SpanStyle(
+                            color = Color.White.copy(alpha = 0.7f),
                             textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
-                        )) {
-                            append(privacyPhrase)
-                        }
+                        )
+                    ) {
+                        pushStringAnnotation(tag = "URL", annotation = privacyUrl)
+                        append(privacyPhrase)
+                        pop()
                     }
                     append(legalText.substring(privacyEnd))
-                }.toAnnotatedString()
+                }
 
-                Text(
-                    annotated,
-                    color = Color.White.copy(alpha = 0.25f),
-                    fontSize = 10.sp,
-                    fontFamily = GuideFont,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 14.sp,
-                    modifier = Modifier.padding(horizontal = 24.dp)
+                androidx.compose.foundation.text.ClickableText(
+                    text = annotated,
+                    style = androidx.compose.ui.text.TextStyle(
+                        color = Color.White.copy(alpha = 0.25f),
+                        fontSize = 10.sp,
+                        fontFamily = GuideFont,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 14.sp
+                    ),
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                    onClick = { offset ->
+                        // Cek apakah user tap di area terms/privacy link
+                        annotated.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                            .firstOrNull()?.let { annotation ->
+                                val intent = android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse(annotation.item)
+                                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                runCatching { context.startActivity(intent) }
+                            }
+                    }
                 )
             } else {
-                // Fallback: plain text kalau phrase tidak ketemu
+                // Fallback: plain Text kalau phrase tidak ketemu
                 Text(
                     legalText,
                     color = Color.White.copy(alpha = 0.25f),
