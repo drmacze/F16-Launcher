@@ -388,16 +388,66 @@ class ModernLauncherActivity : ComponentActivity() {
     }
 
     // ── DLavie Portal Connect: deep link handler ──
-    // When user clicks "Connect to DLavie" on the web FAQ page,
-    // Android opens the launcher via dlavie://connect?callback=URL
-    // We detect this, show "DLavie Portal Connected" status,
-    // then redirect back to the web with the user's auth token.
+    // v7.9.53: Handle BOTH flows:
+    //   OLD flow (v7.x): dlavie://connect?callback=URL — launcher kirim token ke web
+    //   NEW flow (v8.0+): dlavie://connect?token=JWT&uid=USER_ID&refresh=REFRESH — web kirim token ke launcher
+    //
+    // ModernLauncherActivity adalah entry point deep link (registered di AndroidManifest).
+    // ShinySplashActivity juga handle new flow, tapi hanya kalau launcher dibuka fresh
+    // via deep link. Kalau launcher sudah running (singleTop), deep link masuk ke
+    // onNewIntent ModernLauncherActivity → juga harus handle.
     private fun handlePortalConnectIntent(intent: android.content.Intent?) {
         val data = intent?.data ?: return
         if (data.scheme != "dlavie" || data.host != "connect") return
 
-        val callback = data.getQueryParameter("callback") ?: return
         val api = CommunityApi(this)
+
+        // ── NEW FLOW: web kirim token ke launcher ──
+        // dlavie://connect?token=JWT&uid=USER_ID&refresh=REFRESH
+        val webToken = data.getQueryParameter("token")
+        val webUid = data.getQueryParameter("uid")
+        val webRefresh = data.getQueryParameter("refresh") ?: ""
+
+        if (!webToken.isNullOrBlank() && !webUid.isNullOrBlank()) {
+            // Save token to both prefs (dlavie_auth_session + dlavie_community)
+            // so CommunityApi.loggedIn() returns true
+            getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
+                .edit()
+                .putString("access_token", webToken)
+                .putString("refresh_token", webRefresh)
+                .apply()
+
+            getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
+                .edit()
+                .putString("access_token", webToken)
+                .putString("refresh_token", webRefresh)
+                .putString("user_id", webUid)
+                .putBoolean("portal_connected", true)
+                .putString("portal_connected_at", System.currentTimeMillis().toString())
+                .apply()
+
+            // Load profile to get username/display_name
+            try { api.loadMyProfile() } catch (_: Exception) {}
+
+            android.widget.Toast.makeText(
+                this,
+                "✓ DLavie Portal Connected! Welcome${if (api.displayName().isNotEmpty()) ", ${api.displayName()}" else ""}.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+
+            // Re-render UI supaya profile card muncul (bukan halaman login)
+            // ModernLauncherActivity pakai Compose — state change akan trigger recomposition
+            // tapi kita perlu invalidate state yang cek api.loggedIn()
+            // Cara paling simple: recreate activity supaya semua LaunchedEffect jalan lagi
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                recreate()
+            }, 800)
+            return
+        }
+
+        // ── OLD FLOW: launcher kirim token ke web (callback URL) ──
+        // dlavie://connect?callback=URL
+        val callback = data.getQueryParameter("callback") ?: return
 
         if (!api.loggedIn()) {
             android.widget.Toast.makeText(
@@ -437,6 +487,14 @@ class ModernLauncherActivity : ComponentActivity() {
         }, 1500)
     }
 
+    override fun onNewIntent(intent: android.content.Intent?) {
+        super.onNewIntent(intent)
+        // v7.9.53: Handle deep link saat launcher sudah running (singleTop)
+        // Kalau user klik Connect to DLavie di web saat launcher sudah terbuka,
+        // deep link masuk ke onNewIntent, bukan onCreate.
+        handlePortalConnectIntent(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handlePortalConnectIntent(intent)
@@ -474,8 +532,6 @@ fun DLavieModernApp(initialPostId: String? = null) {
     var manualCheckLoading by remember { mutableStateOf(false) }
     var manualCheckMessage by remember { mutableStateOf("") }
     val updateScope = rememberCoroutineScope()
-
-    // v7.9.50: showPlayProtectInstall dipindah ke MainShell (scope yang benar)
 
     // ── Staff bypass (Bug 3): admin/developer/moderator/owner skip maintenance entirely ──
     val userRole = api.role()
@@ -676,9 +732,6 @@ fun DLavieModernApp(initialPostId: String? = null) {
                         }
                     )
                 }
-
-                // v7.9.50: Play Protect Install Dialog — dipindah ke bawah (setelah startDownload defined)
-                // Lihat render di section bawah
 
                 when {
                     // ── Belum login DAN bukan guest → redirect ke guided login ──
@@ -982,9 +1035,6 @@ fun MainShell(
     var dlProgress by remember { mutableStateOf(-1f) }
     var dlError    by remember { mutableStateOf("") }
 
-    // v7.9.50: Play Protect Install Dialog state
-    var showPlayProtectInstall by remember { mutableStateOf(false) }
-
     fun startDownload() {
         if (dlProgress >= 0f && dlProgress < 2f) return  // already downloading
         dlProgress = 0f; dlError = ""
@@ -1061,18 +1111,6 @@ fun MainShell(
                 }
             }.onFailure { dlError = it.message ?: "Download failed. Check your internet connection."; dlProgress = -1f }
         }
-    }
-
-    // v7.9.50: Play Protect Install Dialog — muncul saat user klik Install di GameHub
-    if (showPlayProtectInstall) {
-        PlayProtectInstallDialog(
-            onDismiss = { showPlayProtectInstall = false },
-            onDownloadStart = {
-                showPlayProtectInstall = false
-                startDownload()
-                detailShowActionPanel = true
-            }
-        )
     }
 
     LaunchedEffect(Unit) {
@@ -1389,8 +1427,7 @@ fun MainShell(
                                     }
                                 },
                                 onInstall = {
-                                    // v7.9.50: Play Protect running sebelum install
-                                    // Cek server status + signal sebelum install
+                                    // v7.9.13: Cek server status + signal sebelum install
                                     scope.launch {
                                         when (currentGame.serverStatus) {
                                             ServerStatus.MAINTENANCE -> {
@@ -1405,8 +1442,13 @@ fun MainShell(
                                                 if (PingQuality.isWeakSignal(pingMs)) {
                                                     android.widget.Toast.makeText(context, "Kekuatan sinyalmu lemah, coba lagi nanti", android.widget.Toast.LENGTH_LONG).show()
                                                 } else {
-                                                    // v7.9.50: Tampilkan Play Protect dialog sebelum install
-                                                    showPlayProtectInstall = true
+                                                    // WiFi check before install
+                                                    if (!isWifiConnected(context)) {
+                                                        // Will show WiFi warning dialog (handled in GameDetailScreen)
+                                                        detailShowActionPanel = true
+                                                    } else {
+                                                        detailShowActionPanel = true
+                                                    }
                                                 }
                                             }
                                         }
