@@ -132,20 +132,33 @@ object DLavieIntegrityAnalyzer {
         val gameDataStatus = analyzeGameData()
         val permissionAudit = auditPermissions(context)
 
-        // v7.9.46: Determine overall status — LEBIH PERMISIF
+        // v7.9.48: Determine overall status — SANGAT PERMISIF
         // Signature check DISABLED (terlalu banyak false positive antara
         // debug/release signing scheme v1/v2/v3). Fokus ke marker file check.
         //
         // Status logic:
-        // - OK = default (allow install/update)
-        // - NEEDS_PERMISSIONS = critical permissions missing
-        // - NEEDS_CLEANUP = ada game data TAPI tidak ada DLavie marker (foreign data)
+        // - OK = default (allow install/update) — paling sering
+        // - NEEDS_PERMISSIONS = MANAGE_EXTERNAL_STORAGE missing (Android 11+)
+        // - NEEDS_CLEANUP = ada game data TAPI tidak ada DLavie indicator apapun
         // - BLOCKED = tidak pernah (disabled, biar user tidak terkunci)
+        //
+        // v7.9.48 CHANGE: Kalau ada ANY DLavie indicator (OBB/fifa_db/cl.ini/marker),
+        // status = OK walaupun ada game data "foreign" di folder lain.
+        // Reason: user install via DLavie Launcher tetap dianggap valid walau
+        // ada file sisa dari install sebelumnya. False positive lebih buruk
+        // daripada false negative di sini.
         val status = when {
+            // Kalau ada DLavie indicator kuat → OK regardless of permissions
+            // (user akan diminta permission terpisah saat apply patch)
+            gameDataStatus.hasDlavieDataMarker ||
+            gameDataStatus.hasDlaviePatchMarker -> AnalysisStatus.OK
+            // OBB files ada = install via DLavie Launcher → OK
+            gameDataStatus.hasOriginalData -> AnalysisStatus.OK
+            // Foreign data + no DLavie indicator → suggest cleanup
+            gameDataStatus.hasForeignData -> AnalysisStatus.NEEDS_CLEANUP
+            // Critical permissions missing → request (only if no other issue)
             permissionAudit.missingCritical.isNotEmpty() ->
                 AnalysisStatus.NEEDS_PERMISSIONS
-            gameDataStatus.hasForeignData && !gameDataStatus.hasDlavieDataMarker ->
-                AnalysisStatus.NEEDS_CLEANUP
             else -> AnalysisStatus.OK
         }
 
@@ -232,6 +245,17 @@ object DLavieIntegrityAnalyzer {
      * Analisis game data di storage. Deteksi:
      * - Apakah data original DLavie sudah ada
      * - Apakah ada data dari sumber lain (foreign data)
+     *
+     * v7.9.48 FIX: False positive "FOREIGN_DATA" untuk user yang install
+     * via DLavie Launcher. Sebelumnya OBB check pakai filename EXACT match
+     * (main.13 + patch.26). Kalau user punya patch.27 atau main.14 (versi
+     * beda), check gagal -> hasObbFiles=false -> hasForeignData=true ->
+     * popup "Backup & Cleanup" muncul padahal data valid.
+     *
+     * Sekarang: ANY .obb file di folder OBB = indikator install via DLavie.
+     * Juga: fifa_ng_db.db (save file utama) ada = indikator game pernah
+     * dijalankan dengan APK DLavie (file ini hanya dibuat saat game pertama
+     * kali run dengan APK yang valid).
      */
     fun analyzeGameData(): GameDataStatus {
         val gameDataDir = File(GAME_DATA_PATH)
@@ -248,24 +272,41 @@ object DLavieIntegrityAnalyzer {
         val existingOriginalFiles = DLAVIE_ORIGINAL_FILES.map { File(it) }.filter { it.exists() }
         val hasOriginalData = existingOriginalFiles.size >= 2  // minimal 2 file original ada
 
-        // v7.9.46: Cek OBB files sebagai indikator install via DLavie Launcher
-        // User yang install via DLavie Launcher (GameHub) akan punya OBB files
-        // (main.13 + patch.26) karena di-download dari release v26.
-        val obbMain = File("$DLAVIE_OBB_PATH/main.13.com.ea.gp.fifaworld.obb")
-        val obbPatch = File("$DLAVIE_OBB_PATH/patch.26.com.ea.gp.fifaworld.obb")
-        val hasObbFiles = obbMain.exists() || obbPatch.exists()
+        // v7.9.48: Cek OBB files — ANY .obb file di folder OBB = DLavie-installed
+        // Sebelumnya: exact match "main.13..." + "patch.26..." → false positive kalau
+        // user punya versi patch/main yang berbeda (mis. patch.27, main.14).
+        // Sekarang: list files di folder OBB, cek ada yang extension-nya .obb.
+        val obbFiles = if (obbDir.exists() && obbDir.isDirectory) {
+            obbDir.listFiles { f -> f.isFile && f.name.endsWith(".obb", ignoreCase = true) } ?: emptyArray()
+        } else emptyArray()
+        val hasObbFiles = obbFiles.isNotEmpty()
+        val obbFileNames = obbFiles.map { it.name }
+
+        // v7.9.48: fifa_ng_db.db adalah save file utama FIFA 16.
+        // File ini HANYA dibuat saat game pertama kali dijalankan dengan APK valid.
+        // Jika file ini ada → game sudah pernah run dengan DLavie APK → indikator kuat.
+        val fifaDbFile = File("$GAME_FILES_PATH/data/db/fifa_ng_db.db")
+        val hasFifaDb = fifaDbFile.exists()
+
+        // v7.9.48: Cek cl.ini (config utama) — juga indikator game data DLavie
+        val clIniFile = File("$GAME_FILES_PATH/cl.ini")
+        val hasClIni = clIniFile.exists()
 
         // Cek foreign data indicators
-        // Foreign = ada file game data TAPI:
+        // Foreign = ada file game data TAPI tidak ada indicator DLavie apapun:
         //   - tidak ada marker DLavie (DevPatchEngine)
         //   - tidak ada marker patch (ModPatchDownloader)
         //   - tidak ada OBB files (DLavie Launcher installer)
-        // Jika ada OBB files → anggap install via DLavie Launcher → NOT foreign
+        //   - tidak ada fifa_ng_db.db (game pernah run dengan APK DLavie)
+        //   - tidak ada cl.ini (config utama)
+        //   - tidak ada original data files (fifa_ng_db.db + cl.ini + obb)
         val hasAnyGameData = (gameDataDir.exists() && (gameDataDir.listFiles()?.isNotEmpty() == true)) ||
                             (gameFilesDir.exists() && (gameFilesDir.listFiles()?.isNotEmpty() == true)) ||
                             (obbDir.exists() && (obbDir.listFiles()?.isNotEmpty() == true))
 
-        val hasDlavieIndicator = hasDlavieDataMarker || hasDlaviePatchMarker || hasObbFiles || hasOriginalData
+        val hasDlavieIndicator = hasDlavieDataMarker || hasDlaviePatchMarker ||
+                                  hasObbFiles || hasOriginalData ||
+                                  hasFifaDb || hasClIni
         val hasForeignData = hasAnyGameData && !hasDlavieIndicator
 
         // Cek mod files dari sumber lain (non-DLavie)
@@ -283,6 +324,8 @@ object DLavieIntegrityAnalyzer {
             !hasAnyGameData -> GameDataStatusType.NO_DATA
             hasDlavieDataMarker && hasOriginalData -> GameDataStatusType.DLAVIE_ORIGINAL
             hasObbFiles && hasOriginalData -> GameDataStatusType.DLAVIE_ORIGINAL  // install via Launcher, no marker
+            hasFifaDb && hasClIni -> GameDataStatusType.DLAVIE_ORIGINAL  // v7.9.48: game pernah run dengan DLavie APK
+            hasObbFiles -> GameDataStatusType.DLAVIE_ORIGINAL  // v7.9.48: OBB ada, walau belum run game
             hasForeignData -> GameDataStatusType.FOREIGN_DATA
             else -> GameDataStatusType.INCOMPLETE
         }
