@@ -487,7 +487,7 @@ private fun GuidedLoginScreen(
                     label = "Connect via DLavie Portal",
                     icon = {
                         Icon(
-                            Icons.Rounded.Language,
+                            Icons.Rounded.Public,
                             contentDescription = null,
                             tint = Color.Black,
                             modifier = Modifier.size(20.dp)
