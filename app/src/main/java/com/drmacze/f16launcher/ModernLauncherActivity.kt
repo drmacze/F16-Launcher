@@ -675,6 +675,20 @@ fun DLavieModernApp(initialPostId: String? = null) {
                     )
                 }
 
+                // v7.9.50: Play Protect Install Dialog — muncul saat user klik Install di GameHub
+                if (showPlayProtectInstall) {
+                    PlayProtectInstallDialog(
+                        onDismiss = { showPlayProtectInstall = false },
+                        onDownloadStart = {
+                            showPlayProtectInstall = false
+                            // Mulai download APK FIFA 16
+                            startDownload()
+                            // Tampilkan action panel (WiFi check, etc)
+                            detailShowActionPanel = true
+                        }
+                    )
+                }
+
                 when {
                     // ── Belum login DAN bukan guest → redirect ke guided login ──
                     // v7.2.5: Fix guest redirect loop — guest tidak punya token,
@@ -976,6 +990,9 @@ fun MainShell(
     // dlProgress: -1f = idle, 0f..0.99f = downloading, 2f = done (waiting install)
     var dlProgress by remember { mutableStateOf(-1f) }
     var dlError    by remember { mutableStateOf("") }
+
+    // v7.9.50: Play Protect Install Dialog — muncul saat user klik Install
+    var showPlayProtectInstall by remember { mutableStateOf(false) }
 
     fun startDownload() {
         if (dlProgress >= 0f && dlProgress < 2f) return  // already downloading
@@ -1369,7 +1386,8 @@ fun MainShell(
                                     }
                                 },
                                 onInstall = {
-                                    // v7.9.13: Cek server status + signal sebelum install
+                                    // v7.9.50: Play Protect running sebelum install
+                                    // Cek server status + signal sebelum install
                                     scope.launch {
                                         when (currentGame.serverStatus) {
                                             ServerStatus.MAINTENANCE -> {
@@ -1384,13 +1402,8 @@ fun MainShell(
                                                 if (PingQuality.isWeakSignal(pingMs)) {
                                                     android.widget.Toast.makeText(context, "Kekuatan sinyalmu lemah, coba lagi nanti", android.widget.Toast.LENGTH_LONG).show()
                                                 } else {
-                                                    // WiFi check before install
-                                                    if (!isWifiConnected(context)) {
-                                                        // Will show WiFi warning dialog (handled in GameDetailScreen)
-                                                        detailShowActionPanel = true
-                                                    } else {
-                                                        detailShowActionPanel = true
-                                                    }
+                                                    // v7.9.50: Tampilkan Play Protect dialog sebelum install
+                                                    showPlayProtectInstall = true
                                                 }
                                             }
                                         }

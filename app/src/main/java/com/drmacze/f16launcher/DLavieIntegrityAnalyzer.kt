@@ -346,6 +346,13 @@ object DLavieIntegrityAnalyzer {
 
     /**
      * Audit semua permission yang diperlukan.
+     *
+     * v7.9.50: Fix false-positive "MISSING" untuk MANAGE_EXTERNAL_STORAGE dan
+     * REQUEST_INSTALL_PACKAGES. checkSelfPermission() di Android 11+ selalu return
+     * DENIED untuk permission special ini, meskipun user sudah grant via Settings.
+     * Sekarang pakai API yang benar:
+     * - MANAGE_EXTERNAL_STORAGE → Environment.isExternalStorageManager()
+     * - REQUEST_INSTALL_PACKAGES → PackageManager.canRequestPackageInstalls()
      */
     fun auditPermissions(context: Context): PermissionAudit {
         val granted = mutableListOf<String>()
@@ -353,11 +360,30 @@ object DLavieIntegrityAnalyzer {
         val missingOptional = mutableListOf<String>()
 
         for (perm in REQUIRED_PERMISSIONS) {
-            val isGranted = context.checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED
+            // v7.9.50: Special handling untuk special permissions
+            val isGranted = when (perm) {
+                "android.permission.MANAGE_EXTERNAL_STORAGE" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        android.os.Environment.isExternalStorageManager()
+                    } else {
+                        context.checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED
+                    }
+                }
+                "android.permission.REQUEST_INSTALL_PACKAGES" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.packageManager.canRequestPackageInstalls()
+                    } else {
+                        context.checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED
+                    }
+                }
+                else -> {
+                    context.checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED
+                }
+            }
+
             if (isGranted) {
                 granted.add(perm)
             } else {
-                // MANAGE_EXTERNAL_STORAGE dan REQUEST_INSTALL_PACKAGES = critical
                 if (perm == "android.permission.MANAGE_EXTERNAL_STORAGE" ||
                     perm == "android.permission.REQUEST_INSTALL_PACKAGES") {
                     missingCritical.add(perm)

@@ -426,14 +426,20 @@ fun DlcScreen(
                     isInstalled = installedMarker.startsWith("v26") && installedMarker.contains(mod.versionName, ignoreCase = true),
                     canApply = gameInstalled,  // permission auto-requested on tap
                     onApply = {
-                        // v7.9.39: Run integrity analysis BEFORE apply mod
-                        // Jika ada data foreign atau APK non-DLavie → tampilkan popup analisis
-                        // User harus resolve dulu sebelum bisa apply mod
+                        // v7.9.50: Lightweight checker — hanya cek apakah data game adalah DLavie original
+                        // Full Play Protect ada di GameHub install flow. Di DLC cukup pastikan
+                        // user tidak mengganti data FIFA 16 dengan versi non-DLavie.
                         scope.launch(Dispatchers.IO) {
-                            val analysis = DLavieIntegrityAnalyzer.analyze(context)
+                            // Lightweight check: cek OBB files (indikator install via DLavie Launcher)
+                            val obbMain = java.io.File("/sdcard/Android/obb/com.ea.gp.fifaworld/main.13.com.ea.gp.fifaworld.obb")
+                            val obbPatch = java.io.File("/sdcard/Android/obb/com.ea.gp.fifaworld/patch.26.com.ea.gp.fifaworld.obb")
+                            val hasDlavieIndicator = obbMain.exists() || obbPatch.exists() ||
+                                java.io.File("/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed").exists() ||
+                                java.io.File("/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie_patch_installed").exists()
+
                             withContext(Dispatchers.Main) {
-                                if (analysis.canProceed) {
-                                    // All clear, langsung apply mod tanpa popup
+                                if (hasDlavieIndicator) {
+                                    // Data DLavie original terdeteksi → langsung apply mod
                                     if (!StorageAccess.isGranted()) {
                                         StorageAccess.request(context)
                                         return@withContext
@@ -467,9 +473,12 @@ fun DlcScreen(
                                         applyingMod = null
                                     }
                                 } else {
-                                    // Ada masalah, tampilkan popup analisis
-                                    pendingModAfterAnalysis = mod
-                                    integrityResult = analysis
+                                    // Data non-DLavie terdeteksi → tampilkan warning
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "⚠ Data FIFA 16 bukan dari DLavie. Install ulang via GameHub untuk menggunakan mod DLC.",
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
                                 }
                             }
                         }
@@ -478,14 +487,13 @@ fun DlcScreen(
             }
         }
 
-        // ─── v7.9.32: Save Game Manager ───
-        Spacer(Modifier.height(24.dp))
-        SaveGameSection(context = context)
+        // v7.9.50: Save Game section dihapus dari DLC — sudah ada di GameDetail (GameHub)
+        // SaveGameSection(context = context)
 
         // ─── Footer ───
         Spacer(Modifier.height(4.dp))
         Text(
-            "DLavie Launcher v7.9.36 — Mod Manager + Save Game",
+            "DLavie Launcher v7.9.50 — Mod Manager",
             color = DlcMuted,
             fontSize = 11.sp,
             fontFamily = InterFontFamily,
@@ -493,61 +501,9 @@ fun DlcScreen(
         )
     }
 
-    // v7.9.39: Play Protect Dialog — muncul saat user klik Update mod
-    // dan ada masalah (foreign data, signature mismatch, dll)
-    integrityResult?.let { result ->
-        IntegrityAnalysisDialog(
-            result = result,
-            onDismiss = {
-                integrityResult = null
-                pendingModAfterAnalysis = null
-            },
-            onCancel = {
-                integrityResult = null
-                pendingModAfterAnalysis = null
-            },
-            onContinue = {
-                // User sudah agree + cleanup done, lanjut apply mod
-                integrityResult = null
-                pendingModAfterAnalysis?.let { modToApply ->
-                    pendingModAfterAnalysis = null
-                    // Apply mod setelah cleanup selesai
-                    if (!StorageAccess.isGranted()) {
-                        StorageAccess.request(context)
-                        return@IntegrityAnalysisDialog
-                    }
-                    if (modToApply.patchUrl.isBlank()) {
-                        android.widget.Toast.makeText(context, "Patch URL tidak tersedia", android.widget.Toast.LENGTH_SHORT).show()
-                        return@IntegrityAnalysisDialog
-                    }
-                    applyingMod = modToApply
-                    applyProgress = 0f
-                    applyError = ""
-                    scope.launch {
-                        val result = ModPatchDownloader.applyPatch(
-                            context = context,
-                            patchUrl = modToApply.patchUrl,
-                            sha256 = if (modToApply.patchSha256.isNotBlank()) modToApply.patchSha256 else null,
-                            versionName = modToApply.versionName
-                        ) { progress ->
-                            applyProgress = progress
-                        }
-                        if (result.success) {
-                            android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
-                            val markerFile = java.io.File("/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie_patch_installed")
-                            if (markerFile.exists()) {
-                                installedMarker = markerFile.readText()
-                            }
-                        } else {
-                            applyError = result.message
-                            android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
-                        }
-                        applyingMod = null
-                    }
-                }
-            }
-        )
-    }
+    // v7.9.50: Full Play Protect dihapus dari DLC — sekarang hanya lightweight checker
+    // (cek OBB files). Full Play Protect ada di GameHub install flow.
+    // integrityResult tidak lagi digunakan di DLC.
 
     // v7.9.36: Auto permission popup saat buka DLC tab
     if (showPermissionPopup && !filesAccessGranted) {
