@@ -194,32 +194,71 @@ fun DlcScreen(
         loadingMods = true
         modsError = ""
         scope.launch(Dispatchers.IO) {
+            // v7.9.38: Primary source = ManifestApi (GitHub raw manifest.json)
+            // Fallback = Supabase update_posts (jika manifest fetch gagal)
+            var loadedFromManifest = false
             try {
-                val arr = api.fetchUpdatePosts()
-                mods.clear()
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    mods.add(
-                        ModPatch(
-                            id = o.optString("id", ""),
-                            versionCode = o.optInt("version_code", 0),
-                            versionName = o.optString("version_name", ""),
-                            title = o.optString("title", "Untitled Mod"),
-                            body = o.optString("body", ""),
-                            releaseNotes = jsonArrayToStringList(o.optJSONArray("release_notes")),
-                            knownIssues = jsonArrayToStringList(o.optJSONArray("known_issues")),
-                            patchUrl = o.optString("patch_url", ""),
-                            patchSha256 = o.optString("patch_sha256", ""),
-                            patchSizeBytes = o.optLong("patch_size_bytes", 0L),
-                            critical = o.optBoolean("critical", false),
-                            restartRequired = o.optBoolean("restart_game_required", false),
-                            riskLevel = o.optString("risk_level", "low"),
-                            createdAt = o.optString("created_at", "")
+                val manifestMods = ManifestApi.fetchMods(context, forceRefresh = true)
+                if (manifestMods.isNotEmpty()) {
+                    mods.clear()
+                    for (mod in manifestMods) {
+                        val latest = mod.latestVersionEntry ?: continue
+                        mods.add(
+                            ModPatch(
+                                id = mod.id,
+                                versionCode = mod.versionCode,
+                                versionName = "${mod.latestVersion}",
+                                title = mod.title.ifBlank { mod.name },
+                                body = mod.body,
+                                releaseNotes = mod.releaseNotes,
+                                knownIssues = mod.knownIssues,
+                                patchUrl = latest.url,
+                                patchSha256 = latest.sha256,
+                                patchSizeBytes = latest.size,
+                                critical = mod.critical,
+                                restartRequired = mod.restartGameRequired,
+                                riskLevel = mod.riskLevel,
+                                createdAt = mod.releasedAt
+                            )
                         )
-                    )
+                    }
+                    loadedFromManifest = true
+                    android.util.Log.i("DlcScreen", "Loaded ${mods.size} mods from manifest")
                 }
             } catch (e: Throwable) {
-                modsError = e.message ?: "Gagal memuat mod patches"
+                android.util.Log.w("DlcScreen", "Manifest fetch failed, fallback to Supabase: ${e.message}")
+            }
+
+            // Fallback: Supabase update_posts (jika manifest kosong atau gagal)
+            if (!loadedFromManifest) {
+                try {
+                    val arr = api.fetchUpdatePosts()
+                    mods.clear()
+                    for (i in 0 until arr.length()) {
+                        val o = arr.getJSONObject(i)
+                        mods.add(
+                            ModPatch(
+                                id = o.optString("id", ""),
+                                versionCode = o.optInt("version_code", 0),
+                                versionName = o.optString("version_name", ""),
+                                title = o.optString("title", "Untitled Mod"),
+                                body = o.optString("body", ""),
+                                releaseNotes = jsonArrayToStringList(o.optJSONArray("release_notes")),
+                                knownIssues = jsonArrayToStringList(o.optJSONArray("known_issues")),
+                                patchUrl = o.optString("patch_url", ""),
+                                patchSha256 = o.optString("patch_sha256", ""),
+                                patchSizeBytes = o.optLong("patch_size_bytes", 0L),
+                                critical = o.optBoolean("critical", false),
+                                restartRequired = o.optBoolean("restart_game_required", false),
+                                riskLevel = o.optString("risk_level", "low"),
+                                createdAt = o.optString("created_at", "")
+                            )
+                        )
+                    }
+                    android.util.Log.i("DlcScreen", "Loaded ${mods.size} mods from Supabase fallback")
+                } catch (e: Throwable) {
+                    modsError = e.message ?: "Gagal memuat mod patches"
+                }
             }
             withContext(Dispatchers.Main) { loadingMods = false }
         }
