@@ -396,8 +396,8 @@ class ModernLauncherActivity : ComponentActivity() {
     // ShinySplashActivity juga handle new flow, tapi hanya kalau launcher dibuka fresh
     // via deep link. Kalau launcher sudah running (singleTop), deep link masuk ke
     // onNewIntent ModernLauncherActivity → juga harus handle.
-    private fun handlePortalConnectIntent(intent: android.content.Intent?) {
-        val data = intent?.data ?: return
+    private fun handlePortalConnectIntent(intent: Intent) {
+        val data = intent.data ?: return
         if (data.scheme != "dlavie" || data.host != "connect") return
 
         val api = CommunityApi(this)
@@ -487,7 +487,7 @@ class ModernLauncherActivity : ComponentActivity() {
         }, 1500)
     }
 
-    override fun onNewIntent(intent: android.content.Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // v7.9.53: Handle deep link saat launcher sudah running (singleTop)
         // Kalau user klik Connect to DLavie di web saat launcher sudah terbuka,
