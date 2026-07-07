@@ -2239,24 +2239,7 @@ private fun InteractiveHalftoneBackground(
     }
 
     Canvas(
-        modifier = modifier
-            .fillMaxSize()
-            .pointerInput(Unit) {
-                androidx.compose.foundation.gestures.detectDragGestures(
-                    onDrag = { change, _ ->
-                        targetX = change.position.x
-                        targetY = change.position.y
-                    }
-                )
-            }
-            .pointerInput(Unit) {
-                androidx.compose.foundation.gestures.detectTapGestures(
-                    onTap = { offset ->
-                        targetX = offset.x
-                        targetY = offset.y
-                    }
-                )
-            }
+        modifier = modifier.fillMaxSize()
     ) {
         val cols = (size.width / dotSpacing).toInt() + 2
         val rows = (size.height / dotSpacing).toInt() + 2
