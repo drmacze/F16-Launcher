@@ -4,31 +4,50 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * App Update Checker v2 — cek versi terbaru dari Supabase app_releases table.
+ * App Update Checker v3 — cek versi terbaru langsung dari GitHub Releases API.
  *
- * Sistem Draft/Publish:
- *  - Draft release: hanya admin/developer yang dapat popup update (untuk testing)
- *  - Published release: semua user dapat popup update
+ * ⚠️ v3 BREAKING: tidak lagi memakai Supabase `app_releases` table.
+ *    Supabase sering 404 / munculin "Update file not found on server" karena
+ *    `apk_download_url` di tabel gak pernah di-update tiap build. Makanya
+ *    sekarang kita ambil APK langsung dari GitHub Releases repo F16-Launcher,
+ *    yang auto-published sama GitHub Actions workflow setiap push ke main.
  *
  * Flow:
- *  1. fetchLatestRelease(api) — query Supabase app_releases table
- *     - Regular user: WHERE is_published = true AND version_code > current
- *     - Staff (admin/developer): WHERE version_code > current (draft atau published)
- *  2. Kalau ada versi baru → tampilkan UpdatePopup
- *  3. User tap "Update" → download APK dari GitHub release URL → trigger install
+ *  1. fetchLatestRelease() — GET https://api.github.com/repos/drmacze/F16-Launcher/releases/latest
+ *     - Public endpoint (no auth needed, rate-limited 60/hr/IP — caching handles this)
+ *     - Returns tag `latest` release yang berisi APK paling baru dari CI build
+ *  2. Parse `version_code` dari release body, `versionName` dari release name,
+ *     `apkUrl` dari `assets[0].browser_download_url`
+ *  3. Kalau versionCode > current → tampilkan UpdatePopup
+ *  4. User tap "Update" → download APK dari GitHub release asset URL → install
+ *
+ * Cache:
+ *  - Response di-cache in-memory 5 menit (process lifetime).
+ *    Ngurangin GitHub API rate-limit hit (60/hr/IP untuk unauth request).
  *
  * Anti-bentrok:
  *  - Fixed signing key (sama untuk semua build)
  *  - applicationId sama → install sebagai update
  */
 object AppUpdateChecker {
+
+    private const val REPO_OWNER = "drmacze"
+    private const val REPO_NAME = "F16-Launcher"
+    private const val GITHUB_API = "https://api.github.com"
+    private const val RELEASES_LATEST_ENDPOINT =
+        "$GITHUB_API/repos/$REPO_OWNER/$REPO_NAME/releases/latest"
+
+    // In-memory cache: 5 menit untuk ngurangin rate-limit hit.
+    // Process lifetime di Android launcher biasanya 5–30 menit, jadi cukup.
+    private const val CACHE_TTL_MS = 5 * 60 * 1000L
+    private var cachedResponse: String? = null
+    private var cachedAt: Long = 0L
 
     data class UpdateInfo(
         val versionName: String,
@@ -40,221 +59,173 @@ object AppUpdateChecker {
     )
 
     /**
-     * Cek update dari Supabase app_releases table.
-     * - Regular user: hanya dapat published releases
-     * - Staff (admin/developer): dapat draft + published releases
+     * Cek update dari GitHub Releases API (tag `latest`).
      *
-     * v7.9.40: Fallback ke manifest.json (GitHub raw) kalau app_releases kosong/error.
-     * Manifest berisi info launcher terbaru, jadi user tetap dapat popup update
-     * tanpa perlu SQL insert manual ke app_releases.
-     *
-     * @param api CommunityApi instance (untuk auth + role check)
-     * @return UpdateInfo atau null kalau tidak ada update
+     * @param api CommunityApi instance — KEPT FOR BACKWARD COMPAT, tidak dipakai di v3.
+     *            Signature tetap sama biar caller (ModernLauncherActivity) gak perlu diubah.
+     * @return UpdateInfo kalau ada versi lebih baru, null kalau up-to-date atau error.
      */
     suspend fun checkForUpdate(api: CommunityApi): UpdateInfo? {
-        val currentCode = BuildConfig.VERSION_CODE
+        return try {
+            val currentCode = BuildConfig.VERSION_CODE
 
-        // ── Strategy 1: Cek dari Supabase app_releases (primary) ──
-        try {
-            val filter = "version_code=gt.$currentCode&is_published=eq.true"
-            val response = api.requestPublic(
-                "GET",
-                "/rest/v1/app_releases?$filter&order=version_code.desc&limit=1&select=version_code,version_name,tag_name,apk_download_url,changelog,is_published"
-            )
+            // 1. Fetch latest release JSON (dengan cache in-memory)
+            val jsonStr = fetchReleaseJsonWithCache() ?: return null
 
-            val arr = JSONArray(response)
-            if (arr.length() > 0) {
-                val release = arr.getJSONObject(0)
-                val versionCode = release.optInt("version_code", 0)
-                if (versionCode > currentCode) {
-                    val apkUrl = release.optString("apk_download_url", "")
-                    if (apkUrl.isNotBlank()) {
-                        android.util.Log.i("AppUpdate", "Update found via Supabase: v$versionCode")
-                        return UpdateInfo(
-                            versionName = release.optString("version_name", "unknown"),
-                            versionCode = versionCode,
-                            releaseNotes = release.optString("changelog", ""),
-                            apkUrl = apkUrl,
-                            isPublished = release.optBoolean("is_published", false),
-                            isUpdateAvailable = true
-                        )
-                    }
+            val release = JSONObject(jsonStr)
+
+            // 2. Extract versionCode dari body (workflow naro "version_code: N" di line pertama)
+            val body = release.optString("body", "")
+            val tagName = release.optString("tag_name", "")
+            val versionCode = extractVersionCode(body, tagName)
+
+            // 3. Extract versionName — preferensi: dari release name, fallback ke tag_name
+            val versionName = release.optString("name", "").ifBlank {
+                tagName.ifBlank { "unknown" }
+            }
+
+            // 4. Cari APK asset di array `assets`
+            val assets = release.optJSONArray("assets") ?: return null
+            var apkUrl = ""
+            for (i in 0 until assets.length()) {
+                val asset = assets.optJSONObject(i) ?: continue
+                val name = asset.optString("name", "")
+                val url = asset.optString("browser_download_url", "")
+                // Cari asset dengan ekstensi .apk
+                if (name.endsWith(".apk", ignoreCase = true) && url.isNotBlank()) {
+                    apkUrl = url
+                    break
                 }
             }
-        } catch (e: Throwable) {
-            android.util.Log.w("AppUpdate", "Supabase check failed, fallback to manifest: ${e.message}")
+
+            // 5. Kalau gak ada APK asset, jangan tampilkan popup (link download gak valid)
+            if (apkUrl.isBlank()) return null
+
+            // 6. Cek apakah versionCode lebih besar dari current
+            val isUpdateAvailable = versionCode > currentCode
+
+            // 7. isPublished: GitHub release yang bukan draft & bukan prerelease = published
+            val isPublished = !release.optBoolean("draft", false) &&
+                              !release.optBoolean("prerelease", false)
+
+            UpdateInfo(
+                versionName = versionName,
+                versionCode = versionCode,
+                releaseNotes = body.trim(),
+                apkUrl = apkUrl,
+                isPublished = isPublished,
+                isUpdateAvailable = isUpdateAvailable
+            )
+        } catch (_: Throwable) {
+            // Network error, JSON parse error, etc → silent fail (jangan ganggu user)
+            null
+        }
+    }
+
+    /**
+     * Fetch release JSON dengan in-memory cache 5 menit.
+     * Returns null kalau gagal total (network error + no cache).
+     */
+    private fun fetchReleaseJsonWithCache(): String? {
+        val now = System.currentTimeMillis()
+
+        // Cek cache dulu — kalau masih fresh (< 5 menit), pakai cache
+        val cached = cachedResponse
+        if (cached != null && (now - cachedAt) < CACHE_TTL_MS) {
+            return cached
         }
 
-        // ── Strategy 2: Fallback ke manifest.json (GitHub raw URL) ──
-        // v7.9.40: Manifest berisi launcher info, jadi user tetap dapat update
-        // notification tanpa perlu SQL insert ke app_releases
-        try {
-            val manifestUrl = "https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/manifest.json?t=${System.currentTimeMillis()}"
-            val conn = (URL(manifestUrl).openConnection() as HttpURLConnection).apply {
+        // Cache stale atau belum ada → fetch fresh
+        return try {
+            val fresh = fetchReleaseJsonRaw()
+            if (fresh != null) {
+                cachedResponse = fresh
+                cachedAt = now
+                fresh
+            } else {
+                // Network gagal — fallback ke cache stale (lebih baik stale daripada nothing)
+                cached
+            }
+        } catch (_: Throwable) {
+            // Rate-limited atau network error → fallback ke cache
+            cached
+        }
+    }
+
+    /**
+     * Raw HTTP GET ke GitHub Releases API. Returns JSON string atau null kalau gagal.
+     * Handles:
+     *  - 200 → return body
+     *  - 403 (rate limit) → null (caller fallback ke cache)
+     *  - 404 (no releases yet) → null
+     *  - 5xx → null (caller fallback ke cache)
+     */
+    private fun fetchReleaseJsonRaw(): String? {
+        var conn: HttpURLConnection? = null
+        return try {
+            val url = URL(RELEASES_LATEST_ENDPOINT)
+            conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 10_000
-                readTimeout = 15_000
-                setRequestProperty("Cache-Control", "no-cache")
-                setRequestProperty("User-Agent", "DLavie-Launcher")
+                connectTimeout = 15_000
+                readTimeout = 30_000
+                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("User-Agent", "DLavie-Launcher")  // GitHub requires UA
+                instanceFollowRedirects = false  // API endpoint tidak redirect
                 connect()
             }
-            try {
-                if (conn.responseCode in 200..299) {
-                    val text = conn.inputStream.bufferedReader().use { it.readText() }
-                    val manifest = JSONObject(text)
-                    val launcher = manifest.optJSONObject("launcher") ?: return null
-                    val latestCode = launcher.optInt("latest_version_code", 0)
-                    if (latestCode > currentCode) {
-                        val apkUrl = launcher.optString("apk_url", "")
-                        if (apkUrl.isNotBlank()) {
-                            android.util.Log.i("AppUpdate", "Update found via manifest: v$latestCode")
-                            return UpdateInfo(
-                                versionName = launcher.optString("latest_version_name", "unknown"),
-                                versionCode = latestCode,
-                                releaseNotes = launcher.optString("release_notes", "Update terbaru tersedia").toString(),
-                                apkUrl = apkUrl,
-                                isPublished = true,
-                                isUpdateAvailable = true
-                            )
-                        }
-                    }
+
+            when (conn.responseCode) {
+                200 -> {
+                    conn.inputStream.bufferedReader().use { it.readText() }
                 }
-            } finally {
-                conn.disconnect()
+                304, 403, 404, 500, 502, 503 -> {
+                    // Cached/rate-limited/not-found/server-error → caller handles fallback
+                    null
+                }
+                else -> null
             }
-        } catch (e: Throwable) {
-            android.util.Log.w("AppUpdate", "Manifest check failed: ${e.message}")
-        }
-
-        return null
-    }
-
-    /**
-     * Download APK ke cache dir dengan progress callback.
-     * Handles GitHub redirect (301/302) automatically.
-     * v7.5.4: Throw exception dengan pesan yang jelas kalau gagal (jangan swallow).
-     */
-    suspend fun downloadApk(context: Context, apkUrl: String, onProgress: ((Float) -> Unit)? = null): File? {
-        val cacheDir = File(context.cacheDir, "app-updates").also { it.mkdirs() }
-        val apkFile = File(cacheDir, "dlavie-update.apk")
-        if (apkFile.exists()) apkFile.delete()
-
-        // v7.9.41: Improved download dengan retry + better redirect handling
-        // GitHub release URLs redirect ke release-assets.githubusercontent.com dengan signed URL
-        // yang expire cepat. Kita follow redirect manual, retry kalau gagal.
-        var lastError: String? = null
-        val maxRetries = 3
-
-        for (attempt in 1..maxRetries) {
-            try {
-                android.util.Log.i("AppUpdate", "Download attempt $attempt/$maxRetries: $apkUrl")
-                val success = downloadApkAttempt(apkUrl, apkFile, onProgress)
-                if (success && apkFile.length() > 1_000_000) {
-                    android.util.Log.i("AppUpdate", "✓ Download success: ${apkFile.length()} bytes")
-                    return apkFile
-                } else if (apkFile.exists()) {
-                    apkFile.delete()
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("AppUpdate", "Attempt $attempt failed: ${e.message}")
-                lastError = e.message
-                if (apkFile.exists()) apkFile.delete()
-                // Wait sebelum retry (backoff)
-                if (attempt < maxRetries) {
-                    kotlinx.coroutines.delay(2000L * attempt)
-                }
-            }
-        }
-
-        // Semua retry gagal
-        throw Exception(lastError ?: "Download failed after $maxRetries attempts")
-    }
-
-    /**
-     * Single download attempt — follow redirects manual, return true kalau sukses.
-     */
-    private fun downloadApkAttempt(
-        apkUrl: String,
-        apkFile: File,
-        onProgress: ((Float) -> Unit)?
-    ): Boolean {
-        var currentUrl = apkUrl
-        var redirectCount = 0
-        var conn: HttpURLConnection? = null
-
-        try {
-            while (true) {
-                val url = URL(currentUrl)
-                conn = (url.openConnection() as HttpURLConnection).apply {
-                    instanceFollowRedirects = false  // handle manual supaya bisa track
-                    connectTimeout = 30_000
-                    readTimeout = 120_000
-                    setRequestProperty("User-Agent", "DLavie-Launcher/7.9.41 (Android)")
-                    setRequestProperty("Accept", "application/vnd.android.package-archive, application/octet-stream, */*")
-                    // Allow inline download (jangan paksa attachment)
-                    setRequestProperty("Accept-Encoding", "identity")
-                    connect()
-                }
-
-                val responseCode = conn.responseCode
-
-                // Handle redirect (300-399)
-                if (responseCode in 300..399) {
-                    val location = conn.getHeaderField("Location")
-                    conn.disconnect()
-                    conn = null
-                    if (location.isNullOrBlank()) {
-                        throw Exception("Redirect tanpa Location header (HTTP $responseCode)")
-                    }
-                    if (redirectCount >= 5) {
-                        throw Exception("Too many redirects (max 5)")
-                    }
-                    android.util.Log.d("AppUpdate", "Redirect $redirectCount → $location")
-                    currentUrl = location
-                    redirectCount++
-                    continue
-                }
-
-                // Check error responses
-                if (responseCode == 404) {
-                    throw Exception("File tidak ditemukan di server (HTTP 404). Release mungkin belum published.")
-                }
-                if (responseCode == 403) {
-                    throw Exception("Akses ditolak (HTTP 403). Signed URL mungkin expired, retry...")
-                }
-                if (responseCode !in 200..299) {
-                    throw Exception("Server return HTTP $responseCode")
-                }
-
-                // Response 200-299, start download
-                android.util.Log.i("AppUpdate", "Connected HTTP $responseCode, downloading...")
-                val total = conn.contentLengthLong.toFloat().coerceAtLeast(1f)
-                android.util.Log.d("AppUpdate", "Content-Length: ${conn.contentLengthLong} bytes")
-
-                val buf = ByteArray(32 * 1024)  // 32KB buffer (lebih besar dari 16KB)
-                conn.inputStream.use { inp ->
-                    apkFile.outputStream().use { out ->
-                        var n: Int
-                        var read = 0L
-                        while (inp.read(buf).also { n = it } != -1) {
-                            out.write(buf, 0, n)
-                            read += n
-                            onProgress?.invoke((read / total).coerceIn(0f, 0.99f))
-                        }
-                    }
-                }
-                return true
-            }
+        } catch (_: Throwable) {
+            null
         } finally {
             conn?.disconnect()
         }
     }
 
     /**
-     * [Legacy] Download APK ke cache dir dengan progress callback.
-     * Deprecated: pakai downloadApk() di atas yang ada retry logic.
+     * Extract versionCode dari release body.
+     * Workflow menaruh "version_code: N" di baris pertama body release.
+     * Fallback: parse dari tag_name (e.g., "v210" → 210).
      */
-    suspend fun downloadApkLegacy(context: Context, apkUrl: String, onProgress: ((Float) -> Unit)? = null): File? {
+    private fun extractVersionCode(body: String, tagName: String): Int {
+        // 1. Cari "version_code: N" atau "version_code=N" di body (case-insensitive)
+        val pattern = Regex("""(?i)version[_\s-]*code\s*[:=]\s*(\d+)""")
+        val m = pattern.find(body)
+        if (m != null) {
+            return m.groupValues[1].toIntOrNull() ?: 0
+        }
+
+        // 2. Fallback: parse dari tag_name (e.g., "v210" → 210)
+        val tagMatch = Regex("""v?(\d+)""").find(tagName)
+        if (tagMatch != null) {
+            return tagMatch.groupValues[1].toIntOrNull() ?: 0
+        }
+
+        // 3. Tidak ketemu — return 0 (berarti "tidak ada update")
+        return 0
+    }
+
+    /**
+     * Download APK ke cache dir dengan progress callback.
+     * Handles GitHub redirect (301/302) automatically.
+     *
+     * v3: Tetap sama kayak v2 — GitHub release asset URLs redirect ke
+     * objects.githubusercontent.com, jadi redirect handling wajib.
+     */
+    suspend fun downloadApk(
+        context: Context,
+        apkUrl: String,
+        onProgress: ((Float) -> Unit)? = null
+    ): File? {
         val cacheDir = File(context.cacheDir, "app-updates").also { it.mkdirs() }
         val apkFile = File(cacheDir, "dlavie-update.apk")
         if (apkFile.exists()) apkFile.delete()
@@ -294,11 +265,11 @@ object AppUpdateChecker {
             val responseCode = conn!!.responseCode
             if (responseCode == 404) {
                 conn.disconnect()
-                throw Exception("Update file not found on server. Release may not be published yet.")
+                throw Exception("APK file not found on GitHub release. Check the release assets.")
             }
             if (responseCode !in 200..299) {
                 conn.disconnect()
-                throw Exception("Server returned HTTP $responseCode. Try again later.")
+                throw Exception("GitHub returned HTTP $responseCode. Try again later.")
             }
 
             val total = conn.contentLengthLong.toFloat().coerceAtLeast(1f)
@@ -319,7 +290,7 @@ object AppUpdateChecker {
             // Verify file isn't empty or error page
             if (apkFile.length() < 1_000_000) {
                 apkFile.delete()
-                throw Exception("Downloaded file too small. Server may have returned an error page.")
+                throw Exception("Downloaded file too small. GitHub may have returned an error page.")
             }
 
             return apkFile
@@ -333,8 +304,6 @@ object AppUpdateChecker {
 
     /**
      * Trigger install APK via ACTION_VIEW + FileProvider.
-     * v7.2.8: Removed browser fallback — kalau FileProvider gagal, return false
-     * (caller handle dengan menampilkan pesan error, bukan buka browser).
      */
     fun installApk(context: Context, apkFile: File): Boolean {
         return try {
