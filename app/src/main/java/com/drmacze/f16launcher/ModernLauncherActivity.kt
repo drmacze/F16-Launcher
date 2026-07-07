@@ -511,10 +511,10 @@ class ModernLauncherActivity : ComponentActivity() {
                 val decoded = android.util.Base64.decode(padded, android.util.Base64.URL_SAFE)
                 val jwt = org.json.JSONObject(String(decoded))
                 email = jwt.optString("email", "")
-                Log.i(TAG, "JWT decoded: uid=$uid, email=$email")
+                android.util.Log.i(TAG, "JWT decoded: uid=$uid, email=$email")
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to decode JWT: ${e.message}")
+            android.util.Log.w(TAG, "Failed to decode JWT: ${e.message}")
         }
 
         // Step 2: Clear prefs lama (guest data, profile dari akun berbeda)
@@ -564,7 +564,7 @@ class ModernLauncherActivity : ComponentActivity() {
             .putBoolean("is_guest", false)
             .apply()
 
-        Log.i(TAG, "Token saved: uid=$uid, email=$email, defaultName=$defaultDisplayName")
+        android.util.Log.i(TAG, "Token saved: uid=$uid, email=$email, defaultName=$defaultDisplayName")
 
         // Step 4: Load profile dengan fallback ke ensureMyProfile
         val api = CommunityApi(this)
@@ -575,26 +575,26 @@ class ModernLauncherActivity : ComponentActivity() {
             val profile = api.loadMyProfile()
             profileLoaded = true
             displayName = api.displayName().ifEmpty { defaultDisplayName }
-            Log.i(TAG, "Profile loaded: username=${api.username()}, name=${api.displayName()}")
+            android.util.Log.i(TAG, "Profile loaded: username=${api.username()}, name=${api.displayName()}")
         } catch (e: Exception) {
-            Log.w(TAG, "loadMyProfile failed: ${e.message}")
+            android.util.Log.w(TAG, "loadMyProfile failed: ${e.message}")
 
             // Fallback: kalau profile belum ada, create dengan default values
             if (e.message?.contains("Profile community belum tersedia") == true ||
                 e.message?.contains("belum ada") == true) {
                 try {
-                    Log.i(TAG, "Profile belum ada, mencoba ensureMyProfile...")
+                    android.util.Log.i(TAG, "Profile belum ada, mencoba ensureMyProfile...")
                     api.ensureMyProfile(defaultUsername, defaultDisplayName, null)
                     try {
                         api.loadMyProfile()
                         profileLoaded = true
                         displayName = api.displayName().ifEmpty { defaultDisplayName }
-                        Log.i(TAG, "Profile created + loaded: ${api.displayName()}")
+                        android.util.Log.i(TAG, "Profile created + loaded: ${api.displayName()}")
                     } catch (e2: Exception) {
-                        Log.w(TAG, "loadMyProfile after ensure masih gagal: ${e2.message}")
+                        android.util.Log.w(TAG, "loadMyProfile after ensure masih gagal: ${e2.message}")
                     }
                 } catch (e2: Exception) {
-                    Log.e(TAG, "ensureMyProfile juga gagal: ${e2.message}")
+                    android.util.Log.e(TAG, "ensureMyProfile juga gagal: ${e2.message}")
                 }
             }
         }
@@ -606,7 +606,7 @@ class ModernLauncherActivity : ComponentActivity() {
             android.widget.Toast.LENGTH_LONG
         ).show()
 
-        Log.i(TAG, "connectPortalAccount selesai: profileLoaded=$profileLoaded, name=$displayName")
+        android.util.Log.i(TAG, "connectPortalAccount selesai: profileLoaded=$profileLoaded, name=$displayName")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
