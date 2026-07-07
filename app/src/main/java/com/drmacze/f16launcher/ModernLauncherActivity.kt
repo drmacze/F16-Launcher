@@ -6025,9 +6025,10 @@ fun ProfileScreen(
     ) {
 
         // ════════════════════════════════════════════════════════════════════
-        // v7.5.0: TOTAL REDESIGN — minimalis, clean, modern
-        // No cover banner. Centered avatar + name + stats text.
-        // Pill tabs with icons. Feed cards. Settings menu items.
+        // ════════════════════════════════════════════════════════════════════
+        // v7.9.59 TOTAL REMAKE — Glassmorphism, Clean Navigation, Minimalist Modern
+        // No duplicate functionality. Settings hanya di SettingsScreen (via gear icon).
+        // Profile fokus: identity + content (posts/saved/drafts) + portal status + logout.
         // ════════════════════════════════════════════════════════════════════
         if (profileLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -6035,29 +6036,37 @@ fun ProfileScreen(
             }
         } else {
 
-            // ── Top bar: "Profile" title + streak + settings ──
+            // ── Top bar: "Profile" + streak + settings gear ──
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(t.profile, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                Text(t.profile, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Streak icon (fire + number)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    // Badges count (glass pill)
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = Color.White.copy(0.06f),
+                        border = BorderStroke(1.dp, Color.White.copy(0.1f))
                     ) {
-                        Icon(Icons.Rounded.LocalFireDepartment, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                        Text("${myBadges.size}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Row(
+                            Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Rounded.LocalFireDepartment, null, tint = Color(0xFFFFAA00), modifier = Modifier.size(14.dp))
+                            Text("${myBadges.size}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
-                    // Settings gear
+                    // Settings gear (glass circle)
                     Box(
-                        Modifier.size(36.dp).clip(CircleShape)
+                        Modifier.size(38.dp).clip(CircleShape)
                             .background(Color.White.copy(0.06f))
+                            .border(1.dp, Color.White.copy(0.1f), CircleShape)
                             .clickable { onOpenSettings() },
                         contentAlignment = Alignment.Center
                     ) {
@@ -6066,157 +6075,188 @@ fun ProfileScreen(
                 }
             }
 
-            // ── Avatar (centered, 88dp, clean) ──
-            Box(
-                Modifier.fillMaxWidth().padding(top = 8.dp),
-                contentAlignment = Alignment.Center
+            // ── Glass Hero Card: avatar + name + stats (glassmorphism) ──
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = Color.White.copy(0.03f),
+                border = BorderStroke(1.dp, Color.White.copy(0.08f))
             ) {
-                Box(
-                    Modifier.size(88.dp).clickable {
-                        if (api.loggedIn() && !avatarUploading) {
-                            avatarPicker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        }
-                    }
+                Column(
+                    Modifier.fillMaxWidth().padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    if (avatarUrlState.isNotEmpty()) {
-                        AsyncImage(
-                            model = avatarUrlState,
-                            contentDescription = "Avatar",
-                            modifier = Modifier.fillMaxSize().clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        DLavieLogoCover(
-                            size = 88.dp, text = initial,
-                            fontSize = 32.sp, shape = CircleShape
-                        )
-                    }
-                    if (avatarUploading) {
+                    // Avatar with glass ring
+                    Box(
+                        Modifier.size(92.dp).clickable {
+                            if (api.loggedIn() && !avatarUploading) {
+                                avatarPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                        }
+                    ) {
+                        // Glass ring around avatar
                         Box(
-                            Modifier.fillMaxSize().clip(CircleShape)
-                                .background(Color.Black.copy(0.6f)),
+                            Modifier.size(92.dp).clip(CircleShape)
+                                .background(Color.White.copy(0.08f))
+                                .border(1.dp, Color.White.copy(0.15f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                            if (avatarUrlState.isNotEmpty()) {
+                                AsyncImage(
+                                    model = avatarUrlState,
+                                    contentDescription = "Avatar",
+                                    modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                DLavieLogoCover(
+                                    size = 80.dp, text = initial,
+                                    fontSize = 32.sp, shape = CircleShape
+                                )
+                            }
+                        }
+                        if (avatarUploading) {
+                            Box(
+                                Modifier.fillMaxSize().clip(CircleShape)
+                                    .background(Color.Black.copy(0.6f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                            }
+                        }
+                        // Camera badge (glass)
+                        Box(
+                            Modifier.align(Alignment.BottomEnd).size(28.dp)
+                                .background(Color.White, CircleShape)
+                                .border(3.dp, Color(0xFF0A0A0A), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.CameraAlt, null, tint = Color.Black, modifier = Modifier.size(14.dp))
                         }
                     }
-                    // Camera badge (bottom-right)
-                    Box(
-                        Modifier.align(Alignment.BottomEnd).size(26.dp)
-                            .background(Color.White, CircleShape)
-                            .border(2.dp, PureBlack, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Rounded.CameraAlt, null, tint = PureBlack, modifier = Modifier.size(13.dp))
-                    }
-                }
-            }
 
-            // ── Name + verified badge ──
-            Row(
-                Modifier.fillMaxWidth().padding(top = 12.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    api.displayName().ifEmpty { "DLavie Player" },
-                    color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black
-                )
-                if (role.equals("admin", true) || role.equals("developer", true)) {
-                    Spacer(Modifier.width(4.dp))
-                    Icon(Icons.Rounded.Verified, null, tint = Color.White, modifier = Modifier.size(15.dp))
-                }
-            }
+                    Spacer(Modifier.height(14.dp))
 
-            // ── Followers · Following (simple text, centered) ──
-            Row(
-                Modifier.fillMaxWidth().padding(top = 4.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("${followerCount} ${t.followers.lowercase()}", color = SubText, fontSize = 13.sp)
-                Text("  \u00b7  ", color = SubText, fontSize = 13.sp)
-                Text("${followingCount} ${t.followingCount.lowercase()}", color = SubText, fontSize = 13.sp)
-            }
-
-            // ── Bio (optional, centered) ──
-            if (bio.isNotBlank()) {
-                Text(
-                    bio,
-                    color = SoftText, fontSize = 13.sp, lineHeight = 18.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 8.dp)
-                )
-            }
-
-            // ── Edit Profile button (pill, centered, below info) ──
-            // v3.1 FIX: was .clickable { onOpenSettings() } which opened Settings
-            //          instead of an edit form. Now opens dedicated EditProfileScreen.
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .height(40.dp)
-                        .clickable { onOpenEditProfile() },
-                    shape = RoundedCornerShape(20.dp),
-                    color = Color.White.copy(0.08f),
-                    border = BorderStroke(1.dp, Color.White.copy(0.15f))
-                ) {
+                    // Name + verified badge
                     Row(
-                        Modifier.padding(horizontal = 24.dp),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Rounded.Edit, null, tint = Color.White, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(t.editProfile, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            api.displayName().ifEmpty { "DLavie Player" },
+                            color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black,
+                            letterSpacing = (-0.3).sp
+                        )
+                        if (role.equals("admin", true) || role.equals("developer", true)) {
+                            Spacer(Modifier.width(5.dp))
+                            Icon(Icons.Rounded.Verified, null, tint = Color(0xFF2ED3F6), modifier = Modifier.size(16.dp))
+                        }
+                    }
+
+                    // Username
+                    Text(
+                        "@${api.username().ifEmpty { "unknown" }}",
+                        color = SubText, fontSize = 12.sp, fontFamily = FontFamily.Monospace
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // Stats row (3 columns, glass)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        ProfileStatItem(count = followerCount, label = t.followers.lowercase())
+                        // Divider
+                        Box(Modifier.width(1.dp).height(28.dp).background(Color.White.copy(0.1f)))
+                        ProfileStatItem(count = followingCount, label = t.followingCount.lowercase())
+                        Box(Modifier.width(1.dp).height(28.dp).background(Color.White.copy(0.1f)))
+                        ProfileStatItem(count = likesCount, label = "likes")
+                    }
+
+                    // Bio (optional)
+                    if (bio.isNotBlank()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            bio,
+                            color = SoftText, fontSize = 12.sp, lineHeight = 17.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                        )
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+
+                    // Edit Profile button (glass pill)
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp)
+                            .clickable { onOpenEditProfile() },
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color.White.copy(0.06f),
+                        border = BorderStroke(1.dp, Color.White.copy(0.12f))
+                    ) {
+                        Row(
+                            Modifier.fillMaxSize(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.Edit, null, tint = Color.White, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(t.editProfile, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ── Glass Pill Tabs (Posts | Saved | Drafts | Issues) ──
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.White.copy(0.03f),
+                border = BorderStroke(1.dp, Color.White.copy(0.08f))
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    GlassPillTab(
+                        icon = Icons.Rounded.Article,
+                        label = t.myPosts,
+                        selected = selectedTab == 0,
+                        modifier = Modifier.weight(1f)
+                    ) { selectedTab = 0 }
+                    GlassPillTab(
+                        icon = Icons.Rounded.BookmarkBorder,
+                        label = t.savedPosts,
+                        selected = selectedTab == 1,
+                        modifier = Modifier.weight(1f)
+                    ) { selectedTab = 1 }
+                    GlassPillTab(
+                        icon = Icons.Rounded.Drafts,
+                        label = "Drafts",
+                        selected = selectedTab == 2,
+                        modifier = Modifier.weight(1f)
+                    ) { selectedTab = 2 }
+                    if (role.equals("admin", true) || role.equals("developer", true)) {
+                        GlassPillTab(
+                            icon = Icons.Rounded.Warning,
+                            label = "Issues",
+                            selected = selectedTab == 3,
+                            modifier = Modifier.weight(1f)
+                        ) { selectedTab = 3 }
                     }
                 }
             }
 
             Spacer(Modifier.height(8.dp))
 
-            // ── Pill tabs (Posts | Saved | Drafts) with icons ──
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                PillTab(
-                    icon = Icons.Rounded.Article,
-                    label = t.myPosts,
-                    selected = selectedTab == 0,
-                    modifier = Modifier.weight(1f)
-                ) { selectedTab = 0 }
-                PillTab(
-                    icon = Icons.Rounded.BookmarkBorder,
-                    label = t.savedPosts,
-                    selected = selectedTab == 1,
-                    modifier = Modifier.weight(1f)
-                ) { selectedTab = 1 }
-                PillTab(
-                    icon = Icons.Rounded.Drafts,
-                    label = "Drafts",
-                    selected = selectedTab == 2,
-                    modifier = Modifier.weight(1f)
-                ) { selectedTab = 2 }
-                // Issues tab — admin/dev only
-                if (role.equals("admin", true) || role.equals("developer", true)) {
-                    PillTab(
-                        icon = Icons.Rounded.Warning,
-                        label = "Issues",
-                        selected = selectedTab == 3,
-                        modifier = Modifier.weight(1f)
-                    ) { selectedTab = 3 }
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // ── Content per tab ──
+            // ── Content per tab (existing logic, preserved) ──
             when {
                 postsLoading -> {
                     Column(
@@ -6239,7 +6279,6 @@ fun ProfileScreen(
                     text = "No issues reported yet."
                 )
                 selectedTab == 3 -> {
-                    // Issues list with delete buttons (admin/dev)
                     Column(
                         Modifier.padding(horizontal = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -6248,49 +6287,53 @@ fun ProfileScreen(
                             val issueId = issue.optString("id", "")
                             val issueTitle = issue.optString("title", "")
                             val issueDate = issue.optString("created_at", "").take(10)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color.White.copy(0.04f))
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                color = Color.White.copy(0.03f),
+                                border = BorderStroke(1.dp, Color.White.copy(0.08f))
                             ) {
-                                Icon(Icons.Rounded.Warning, null, tint = DangerRed, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(issueTitle, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text("$issueDate · ${issueId.take(8)}", color = SubText, fontSize = 10.sp)
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                if (deletingIssueId == issueId) {
-                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = DangerRed, strokeWidth = 2.dp)
-                                } else {
-                                    Surface(
-                                        modifier = Modifier.size(32.dp).clip(CircleShape).clickable {
-                                            deletingIssueId = issueId
-                                            scope.launch {
-                                                val errMsg = withContext(Dispatchers.IO) {
-                                                    try {
-                                                        api.adminDelete("/rest/v1/feed_comments?post_id=eq.$issueId")
-                                                        api.adminDelete("/rest/v1/feed_posts?id=eq.$issueId")
-                                                        null
-                                                    } catch (e: Exception) { e.message }
+                                Row(
+                                    Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Rounded.Warning, null, tint = DangerRed, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(issueTitle, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text("$issueDate · ${issueId.take(8)}", color = SubText, fontSize = 10.sp)
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    if (deletingIssueId == issueId) {
+                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = DangerRed, strokeWidth = 2.dp)
+                                    } else {
+                                        Surface(
+                                            modifier = Modifier.size(32.dp).clip(CircleShape).clickable {
+                                                deletingIssueId = issueId
+                                                scope.launch {
+                                                    val errMsg = withContext(Dispatchers.IO) {
+                                                        try {
+                                                            api.adminDelete("/rest/v1/feed_comments?post_id=eq.$issueId")
+                                                            api.adminDelete("/rest/v1/feed_posts?id=eq.$issueId")
+                                                            null
+                                                        } catch (e: Exception) { e.message }
+                                                    }
+                                                    if (errMsg == null) {
+                                                        myIssues = myIssues.filterNot { it.optString("id") == issueId }
+                                                        toast("Issue dihapus")
+                                                    } else {
+                                                        toast("Gagal: $errMsg")
+                                                    }
+                                                    deletingIssueId = null
                                                 }
-                                                if (errMsg == null) {
-                                                    myIssues = myIssues.filterNot { it.optString("id") == issueId }
-                                                    toast("Issue dihapus")
-                                                } else {
-                                                    toast("Gagal: $errMsg")
-                                                }
-                                                deletingIssueId = null
+                                            },
+                                            color = DangerRed.copy(0.15f),
+                                            border = BorderStroke(1.dp, DangerRed.copy(0.4f)),
+                                            shape = CircleShape
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(Icons.Rounded.Delete, "Delete", tint = DangerRed, modifier = Modifier.size(16.dp))
                                             }
-                                        },
-                                        color = DangerRed.copy(0.15f),
-                                        border = BorderStroke(1.dp, DangerRed.copy(0.4f))
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(Icons.Rounded.Delete, "Delete", tint = DangerRed, modifier = Modifier.size(16.dp))
                                         }
                                     }
                                 }
@@ -6349,28 +6392,7 @@ fun ProfileScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // ── Settings menu (grouped rounded containers) ──
-            // Block 1: Settings + Language
-            SettingsContainer {
-                SettingsRow(icon = Icons.Rounded.Settings, label = t.settings, onClick = { onOpenSettings() })
-                SettingsDivider()
-                SettingsRow(icon = Icons.Rounded.Language, label = t.language, trailingText = LanguageManager.getCurrentLanguageName(context), onClick = { onOpenSettings() })
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // Block 2: Account
-            AccountSettingsCard(
-                api = api,
-                context = context,
-                expandedSection = expandedSection,
-                onExpandedSectionChange = onExpandedSectionChange
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // ── DLavie Portal Connect — modern status card ──
-            // Re-read on every ON_RESUME so status updates after connect via web
+            // ── DLavie Portal Connect card (glassmorphism) ──
             var portalConnected by remember { mutableStateOf(
                 context.getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
                     .getBoolean("portal_connected", false)
@@ -6386,155 +6408,90 @@ fun ProfileScreen(
                 portalLifecycleOwner.lifecycle.addObserver(observer)
                 try { kotlinx.coroutines.awaitCancellation() } finally { portalLifecycleOwner.lifecycle.removeObserver(observer) }
             }
-            val portalGradient = if (portalConnected) {
-                Brush.horizontalGradient(listOf(Color(0xFF00D26A).copy(0.12f), Color(0xFF00D26A).copy(0.04f)))
-            } else {
-                Brush.horizontalGradient(listOf(Color.White.copy(0.04f), Color.White.copy(0.01f)))
-            }
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 shape = RoundedCornerShape(18.dp),
-                color = Color.Transparent,
+                color = if (portalConnected) Color(0xFF00D26A).copy(0.06f) else Color.White.copy(0.03f),
                 border = BorderStroke(
                     1.dp,
-                    if (portalConnected) Brush.horizontalGradient(listOf(Color(0xFF00D26A).copy(0.5f), Color(0xFF00D26A).copy(0.15f)))
-                    else Brush.horizontalGradient(listOf(Color.White.copy(0.12f), Color.White.copy(0.04f)))
+                    if (portalConnected) Color(0xFF00D26A).copy(0.3f) else Color.White.copy(0.08f)
                 )
             ) {
-                Box(
-                    modifier = Modifier
-                        .background(portalGradient)
-                        .padding(18.dp)
+                Row(
+                    Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Status icon with glow
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (portalConnected) Brush.radialGradient(listOf(Color(0xFF00D26A), Color(0xFF00A050)))
-                                    else Brush.radialGradient(listOf(Color.White.copy(0.12f), Color.White.copy(0.04f)))
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (portalConnected) {
-                                Icon(
-                                    Icons.Rounded.CheckCircle,
-                                    contentDescription = "Connected",
-                                    tint = Color.Black,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            } else {
-                                Icon(
-                                    Icons.Rounded.Language,
-                                    contentDescription = "Not connected",
-                                    tint = Color.White.copy(0.6f),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                        Spacer(Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "DLavie Portal",
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = (-0.01).sp
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(if (portalConnected) Color(0xFF00D26A) else Color(0xFF666666))
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    if (portalConnected) "Connected to Web FAQ" else "Not connected — Visit web FAQ to connect",
-                                    color = if (portalConnected) Color(0xFF00D26A) else SubText,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                        // Right side: status badge or chevron
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (portalConnected) Brush.radialGradient(listOf(Color(0xFF00D26A), Color(0xFF00A050)))
+                                else Brush.radialGradient(listOf(Color.White.copy(0.1f), Color.White.copy(0.03f)))
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
                         if (portalConnected) {
-                            Surface(
-                                shape = RoundedCornerShape(999.dp),
-                                color = Color(0xFF00D26A).copy(0.15f),
-                                border = BorderStroke(1.dp, Color(0xFF00D26A).copy(0.3f))
-                            ) {
-                                Text(
-                                    "ACTIVE",
-                                    color = Color(0xFF00D26A),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Black,
-                                    letterSpacing = 0.08.sp,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                )
-                            }
+                            Icon(Icons.Rounded.CheckCircle, "Connected", tint = Color.Black, modifier = Modifier.size(22.dp))
+                        } else {
+                            Icon(Icons.Rounded.Language, "Not connected", tint = Color.White.copy(0.6f), modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("DLavie Portal", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.01).sp)
+                        Spacer(Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier.size(6.dp).clip(CircleShape)
+                                    .background(if (portalConnected) Color(0xFF00D26A) else Color(0xFF666666))
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                if (portalConnected) "Connected to Web Portal" else "Not connected",
+                                color = if (portalConnected) Color(0xFF00D26A) else SubText,
+                                fontSize = 11.sp, fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                    if (portalConnected) {
+                        Surface(
+                            shape = RoundedCornerShape(999.dp),
+                            color = Color(0xFF00D26A).copy(0.15f),
+                            border = BorderStroke(1.dp, Color(0xFF00D26A).copy(0.3f))
+                        ) {
+                            Text("ACTIVE", color = Color(0xFF00D26A), fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 0.08.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
                         }
                     }
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
-
-            // Block 3: Info (FAQ, Terms, Policy)
-            SettingsContainer {
-                SettingsRow(
-                    icon = Icons.Rounded.HelpOutline,
-                    label = "FAQ",
-                    onClick = {
-                        // Open the DLavie FAQ web page in the user's default browser.
-                        // Hosted on GitHub Pages: https://drmacze.github.io/dlavie-web/#/faq
-                        val intent = android.content.Intent(
-                            android.content.Intent.ACTION_VIEW,
-                            android.net.Uri.parse("https://drmacze.github.io/dlavie-web/#/faq")
-                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        runCatching { context.startActivity(intent) }
-                    }
-                )
-                SettingsDivider()
-                SettingsRow(icon = Icons.Rounded.Description, label = "Terms", onClick = { })
-                SettingsDivider()
-                SettingsRow(icon = Icons.Rounded.PrivacyTip, label = "Privacy Policy", onClick = { })
-            }
-
-            // FCM (admin only)
+            // FCM (admin only) — preserved
             if (role == "admin" || role == "developer") {
                 Spacer(Modifier.height(8.dp))
                 FcmDiagnosticCard(api = api, context = context)
             }
 
-            // ── v7.9.28: Multi-account switcher ──
+            // Account switcher — preserved
             AccountSwitcherSection(api = api, onAccountSwitched = {
-                // Restart activity to apply new account
                 context.startActivity(
                     android.content.Intent(context, ModernLauncherActivity::class.java)
                         .addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
             }, onAddAccount = {
-                // v7.9.29: Don't call api.logout() — it clears ALL prefs including accounts list.
-                // Instead, just clear session tokens but keep accounts list.
                 val prefs = context.getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
-                val savedAccounts = prefs.getString("accounts", "[]")  // preserve accounts list
-                val savedActiveId = prefs.getString("active_user_id", "")  // preserve active id
-                prefs.edit().clear().apply()  // clear everything
-                prefs.edit().putString("accounts", savedAccounts).putString("active_user_id", savedActiveId).apply()  // restore accounts
-                // Also clear auth session
+                val savedAccounts = prefs.getString("accounts", "[]")
+                val savedActiveId = prefs.getString("active_user_id", "")
+                prefs.edit().clear().apply()
+                prefs.edit().putString("accounts", savedAccounts).putString("active_user_id", savedActiveId).apply()
                 context.getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE).edit().clear().apply()
-                // Go to login screen
                 context.startActivity(
                     android.content.Intent(context, DLavieGuidedActivity::class.java)
                         .addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
             })
 
-            // ── Logout (pill button, bottom) ──
+            // ── Logout (glass danger button) ──
             AnimatedContent(targetState = confirmLogout, label = "logout") { confirm ->
                 if (!confirm) {
                     Row(
@@ -6543,14 +6500,15 @@ fun ProfileScreen(
                     ) {
                         Surface(
                             modifier = Modifier
-                                .height(44.dp)
+                                .fillMaxWidth()
+                                .height(46.dp)
                                 .clickable { confirmLogout = true },
-                            shape = RoundedCornerShape(22.dp),
-                            color = Color.Transparent,
-                            border = BorderStroke(1.dp, DangerRed.copy(0.4f))
+                            shape = RoundedCornerShape(14.dp),
+                            color = DangerRed.copy(0.06f),
+                            border = BorderStroke(1.dp, DangerRed.copy(0.3f))
                         ) {
                             Row(
-                                Modifier.padding(horizontal = 32.dp),
+                                Modifier.fillMaxSize(),
                                 horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -6561,33 +6519,105 @@ fun ProfileScreen(
                         }
                     }
                 } else {
-                    // Confirmation dialog
-                    SettingsContainer {
-                        Text("Logout", color = DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Black,
-                            modifier = Modifier.padding(16.dp))
-                        Text("You will need to sign in again.", color = SoftText, fontSize = 12.sp,
-                            modifier = Modifier.padding(horizontal = 16.dp))
-                        Spacer(Modifier.height(12.dp))
-                        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = { confirmLogout = false },
-                                modifier = Modifier.weight(1f).height(42.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, GlassStroke),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = SoftText)
-                            ) { Text(t.cancel, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
-                            Button(
-                                onClick = onLogout,
-                                modifier = Modifier.weight(1f).height(42.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = DangerRed, contentColor = Color.White)
-                            ) { Text(t.logout, fontWeight = FontWeight.Black, fontSize = 12.sp) }
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        color = Color.White.copy(0.04f),
+                        border = BorderStroke(1.dp, Color.White.copy(0.1f))
+                    ) {
+                        Column(Modifier.padding(18.dp)) {
+                            Text("Logout", color = DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                            Spacer(Modifier.height(4.dp))
+                            Text("You will need to sign in again.", color = SoftText, fontSize = 12.sp)
+                            Spacer(Modifier.height(14.dp))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = { confirmLogout = false },
+                                    modifier = Modifier.weight(1f).height(42.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, Color.White.copy(0.12f)),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = SoftText)
+                                ) { Text(t.cancel, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                                Button(
+                                    onClick = onLogout,
+                                    modifier = Modifier.weight(1f).height(42.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = DangerRed, contentColor = Color.White)
+                                ) { Text(t.logout, fontWeight = FontWeight.Black, fontSize = 12.sp) }
+                            }
                         }
                     }
                 }
             }
 
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// v7.9.59 NEW: Glass composable helpers for Profile redesign
+// ════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ProfileStatItem(count: Int, label: String) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "$count",
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = (-0.3).sp
+        )
+        Text(
+            label,
+            color = SubText,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun GlassPillTab(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier
+            .height(44.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) Color.White.copy(0.12f) else Color.Transparent,
+        border = BorderStroke(
+            1.dp,
+            if (selected) Color.White.copy(0.25f) else Color.Transparent
+        )
+    ) {
+        Row(
+            Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                icon, null,
+                tint = if (selected) Color.White else SubText,
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(Modifier.width(5.dp))
+            Text(
+                label,
+                color = if (selected) Color.White else SubText,
+                fontSize = 11.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
