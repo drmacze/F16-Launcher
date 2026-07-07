@@ -171,7 +171,7 @@ fun DlcScreen(
     var applyProgress by remember { mutableStateOf(0f) }
     var applyError by remember { mutableStateOf("") }
 
-    // v7.9.39: Integrity Analysis state — popup analisis DLavie sebelum apply mod
+    // v7.9.39: Play Protect state — popup analisis DLavie sebelum apply mod
     var integrityResult by remember { mutableStateOf<DLavieIntegrityAnalyzer.AnalysisResult?>(null) }
     var pendingModAfterAnalysis by remember { mutableStateOf<ModPatch?>(null) }
 
@@ -493,7 +493,7 @@ fun DlcScreen(
         )
     }
 
-    // v7.9.39: Integrity Analysis Dialog — muncul saat user klik Update mod
+    // v7.9.39: Play Protect Dialog — muncul saat user klik Update mod
     // dan ada masalah (foreign data, signature mismatch, dll)
     integrityResult?.let { result ->
         IntegrityAnalysisDialog(

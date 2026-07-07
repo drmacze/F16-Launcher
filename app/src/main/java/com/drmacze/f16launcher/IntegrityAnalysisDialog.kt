@@ -94,14 +94,14 @@ fun IntegrityAnalysisDialog(
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "DLavie Integrity Analysis",
+                            "DLavie Play Protect",
                             color = Color.White,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Black,
                             fontFamily = InterFontFamily
                         )
                         Text(
-                            "Analisis real-time • ${result.timestampFormatted}",
+                            "Cek real-time • ${result.timestampFormatted}",
                             color = Color(0xFF6B7280),
                             fontSize = 10.sp,
                             fontFamily = InterFontFamily
@@ -286,71 +286,129 @@ fun IntegrityAnalysisDialog(
                     PermissionRow("INTERNET", !perms.missingOptional.contains("android.permission.INTERNET"), critical = false)
                     PermissionRow("FOREGROUND_SERVICE", !perms.missingOptional.contains("android.permission.FOREGROUND_SERVICE"), critical = false)
                 }
-                if (perms.needsManageStorageSettings) {
+
+                // v7.9.48: Button "Buka Settings" — SELALU muncul kalau ada permission critical missing
+                // MANAGE_EXTERNAL_STORAGE + REQUEST_INSTALL_PACKAGES tidak bisa di-request via runtime,
+                // HARUS buka Settings Android. Button ini langsung buka Settings.
+                val hasCriticalMissing = perms.missingCritical.isNotEmpty()
+                if (hasCriticalMissing) {
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = Color(0xFFFFB74D).copy(alpha = 0.1f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB74D).copy(alpha = 0.3f))
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB74D).copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
                     ) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
-                                "⚠ MANAGE_EXTERNAL_STORAGE perlu di-enable via Settings Android (Android 11+)",
+                                "⚠ Permission penting belum di-grant. Tap button di bawah untuk buka Settings Android dan enable:",
                                 color = Color(0xFFFFB74D),
                                 fontSize = 10.sp,
-                                fontFamily = InterFontFamily
+                                fontFamily = InterFontFamily,
+                                lineHeight = 14.sp
                             )
-                            // v7.9.47: Button langsung buka Settings Android
-                            Button(
-                                onClick = {
-                                    try {
-                                        val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                                            data = android.net.Uri.parse("package:${context.packageName}")
-                                            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                                        }
-                                        context.startActivity(intent)
-                                    } catch (e: Exception) {
-                                        // Fallback: buka general storage settings
+                            // Button 1: Buka Settings All Files Access (untuk MANAGE_EXTERNAL_STORAGE)
+                            if (perms.missingCritical.contains("android.permission.MANAGE_EXTERNAL_STORAGE")) {
+                                Button(
+                                    onClick = {
                                         try {
-                                            val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
+                                            val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                                data = android.net.Uri.parse("package:${context.packageName}")
                                                 flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                                             }
                                             context.startActivity(intent)
-                                        } catch (_: Exception) {
-                                            android.widget.Toast.makeText(context, "Buka Settings > Apps > DLavie > Storage", android.widget.Toast.LENGTH_LONG).show()
+                                        } catch (e: Exception) {
+                                            try {
+                                                val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
+                                                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                                }
+                                                context.startActivity(intent)
+                                            } catch (_: Exception) {
+                                                android.widget.Toast.makeText(context, "Buka Settings > Apps > DLavie > Storage", android.widget.Toast.LENGTH_LONG).show()
+                                            }
                                         }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFFFB74D),
+                                        contentColor = Color.Black
+                                    ),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text("Buka Settings Storage", fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                                        Text("Enable 'Allow access to manage all files'", fontSize = 9.sp, fontFamily = InterFontFamily)
                                     }
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFFFFB74D),
-                                    contentColor = Color.Black
-                                ),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Icon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Buka Settings untuk Grant", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                                }
                             }
+                            // Button 2: Buka Settings Install Unknown Apps (untuk REQUEST_INSTALL_PACKAGES)
+                            if (perms.missingCritical.contains("android.permission.REQUEST_INSTALL_PACKAGES")) {
+                                Button(
+                                    onClick = {
+                                        try {
+                                            val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                                                data = android.net.Uri.parse("package:${context.packageName}")
+                                                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                            }
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            // Fallback: buka general unknown sources settings
+                                            try {
+                                                val intent = android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS).apply {
+                                                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                                }
+                                                context.startActivity(intent)
+                                                android.widget.Toast.makeText(context, "Cari 'Install unknown apps' > DLavie > Allow", android.widget.Toast.LENGTH_LONG).show()
+                                            } catch (_: Exception) {
+                                                android.widget.Toast.makeText(context, "Buka Settings > Security > Install unknown apps > DLavie", android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFFFB74D),
+                                        contentColor = Color.Black
+                                    ),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                                ) {
+                                    Icon(Icons.Rounded.InstallMobile, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text("Buka Settings Install Apps", fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                                        Text("Allow 'Install unknown apps' untuk DLavie", fontSize = 9.sp, fontFamily = InterFontFamily)
+                                    }
+                                }
+                            }
+                            Text(
+                                "Setelah grant, kembali ke Launcher dan tap 'Re-Check' untuk refresh status.",
+                                color = Color(0xFFB8BCC8),
+                                fontSize = 9.sp,
+                                fontFamily = InterFontFamily,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                            )
                         }
                     }
                 }
-                // v7.9.47: Button untuk request permission umum (POST_NOTIFICATIONS, dll)
-                if (perms.missingCritical.isNotEmpty() || perms.missingOptional.isNotEmpty()) {
-                    if (!perms.needsManageStorageSettings) {
-                        Button(
-                            onClick = { onRequestPermission() },
-                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF4CAF50),
-                                contentColor = Color.Black
-                            ),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Grant Permissions Sekarang", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
-                        }
+
+                // v7.9.48: Button request runtime permissions (POST_NOTIFICATIONS, WAKE_LOCK, dll)
+                // Hanya muncul kalau ada optional permission missing DAN tidak ada critical missing
+                if (perms.missingOptional.isNotEmpty() && !hasCriticalMissing) {
+                    Button(
+                        onClick = { onRequestPermission() },
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF4CAF50),
+                            contentColor = Color.Black
+                        ),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
+                        Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Grant Permissions Lainnya", fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
                     }
                 }
 
@@ -489,7 +547,8 @@ fun IntegrityAnalysisDialog(
 
                 Spacer(Modifier.height(4.dp))
 
-                // ─── Action Buttons ───
+                // ─── Action Buttons (v7.9.48: 2 baris supaya teks tidak terpotong) ───
+                // Baris 1: Cancel + Re-Check (50/50)
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -504,11 +563,12 @@ fun IntegrityAnalysisDialog(
                             contentColor = Color(0xFFB8BCC8)
                         )
                     ) {
+                        Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
                         Text("Batal", fontFamily = InterFontFamily, fontSize = 12.sp)
                     }
 
-                    // v7.9.47: Re-Check button — re-run analysis setelah user install/grant permission
-                    // User bisa klik ini setelah install APK/data/permission untuk refresh status
+                    // Re-Check button — re-run analysis setelah user install/grant permission
                     OutlinedButton(
                         onClick = { if (!isProcessing) onDismiss() },
                         modifier = Modifier.weight(1f),
@@ -520,76 +580,78 @@ fun IntegrityAnalysisDialog(
                     ) {
                         Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Re-Check", fontFamily = InterFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Re-Check", fontFamily = InterFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
+                }
 
-                    // Continue button (conditional enabled)
-                    val canContinue = when (result.status) {
-                        DLavieIntegrityAnalyzer.AnalysisStatus.OK -> true
-                        DLavieIntegrityAnalyzer.AnalysisStatus.NEEDS_PERMISSIONS -> false
-                        DLavieIntegrityAnalyzer.AnalysisStatus.NEEDS_CLEANUP -> agreeCleanup && !isProcessing
-                        DLavieIntegrityAnalyzer.AnalysisStatus.BLOCKED -> false
-                    }
+                // Baris 2: Continue (full-width)
+                Spacer(Modifier.height(8.dp))
+                val canContinue = when (result.status) {
+                    DLavieIntegrityAnalyzer.AnalysisStatus.OK -> true
+                    DLavieIntegrityAnalyzer.AnalysisStatus.NEEDS_PERMISSIONS -> false
+                    DLavieIntegrityAnalyzer.AnalysisStatus.NEEDS_CLEANUP -> agreeCleanup && !isProcessing
+                    DLavieIntegrityAnalyzer.AnalysisStatus.BLOCKED -> false
+                }
 
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                isProcessing = true
-                                processLog = ""
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isProcessing = true
+                            processLog = ""
 
-                                // Jika perlu backup + cleanup, kerjakan dulu
-                                if (result.status == DLavieIntegrityAnalyzer.AnalysisStatus.NEEDS_CLEANUP) {
-                                    if (agreeBackup) {
-                                        processLog += "[1/3] Backup data lama...\n"
-                                        val backupPath = withContext(Dispatchers.IO) {
-                                            DLavieIntegrityAnalyzer.backupForeignGameData()
-                                        }
-                                        processLog += if (backupPath != null) {
-                                            "[1/3] ✓ Backup selesai: $backupPath\n"
-                                        } else {
-                                            "[1/3] ⚠ Backup gagal, lanjut cleanup\n"
-                                        }
+                            // Jika perlu backup + cleanup, kerjakan dulu
+                            if (result.status == DLavieIntegrityAnalyzer.AnalysisStatus.NEEDS_CLEANUP) {
+                                if (agreeBackup) {
+                                    processLog += "[1/3] Backup data lama...\n"
+                                    val backupPath = withContext(Dispatchers.IO) {
+                                        DLavieIntegrityAnalyzer.backupForeignGameData()
+                                    }
+                                    processLog += if (backupPath != null) {
+                                        "[1/3] ✓ Backup selesai: $backupPath\n"
                                     } else {
-                                        processLog += "[1/3] Skip backup (user pilih)\n"
+                                        "[1/3] ⚠ Backup gagal, lanjut cleanup\n"
                                     }
-
-                                    processLog += "[2/3] Hapus data foreign...\n"
-                                    val cleanupResult = withContext(Dispatchers.IO) {
-                                        DLavieIntegrityAnalyzer.cleanupForeignGameData()
-                                    }
-                                    processLog += "[2/3] ✓ ${cleanupResult.deletedFiles} file dihapus, ${cleanupResult.failedFiles} gagal\n"
-
-                                    processLog += "[3/3] Selesai. Melanjutkan install...\n"
+                                } else {
+                                    processLog += "[1/3] Skip backup (user pilih)\n"
                                 }
 
-                                isProcessing = false
-                                onContinue()
+                                processLog += "[2/3] Hapus data foreign...\n"
+                                val cleanupResult = withContext(Dispatchers.IO) {
+                                    DLavieIntegrityAnalyzer.cleanupForeignGameData()
+                                }
+                                processLog += "[2/3] ✓ ${cleanupResult.deletedFiles} file dihapus, ${cleanupResult.failedFiles} gagal\n"
+
+                                processLog += "[3/3] Selesai. Melanjutkan install...\n"
                             }
+
+                            isProcessing = false
+                            onContinue()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = canContinue,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = when (result.status) {
+                            DLavieIntegrityAnalyzer.AnalysisStatus.OK -> Color(0xFF4CAF50)
+                            DLavieIntegrityAnalyzer.AnalysisStatus.NEEDS_CLEANUP -> Color(0xFFFF5252)
+                            else -> Color(0xFF6B7280)
+                        }
+                    ),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 14.dp)
+                ) {
+                    Text(
+                        when (result.status) {
+                            DLavieIntegrityAnalyzer.AnalysisStatus.OK -> "Lanjut Install"
+                            DLavieIntegrityAnalyzer.AnalysisStatus.NEEDS_CLEANUP -> "Backup & Cleanup"
+                            DLavieIntegrityAnalyzer.AnalysisStatus.NEEDS_PERMISSIONS -> "Permission Kurang"
+                            DLavieIntegrityAnalyzer.AnalysisStatus.BLOCKED -> "Ditolak"
                         },
-                        modifier = Modifier.weight(1f),
-                        enabled = canContinue,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = when (result.status) {
-                                DLavieIntegrityAnalyzer.AnalysisStatus.OK -> Color(0xFF4CAF50)
-                                DLavieIntegrityAnalyzer.AnalysisStatus.NEEDS_CLEANUP -> Color(0xFFFF5252)
-                                else -> Color(0xFF6B7280)
-                            }
-                        )
-                    ) {
-                        Text(
-                            when (result.status) {
-                                DLavieIntegrityAnalyzer.AnalysisStatus.OK -> "Lanjut Install"
-                                DLavieIntegrityAnalyzer.AnalysisStatus.NEEDS_CLEANUP -> "Backup & Cleanup"
-                                DLavieIntegrityAnalyzer.AnalysisStatus.NEEDS_PERMISSIONS -> "Permission Kurang"
-                                DLavieIntegrityAnalyzer.AnalysisStatus.BLOCKED -> "Ditolak"
-                            },
-                            color = Color.White,
-                            fontFamily = InterFontFamily,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                        color = Color.White,
+                        fontFamily = InterFontFamily,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
