@@ -139,6 +139,126 @@ object AppUpdateChecker {
         val apkFile = File(cacheDir, "dlavie-update.apk")
         if (apkFile.exists()) apkFile.delete()
 
+        // v7.9.41: Improved download dengan retry + better redirect handling
+        // GitHub release URLs redirect ke release-assets.githubusercontent.com dengan signed URL
+        // yang expire cepat. Kita follow redirect manual, retry kalau gagal.
+        var lastError: String? = null
+        val maxRetries = 3
+
+        for (attempt in 1..maxRetries) {
+            try {
+                android.util.Log.i("AppUpdate", "Download attempt $attempt/$maxRetries: $apkUrl")
+                val success = downloadApkAttempt(apkUrl, apkFile, onProgress)
+                if (success && apkFile.length() > 1_000_000) {
+                    android.util.Log.i("AppUpdate", "✓ Download success: ${apkFile.length()} bytes")
+                    return apkFile
+                } else if (apkFile.exists()) {
+                    apkFile.delete()
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("AppUpdate", "Attempt $attempt failed: ${e.message}")
+                lastError = e.message
+                if (apkFile.exists()) apkFile.delete()
+                // Wait sebelum retry (backoff)
+                if (attempt < maxRetries) {
+                    kotlinx.coroutines.delay(2000L * attempt)
+                }
+            }
+        }
+
+        // Semua retry gagal
+        throw Exception(lastError ?: "Download failed after $maxRetries attempts")
+    }
+
+    /**
+     * Single download attempt — follow redirects manual, return true kalau sukses.
+     */
+    private fun downloadApkAttempt(
+        apkUrl: String,
+        apkFile: File,
+        onProgress: ((Float) -> Unit)?
+    ): Boolean {
+        var currentUrl = apkUrl
+        var redirectCount = 0
+        var conn: HttpURLConnection? = null
+
+        try {
+            while (true) {
+                val url = URL(currentUrl)
+                conn = (url.openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = false  // handle manual supaya bisa track
+                    connectTimeout = 30_000
+                    readTimeout = 120_000
+                    setRequestProperty("User-Agent", "DLavie-Launcher/7.9.41 (Android)")
+                    setRequestProperty("Accept", "application/vnd.android.package-archive, application/octet-stream, */*")
+                    // Allow inline download (jangan paksa attachment)
+                    setRequestProperty("Accept-Encoding", "identity")
+                    connect()
+                }
+
+                val responseCode = conn.responseCode
+
+                // Handle redirect (300-399)
+                if (responseCode in 300..399) {
+                    val location = conn.getHeaderField("Location")
+                    conn.disconnect()
+                    conn = null
+                    if (location.isNullOrBlank()) {
+                        throw Exception("Redirect tanpa Location header (HTTP $responseCode)")
+                    }
+                    if (redirectCount >= 5) {
+                        throw Exception("Too many redirects (max 5)")
+                    }
+                    android.util.Log.d("AppUpdate", "Redirect $redirectCount → $location")
+                    currentUrl = location
+                    redirectCount++
+                    continue
+                }
+
+                // Check error responses
+                if (responseCode == 404) {
+                    throw Exception("File tidak ditemukan di server (HTTP 404). Release mungkin belum published.")
+                }
+                if (responseCode == 403) {
+                    throw Exception("Akses ditolak (HTTP 403). Signed URL mungkin expired, retry...")
+                }
+                if (responseCode !in 200..299) {
+                    throw Exception("Server return HTTP $responseCode")
+                }
+
+                // Response 200-299, start download
+                android.util.Log.i("AppUpdate", "Connected HTTP $responseCode, downloading...")
+                val total = conn.contentLengthLong.toFloat().coerceAtLeast(1f)
+                android.util.Log.d("AppUpdate", "Content-Length: ${conn.contentLengthLong} bytes")
+
+                val buf = ByteArray(32 * 1024)  // 32KB buffer (lebih besar dari 16KB)
+                conn.inputStream.use { inp ->
+                    apkFile.outputStream().use { out ->
+                        var n: Int
+                        var read = 0L
+                        while (inp.read(buf).also { n = it } != -1) {
+                            out.write(buf, 0, n)
+                            read += n
+                            onProgress?.invoke((read / total).coerceIn(0f, 0.99f))
+                        }
+                    }
+                }
+                return true
+            }
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    /**
+     * [Legacy] Download APK ke cache dir dengan progress callback.
+     * Deprecated: pakai downloadApk() di atas yang ada retry logic.
+     */
+    suspend fun downloadApkLegacy(context: Context, apkUrl: String, onProgress: ((Float) -> Unit)? = null): File? {
+        val cacheDir = File(context.cacheDir, "app-updates").also { it.mkdirs() }
+        val apkFile = File(cacheDir, "dlavie-update.apk")
+        if (apkFile.exists()) apkFile.delete()
+
         // Follow redirects manually (GitHub release URLs redirect to objects.githubusercontent.com)
         var currentUrl = apkUrl
         var redirectCount = 0

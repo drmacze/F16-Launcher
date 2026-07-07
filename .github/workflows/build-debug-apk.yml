@@ -257,3 +257,32 @@ jobs:
             }'
           echo "✓ Inserted app_releases row — update popup will appear on devices running v185 or older"
 
+
+      - name: Auto-upload APK to public repo + update manifest
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+        shell: bash
+        run: |
+          # Find APK (location varies between Gradle versions)
+          APK_FILE=$(find app/build/outputs/apk -name "*.apk" | head -1)
+          if [ -z "$APK_FILE" ]; then
+            echo "⚠ No APK found, skip auto-upload"
+            exit 0
+          fi
+          
+          # Extract versionCode and versionName from build.gradle
+          VC=$(grep "versionCode" app/build.gradle | head -1 | grep -oE '[0-9]+')
+          VN=$(grep "versionName" app/build.gradle | head -1 | sed 's/.*versionName\s*["\x27]//;s/["\x27].*//')
+          
+          echo "Detected: versionCode=$VC, versionName=$VN"
+          
+          # Run upload script
+          GITHUB_TOKEN="${{ secrets.GH_PAT }}" \
+          APK_PATH="$APK_FILE" \
+          VERSION_CODE="$VC" \
+          VERSION_NAME="$VN" \
+          python3 scripts/auto_upload_to_public_repo.py || {
+            echo "⚠ Auto-upload failed (non-fatal), manual update required"
+            exit 0
+          }
