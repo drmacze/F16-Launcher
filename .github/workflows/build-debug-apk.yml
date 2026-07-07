@@ -90,15 +90,25 @@ jobs:
         if: success()
         shell: bash
         run: |
-          # Decode keystore from secret
-          echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > /tmp/dlavie.keystore
+          # v7.9.39: Fallback to debug-signed APK jika keystore secret tidak tersedia
+          # Debug APK sudah auto-signed oleh Gradle dengan debug keystore, jadi
+          # tetap bisa di-install. Untuk production release, gunakan release workflow.
           
-          # Find the built APK
           APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
           if [ -z "$APK_FILE" ]; then
             echo "No APK found to sign"
             exit 1
           fi
+          
+          # Cek apakah secret signing keystore tersedia
+          if [ -z "${{ secrets.SIGNING_KEYSTORE }}" ]; then
+            echo "⚠ SIGNING_KEYSTORE secret tidak tersedia, gunakan debug-signed APK"
+            echo "✅ Debug APK tetap bisa di-install (signed dengan debug keystore)"
+            exit 0
+          fi
+          
+          # Decode keystore from secret
+          echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > /tmp/dlavie.keystore
           
           echo "Signing $APK_FILE with fixed keystore..."
           
@@ -112,7 +122,11 @@ jobs:
             --ks-pass pass:${{ secrets.SIGNING_KEYSTORE_PASSWORD }} \
             --key-pass pass:${{ secrets.SIGNING_KEY_PASSWORD }} \
             --out /tmp/dlavie-signed.apk \
-            /tmp/aligned.apk
+            /tmp/aligned.apk || {
+              echo "⚠ apksigner failed, fallback to debug-signed APK"
+              rm -f /tmp/dlavie.keystore /tmp/aligned.apk
+              exit 0
+            }
           
           # Replace original APK with signed version
           cp /tmp/dlavie-signed.apk "$APK_FILE"
@@ -120,7 +134,7 @@ jobs:
           # Verify signature
           ${ANDROID_HOME}/build-tools/35.0.0/apksigner verify --print-certs "$APK_FILE" | head -5
           
-          echo "✅ APK signed with fixed keystore (SHA1: 39:21:FE:4D:2F:E3:E1:C9:79:C0:DD:FF:EA:2C:A4:6A:C3:2A:24:61)"
+          echo "✅ APK signed with fixed keystore"
           
           # Cleanup
           rm -f /tmp/dlavie.keystore /tmp/aligned.apk /tmp/dlavie-signed.apk
