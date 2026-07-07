@@ -65,7 +65,17 @@ object DLavieIntegrityAnalyzer {
      * Hash ini didapat dari APK original yang sudah verified working di Android 16.
      * Repackaged/forked APK akan punya signature berbeda → ditolak.
      */
-    private const val EXPECTED_APK_SIGNATURE_SHA256 = "cd40e88e97383347e7c8638016a8c95192bd475199a5f1b02fdd76cb34b91674"
+    /**
+     * SHA-256 dari signing certificate APK DLavie26.apk original.
+     *
+     * v7.9.46 FIX: Sebelumnya pakai hash CERT.RSA file keseluruhan (cd40e88e...) yang SALAH.
+     * Android API (Signature.toByteArray()) return DER-encoded certificate, bukan whole PKCS#7.
+     * Hash yang benar: a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc
+     *
+     * Certificate: CN=Android, O=Android (Android debug key — original dari ChatGpt APK)
+     * SHA-1: 61ed377e85d386a8dfee6b864bd85b0bfaa5af81
+     */
+    private const val EXPECTED_APK_SIGNATURE_SHA256 = "a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc"
 
     /**
      * SHA-256 dari whole APK file DLavie26.apk original.
@@ -122,16 +132,20 @@ object DLavieIntegrityAnalyzer {
         val gameDataStatus = analyzeGameData()
         val permissionAudit = auditPermissions(context)
 
-        // Determine overall status
+        // v7.9.46: Determine overall status — LEBIH PERMISIF
+        // Signature check DISABLED (terlalu banyak false positive antara
+        // debug/release signing scheme v1/v2/v3). Fokus ke marker file check.
+        //
+        // Status logic:
+        // - OK = default (allow install/update)
+        // - NEEDS_PERMISSIONS = critical permissions missing
+        // - NEEDS_CLEANUP = ada game data TAPI tidak ada DLavie marker (foreign data)
+        // - BLOCKED = tidak pernah (disabled, biar user tidak terkunci)
         val status = when {
-            apkVerification == ApkVerificationStatus.BLOCKED ->
-                AnalysisStatus.BLOCKED
-            apkVerification == ApkVerificationStatus.NOT_INSTALLED && gameDataStatus.hasForeignData ->
-                AnalysisStatus.NEEDS_CLEANUP
-            apkVerification == ApkVerificationStatus.VERIFIED && gameDataStatus.hasForeignData && !gameDataStatus.hasDlavieDataMarker ->
-                AnalysisStatus.NEEDS_CLEANUP
             permissionAudit.missingCritical.isNotEmpty() ->
                 AnalysisStatus.NEEDS_PERMISSIONS
+            gameDataStatus.hasForeignData && !gameDataStatus.hasDlavieDataMarker ->
+                AnalysisStatus.NEEDS_CLEANUP
             else -> AnalysisStatus.OK
         }
 
@@ -234,24 +248,32 @@ object DLavieIntegrityAnalyzer {
         val existingOriginalFiles = DLAVIE_ORIGINAL_FILES.map { File(it) }.filter { it.exists() }
         val hasOriginalData = existingOriginalFiles.size >= 2  // minimal 2 file original ada
 
+        // v7.9.46: Cek OBB files sebagai indikator install via DLavie Launcher
+        // User yang install via DLavie Launcher (GameHub) akan punya OBB files
+        // (main.13 + patch.26) karena di-download dari release v26.
+        val obbMain = File("$DLAVIE_OBB_PATH/main.13.com.ea.gp.fifaworld.obb")
+        val obbPatch = File("$DLAVIE_OBB_PATH/patch.26.com.ea.gp.fifaworld.obb")
+        val hasObbFiles = obbMain.exists() || obbPatch.exists()
+
         // Cek foreign data indicators
-        // Foreign = ada file game data TAPI tidak ada marker DLavie
+        // Foreign = ada file game data TAPI:
+        //   - tidak ada marker DLavie (DevPatchEngine)
+        //   - tidak ada marker patch (ModPatchDownloader)
+        //   - tidak ada OBB files (DLavie Launcher installer)
+        // Jika ada OBB files → anggap install via DLavie Launcher → NOT foreign
         val hasAnyGameData = (gameDataDir.exists() && (gameDataDir.listFiles()?.isNotEmpty() == true)) ||
                             (gameFilesDir.exists() && (gameFilesDir.listFiles()?.isNotEmpty() == true)) ||
                             (obbDir.exists() && (obbDir.listFiles()?.isNotEmpty() == true))
 
-        val hasForeignData = hasAnyGameData && !hasDlavieDataMarker
+        val hasDlavieIndicator = hasDlavieDataMarker || hasDlaviePatchMarker || hasObbFiles || hasOriginalData
+        val hasForeignData = hasAnyGameData && !hasDlavieIndicator
 
         // Cek mod files dari sumber lain (non-DLavie)
         val suspiciousFiles = mutableListOf<String>()
-        if (hasAnyGameData) {
-            // Scan for suspicious files (misal: file .lua yang bukan dari DLavie patches)
-            // Untuk sekarang, kita anggap suspicious kalau ada data tanpa marker
-            if (hasForeignData) {
-                gameDataDir.walkTopDown().take(20).forEach { f ->
-                    if (f.isFile && !f.name.startsWith(".")) {
-                        suspiciousFiles.add(f.absolutePath)
-                    }
+        if (hasAnyGameData && hasForeignData) {
+            gameDataDir.walkTopDown().take(20).forEach { f ->
+                if (f.isFile && !f.name.startsWith(".")) {
+                    suspiciousFiles.add(f.absolutePath)
                 }
             }
         }
@@ -260,6 +282,7 @@ object DLavieIntegrityAnalyzer {
         val status = when {
             !hasAnyGameData -> GameDataStatusType.NO_DATA
             hasDlavieDataMarker && hasOriginalData -> GameDataStatusType.DLAVIE_ORIGINAL
+            hasObbFiles && hasOriginalData -> GameDataStatusType.DLAVIE_ORIGINAL  // install via Launcher, no marker
             hasForeignData -> GameDataStatusType.FOREIGN_DATA
             else -> GameDataStatusType.INCOMPLETE
         }
