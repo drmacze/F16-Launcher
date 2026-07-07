@@ -470,6 +470,11 @@ private fun GuidedLoginScreen(
             // lalu klik "Connect to Launcher" → token dikirim ke launcher via deep link.
             // Launcher terima token → simpan di EncryptedSharedPreferences → auto-login.
             // Token persist across app updates (EncryptedSharedPreferences tidak dihapus saat update).
+            //
+            // v7.9.53: Tambah "Paste Connect URL" sebagai fallback untuk:
+            // - Launcher versi lama yang tidak ada deep link handler
+            // - Device yang block custom scheme (dlavie://)
+            // - User yang mau connect manual tanpa deep link
             if (mode == "chooser") {
                 // Info text
                 Text(
@@ -517,6 +522,146 @@ private fun GuidedLoginScreen(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 32.dp)
                 )
+
+                // ── v7.9.53: Paste Connect URL (manual fallback) ──
+                // Untuk launcher versi lama yang tidak ada deep link handler,
+                // user bisa copy URL connect dari web dan paste di sini.
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    "── atau connect manual ──",
+                    color = Color.White.copy(alpha = 0.3f),
+                    fontSize = 11.sp,
+                    fontFamily = GuideFont,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+
+                // Toggle untuk show/hide paste field
+                var showPasteField by remember { mutableStateOf(false) }
+                var pasteUrl by remember { mutableStateOf("") }
+                var pasteError by remember { mutableStateOf("") }
+
+                Text(
+                    "Connect Manual (untuk launcher versi lama)",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 13.sp,
+                    fontFamily = GuideFont,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable {
+                        showPasteField = !showPasteField
+                        pasteError = ""
+                    }.padding(vertical = 6.dp)
+                )
+
+                if (showPasteField) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color(0xF0111111),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(0.08f))
+                    ) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                "Copy URL dari web setelah klik \"Connect to DLavie\". URL format: dlavie://connect?token=...&uid=...&refresh=...",
+                                color = Color.White.copy(alpha = 0.5f),
+                                fontSize = 11.sp,
+                                fontFamily = GuideFont
+                            )
+                            OutlinedTextField(
+                                value = pasteUrl,
+                                onValueChange = { pasteUrl = it; pasteError = "" },
+                                placeholder = { Text("dlavie://connect?token=...&uid=...", fontSize = 11.sp) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = false,
+                                minLines = 2,
+                                maxLines = 4,
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    fontSize = 11.sp,
+                                    fontFamily = GuideFont,
+                                    color = Color.White
+                                ),
+                                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    cursorColor = Color.White,
+                                    focusedBorderColor = Color.White.copy(0.5f),
+                                    unfocusedBorderColor = Color.White.copy(0.2f),
+                                    focusedContainerColor = Color(0xFF1A1A1A),
+                                    unfocusedContainerColor = Color(0xFF1A1A1A)
+                                )
+                            )
+                            if (pasteError.isNotEmpty()) {
+                                Text(pasteError, color = Color(0xFFFF5252), fontSize = 11.sp, fontFamily = GuideFont)
+                            }
+                            Button(
+                                onClick = {
+                                    val url = pasteUrl.trim()
+                                    if (url.isBlank()) {
+                                        pasteError = "URL tidak boleh kosong"
+                                        return@Button
+                                    }
+                                    // Parse URL — support both dlavie://connect?... and plain token=...&uid=...
+                                    val uri = try { android.net.Uri.parse(url) } catch (e: Exception) {
+                                        pasteError = "URL tidak valid: ${e.message}"
+                                        return@Button
+                                    }
+                                    val token = uri.getQueryParameter("token")
+                                    val uid = uri.getQueryParameter("uid")
+                                    val refresh = uri.getQueryParameter("refresh") ?: ""
+
+                                    if (token.isNullOrBlank() || uid.isNullOrBlank()) {
+                                        pasteError = "URL tidak berisi token dan uid yang valid"
+                                        return@Button
+                                    }
+
+                                    // Save to SharedPreferences (same as deep link handler)
+                                    context.getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
+                                        .edit()
+                                        .putString("access_token", token)
+                                        .putString("refresh_token", refresh)
+                                        .apply()
+                                    context.getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
+                                        .edit()
+                                        .putString("access_token", token)
+                                        .putString("refresh_token", refresh)
+                                        .putString("user_id", uid)
+                                        .putBoolean("portal_connected", true)
+                                        .putString("portal_connected_at", System.currentTimeMillis().toString())
+                                        .apply()
+
+                                    // Load profile
+                                    try { CommunityApi(context).loadMyProfile() } catch (_: Exception) {}
+
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "✓ DLavie Portal Connected! Welcome.",
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
+
+                                    // Navigate to ModernLauncherActivity
+                                    val intent = android.content.Intent(
+                                        context,
+                                        ModernLauncherActivity::class.java
+                                    ).addFlags(
+                                        android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                                        android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                    )
+                                    context.startActivity(intent)
+                                    (context as? android.app.Activity)?.finish()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color.White,
+                                    contentColor = Color.Black
+                                )
+                            ) {
+                                Text("Connect Manual", fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont)
+                            }
+                        }
+                    }
+                }
             }
 
             // ── Mode: LOGIN / REGISTER / FORGOT (email form) ──
