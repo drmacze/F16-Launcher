@@ -1031,6 +1031,9 @@ fun MainShell(
     var dlProgress by remember { mutableStateOf(-1f) }
     var dlError    by remember { mutableStateOf("") }
 
+    // v7.9.57: Play Protect Install Dialog state
+    var showPlayProtectInstall by remember { mutableStateOf(false) }
+
     fun startDownload() {
         if (dlProgress >= 0f && dlProgress < 2f) return  // already downloading
         dlProgress = 0f; dlError = ""
@@ -1107,6 +1110,18 @@ fun MainShell(
                 }
             }.onFailure { dlError = it.message ?: "Download failed. Check your internet connection."; dlProgress = -1f }
         }
+    }
+
+    // v7.9.57: Play Protect Install Dialog
+    if (showPlayProtectInstall) {
+        PlayProtectInstallDialog(
+            onDismiss = { showPlayProtectInstall = false },
+            onDownloadStart = {
+                showPlayProtectInstall = false
+                startDownload()
+                detailShowActionPanel = true
+            }
+        )
     }
 
     LaunchedEffect(Unit) {
@@ -1423,7 +1438,7 @@ fun MainShell(
                                     }
                                 },
                                 onInstall = {
-                                    // v7.9.13: Cek server status + signal sebelum install
+                                    // v7.9.57: Play Protect running sebelum install
                                     scope.launch {
                                         when (currentGame.serverStatus) {
                                             ServerStatus.MAINTENANCE -> {
@@ -1433,18 +1448,11 @@ fun MainShell(
                                                 android.widget.Toast.makeText(context, "Server ${currentGame.title} sedang offline", android.widget.Toast.LENGTH_LONG).show()
                                             }
                                             else -> {
-                                                // Cek signal strength (auto-detect BUSY)
                                                 val pingMs = withContext(Dispatchers.IO) { pingGameServer(currentGame.packageName) }
                                                 if (PingQuality.isWeakSignal(pingMs)) {
                                                     android.widget.Toast.makeText(context, "Kekuatan sinyalmu lemah, coba lagi nanti", android.widget.Toast.LENGTH_LONG).show()
                                                 } else {
-                                                    // WiFi check before install
-                                                    if (!isWifiConnected(context)) {
-                                                        // Will show WiFi warning dialog (handled in GameDetailScreen)
-                                                        detailShowActionPanel = true
-                                                    } else {
-                                                        detailShowActionPanel = true
-                                                    }
+                                                    showPlayProtectInstall = true
                                                 }
                                             }
                                         }
