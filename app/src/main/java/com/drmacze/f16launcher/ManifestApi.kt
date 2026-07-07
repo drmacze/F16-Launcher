@@ -50,7 +50,7 @@ import java.net.URL
 object ManifestApi {
 
     private const val TAG = "ManifestApi"
-    private const val MANIFEST_URL = "https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/manifest.json"
+    const val MANIFEST_URL = "https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/manifest.json"
     private const val PREFS_NAME = "dlavie_manifest_prefs"
     private const val KEY_CACHED_MANIFEST = "cached_manifest"
     private const val KEY_CACHED_AT = "cached_at"
