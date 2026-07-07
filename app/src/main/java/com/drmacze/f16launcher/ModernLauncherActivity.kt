@@ -435,10 +435,13 @@ class ModernLauncherActivity : ComponentActivity() {
                 android.widget.Toast.LENGTH_LONG
             ).show()
 
+            // v7.9.58 FIX: Clear intent data supaya tidak re-process setelah recreate()
+            // Sebelumnya: recreate() → onCreate() → handlePortalConnectIntent(intent) lagi
+            // → token di-save lagi → toast muncul lagi → loop forever
+            // Fix: set intent ke empty supaya getQueryParameter("token") return null
+            setIntent(Intent(this, ModernLauncherActivity::class.java))
+
             // Re-render UI supaya profile card muncul (bukan halaman login)
-            // ModernLauncherActivity pakai Compose — state change akan trigger recomposition
-            // tapi kita perlu invalidate state yang cek api.loggedIn()
-            // Cara paling simple: recreate activity supaya semua LaunchedEffect jalan lagi
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 recreate()
             }, 800)
