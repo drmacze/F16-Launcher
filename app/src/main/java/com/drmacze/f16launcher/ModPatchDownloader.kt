@@ -152,9 +152,19 @@ object ModPatchDownloader {
             }
 
             // 7. Write marker file
+            // v7.9.38: Wrap dalam try-catch supaya patch tetap dianggap sukses meskipun
+            // marker file gagal ditulis (misalnya gameDataDir tidak writable di emulator
+            // atau path belum ada). Jangan sampai error marker membuat user kira patch
+            // gagal padahal file mod sudah berhasil di-extract.
             onProgress(0.95f)
-            val marker = File(gameDataDir, MARKER_FILE)
-            marker.writeText("${versionName.ifBlank { "unknown" }}\n${System.currentTimeMillis()}\n$filesApplied files")
+            try {
+                val marker = File(gameDataDir, MARKER_FILE)
+                if (!gameDataDir.exists()) gameDataDir.mkdirs()
+                marker.writeText("${versionName.ifBlank { "unknown" }}\n${System.currentTimeMillis()}\n$filesApplied files")
+            } catch (e: Exception) {
+                Log.w(TAG, "Marker file gagal ditulis (non-fatal): ${e.message}")
+                // Tetap lanjut — patch sudah sukses, marker hanya bonus
+            }
 
             // 8. Cleanup
             zipFile.delete()
