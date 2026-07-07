@@ -70,6 +70,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.layout.offset
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -290,6 +292,8 @@ private val GuideGlassStrokeHi = Color(0x33FFFFFF)// --glass-stroke-hi (rgba 0.2
 private val GuideHairline = Color(0x0DFFFFFF)     // --hairline (rgba 0.05)
 private val GuideFont = FontFamily.SansSerif      // Web pakai Clash Display + Space Grotesk, tapi Android pakai system sans (cukup similar)
 private val GuideEase = androidx.compose.animation.core.CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
+// Alias untuk backward compat (sebelumnya pakai GuideBorder)
+private val GuideBorder = GuideGlassStroke
 
 @Composable
 private fun DLavieGuidedApp(deepLinkResult: String? = null) {
@@ -444,8 +448,11 @@ private fun GuidedLoginScreen(
             Modifier
                 .size(800.dp)
                 .align(Alignment.TopEnd)
-                .offset(x = (orbX1).dp, y = (-200 + orbX1 * 0.5f).dp)
-                .graphicsLayer { scaleX = orbScale1; scaleY = orbScale1 }
+                .offset(x = orbX1.dp, y = (-200 + orbX1 * 0.5f).dp)
+                .graphicsLayer {
+                    this.scaleX = orbScale1
+                    this.scaleY = orbScale1
+                }
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
@@ -481,7 +488,10 @@ private fun GuidedLoginScreen(
                 .size(800.dp)
                 .align(Alignment.BottomStart)
                 .offset(x = (-200 + orbX2).dp, y = (200 - orbX2 * 0.5f).dp)
-                .graphicsLayer { scaleX = orbScale2; scaleY = orbScale2 }
+                .graphicsLayer {
+                    this.scaleX = orbScale2
+                    this.scaleY = orbScale2
+                }
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
