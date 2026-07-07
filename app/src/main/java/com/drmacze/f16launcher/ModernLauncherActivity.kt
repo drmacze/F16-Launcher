@@ -509,7 +509,7 @@ fun DLavieModernApp(initialPostId: String? = null) {
      * v7.9.42: Fungsi manual check update — bisa dipanggil dari UI (tombol "Cek Update")
      * Force check ke server, ignore dismissed_version_code, tampilkan popup kalau ada update.
      */
-    fun manualCheckForUpdate() {
+    val onManualCheckForUpdate: () -> Unit = {
         manualCheckLoading = true
         manualCheckMessage = "Mengecek update..."
         updateScope.launch {
@@ -1522,7 +1522,7 @@ fun MainShell(
                                                 showGameDetail           = true
                                             }
                                         )
-                                    Page.DLC -> DlcScreen(api, maintenanceInfo = maintenanceInfo, onCheckForUpdate = { manualCheckForUpdate() }, onNav  = { page = it })
+                                    Page.DLC -> DlcScreen(api, maintenanceInfo = maintenanceInfo, onCheckForUpdate = onManualCheckForUpdate, onNav  = { page = it })
                                     Page.GameHub -> GameHubScreen(
                                             onNav = { page = it },
                                             onGameClick = { gamePackage ->

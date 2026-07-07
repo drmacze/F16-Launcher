@@ -677,24 +677,23 @@ private fun DlcHeader() {
 
         // v7.9.42: Tombol "Cek Update Launcher" — manual trigger popup update
         // User bisa force check kalau popup tidak muncul otomatis
-        OutlinedButton(
+        TextButton(
             onClick = { onCheckForUpdate() },
             shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = DlcAccent,
-                containerColor = Color.Transparent
+            colors = ButtonDefaults.textButtonColors(
+                contentColor = DlcText,
+                containerColor = DlcCardBgAlt
             ),
-            border = androidx.compose.foundation.BorderStroke(1.dp, DlcAccent.copy(alpha = 0.4f)),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
         ) {
             Icon(
-                Icons.Rounded.SystemUpdate,
+                Icons.Rounded.Refresh,
                 contentDescription = null,
                 modifier = Modifier.size(14.dp)
             )
             Spacer(Modifier.width(6.dp))
             Text(
-                "Cek Update Launcher",
+                "Cek Update",
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = InterFontFamily
