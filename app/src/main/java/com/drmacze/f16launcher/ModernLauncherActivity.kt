@@ -506,35 +506,10 @@ fun DLavieModernApp(initialPostId: String? = null) {
     val updatePrefs = remember { context.getSharedPreferences("dlavie_update_prefs", Context.MODE_PRIVATE) }
 
     /**
-     * v7.9.42: Fungsi manual check update — bisa dipanggil dari UI (tombol "Cek Update")
+     * v7.9.42: Manual check update logic — dipanggil dari tombol "Cek Update" di DLC tab.
      * Force check ke server, ignore dismissed_version_code, tampilkan popup kalau ada update.
+     * Implementasi inline di DlcScreen call site (lihat Page.DLC di MainShell).
      */
-    val onManualCheckForUpdate: () -> Unit = {
-        manualCheckLoading = true
-        manualCheckMessage = "Mengecek update..."
-        updateScope.launch {
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    val info = AppUpdateChecker.checkForUpdate(api)
-                    if (info != null && info.isUpdateAvailable) {
-                        // v7.9.42: Manual check ALWAYS show popup (ignore dismissed)
-                        updateInfo = info
-                        showUpdatePopup = true
-                        manualCheckMessage = "Update tersedia: v${info.versionName}"
-                    } else {
-                        manualCheckMessage = "Launcher sudah versi terbaru (v${BuildConfig.VERSION_CODE})"
-                    }
-                }.onFailure { e ->
-                    manualCheckMessage = "Gagal cek update: ${e.message}"
-                    android.util.Log.w("AppUpdate", "Manual check failed", e)
-                }
-            }
-            manualCheckLoading = false
-            // Clear message after 5 seconds
-            kotlinx.coroutines.delay(5000L)
-            manualCheckMessage = ""
-        }
-    }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -1522,7 +1497,36 @@ fun MainShell(
                                                 showGameDetail           = true
                                             }
                                         )
-                                    Page.DLC -> DlcScreen(api, maintenanceInfo = maintenanceInfo, onCheckForUpdate = onManualCheckForUpdate, onNav  = { page = it })
+                                    Page.DLC -> DlcScreen(
+                                        api,
+                                        maintenanceInfo = maintenanceInfo,
+                                        onCheckForUpdate = {
+                                            // v7.9.42: Manual check update — force check, ignore dismissed
+                                            manualCheckLoading = true
+                                            manualCheckMessage = "Mengecek update..."
+                                            updateScope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    runCatching {
+                                                        val info = AppUpdateChecker.checkForUpdate(api)
+                                                        if (info != null && info.isUpdateAvailable) {
+                                                            updateInfo = info
+                                                            showUpdatePopup = true
+                                                            manualCheckMessage = "Update tersedia: v${info.versionName}"
+                                                        } else {
+                                                            manualCheckMessage = "Launcher sudah versi terbaru (v${BuildConfig.VERSION_CODE})"
+                                                        }
+                                                    }.onFailure { e ->
+                                                        manualCheckMessage = "Gagal cek update: ${e.message}"
+                                                        android.util.Log.w("AppUpdate", "Manual check failed", e)
+                                                    }
+                                                }
+                                                manualCheckLoading = false
+                                                kotlinx.coroutines.delay(5000L)
+                                                manualCheckMessage = ""
+                                            }
+                                        },
+                                        onNav  = { page = it }
+                                    )
                                     Page.GameHub -> GameHubScreen(
                                             onNav = { page = it },
                                             onGameClick = { gamePackage ->
