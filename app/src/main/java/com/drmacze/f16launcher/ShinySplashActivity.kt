@@ -82,31 +82,83 @@ class ShinySplashActivity : ComponentActivity() {
             val webRefresh = portalData.getQueryParameter("refresh") ?: ""
 
             if (!webToken.isNullOrBlank() && !webUid.isNullOrBlank()) {
-                // Save token to both prefs (dlavie_auth_session + dlavie_community)
-                // so CommunityApi.loggedIn() returns true
-                getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
-                    .edit()
+                // v7.9.60 FIX: Proper account connection (sama dengan ModernLauncherActivity)
+                // Sebelumnya: loadMyProfile() gagal silently → profile kosong
+                // Sekarang: clear old data → save new token → decode JWT → load OR create profile
+                
+                // Step 1: Decode JWT untuk dapat email
+                var email = ""
+                try {
+                    val parts = webToken.split(".")
+                    if (parts.size >= 2) {
+                        val payload = parts[1]
+                        val padded = payload + "=".repeat((4 - payload.length % 4) % 4)
+                        val decoded = android.util.Base64.decode(padded, android.util.Base64.URL_SAFE)
+                        val jwt = org.json.JSONObject(String(decoded))
+                        email = jwt.optString("email", "")
+                    }
+                } catch (_: Exception) {}
+
+                // Step 2: Clear prefs lama (preserve accounts list untuk multi-account switcher)
+                val communityPrefs = getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
+                val authPrefs = getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
+                val savedAccounts = communityPrefs.getString("accounts", "[]")
+                val savedActiveId = communityPrefs.getString("active_user_id", "")
+                communityPrefs.edit().clear().apply()
+                authPrefs.edit().clear().apply()
+                communityPrefs.edit().putString("accounts", savedAccounts).putString("active_user_id", savedActiveId).apply()
+
+                // Step 3: Default display_name + username dari email
+                val defaultDisplayName = if (email.isNotEmpty()) {
+                    email.substringBefore("@").replace(".", " ").replaceFirstChar {
+                        if (it.isLowerCase()) it.titlecase() else it.toString()
+                    }
+                } else "DLavie Player"
+                val defaultUsername = if (email.isNotEmpty()) {
+                    email.substringBefore("@").lowercase().replace(Regex("[^a-z0-9_]"), "_").take(20)
+                } else "user_${webUid.take(6)}"
+
+                // Save token + uid + email + defaults
+                authPrefs.edit()
                     .putString("access_token", webToken)
                     .putString("refresh_token", webRefresh)
                     .apply()
-
-                getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
-                    .edit()
+                communityPrefs.edit()
                     .putString("access_token", webToken)
                     .putString("refresh_token", webRefresh)
                     .putString("user_id", webUid)
+                    .putString("email", email)
+                    .putString("display_name", defaultDisplayName)
+                    .putString("username", defaultUsername)
+                    .putString("role", "member")
                     .putBoolean("portal_connected", true)
                     .putString("portal_connected_at", System.currentTimeMillis().toString())
+                    .putBoolean("is_guest", false)
                     .apply()
 
-                // Load profile to get username/display_name
+                // Step 4: Load profile dengan fallback ke ensureMyProfile
                 val api = CommunityApi(this)
+                var displayName = defaultDisplayName
                 try {
                     api.loadMyProfile()
-                } catch (_: Exception) {}
+                    displayName = api.displayName().ifEmpty { defaultDisplayName }
+                } catch (e: Exception) {
+                    android.util.Log.w("DLavieConnect", "loadMyProfile failed: ${e.message}")
+                    // Fallback: create profile kalau belum ada
+                    if (e.message?.contains("Profile community belum tersedia") == true ||
+                        e.message?.contains("belum ada") == true) {
+                        try {
+                            api.ensureMyProfile(defaultUsername, defaultDisplayName, null)
+                            api.loadMyProfile()
+                            displayName = api.displayName().ifEmpty { defaultDisplayName }
+                        } catch (e2: Exception) {
+                            android.util.Log.e("DLavieConnect", "ensureMyProfile failed: ${e2.message}")
+                        }
+                    }
+                }
 
                 android.widget.Toast.makeText(this,
-                    "DLavie Portal Connected! Welcome${if (api.displayName().isNotEmpty()) ", ${api.displayName()}" else ""}.",
+                    "✓ DLavie Portal Connected! Welcome, $displayName.",
                     android.widget.Toast.LENGTH_LONG).show()
 
                 // Navigate to launcher main screen
