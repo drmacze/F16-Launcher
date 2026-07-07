@@ -471,11 +471,151 @@ private fun GuidedLoginScreen(
             // Launcher terima token → simpan di EncryptedSharedPreferences → auto-login.
             // Token persist across app updates (EncryptedSharedPreferences tidak dihapus saat update).
             //
-            // v7.9.53: Tambah "Paste Connect URL" sebagai fallback untuk:
-            // - Launcher versi lama yang tidak ada deep link handler
-            // - Device yang block custom scheme (dlavie://)
-            // - User yang mau connect manual tanpa deep link
+            // v7.9.54: Tambah version info + update check + Connect Manual selalu visible
             if (mode == "chooser") {
+                // ── v7.9.54: Version Info + Update Check ──
+                val currentVersionCode = remember {
+                    try {
+                        val pi = context.packageManager.getPackageInfo(context.packageName, 0)
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                            pi.longVersionCode.toInt()
+                        } else {
+                            @Suppress("DEPRECATION")
+                            pi.versionCode
+                        }
+                    } catch (_: Exception) { 0 }
+                }
+                val currentVersionName = remember {
+                    try {
+                        val pi = context.packageManager.getPackageInfo(context.packageName, 0)
+                        pi.versionName ?: "unknown"
+                    } catch (_: Exception) { "unknown" }
+                }
+
+                // Check latest version from GitHub Releases API
+                var latestVersionCode by remember { mutableStateOf<Int?>(null) }
+                var latestVersionName by remember { mutableStateOf<String?>(null) }
+                var updateAvailable by remember { mutableStateOf(false) }
+                var checkingUpdate by remember { mutableStateOf(true) }
+
+                LaunchedEffect(Unit) {
+                    withContext(Dispatchers.IO) {
+                        try {
+                            val url = java.net.URL("https://api.github.com/repos/drmacze/F16-Launcher/releases/latest")
+                            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                                connectTimeout = 10000
+                                readTimeout = 15000
+                                setRequestProperty("Accept", "application/vnd.github+json")
+                                setRequestProperty("User-Agent", "DLavie-Launcher")
+                                connect()
+                            }
+                            if (conn.responseCode == 200) {
+                                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                                val json = org.json.JSONObject(body)
+                                val tagName = json.optString("tag_name", "")  // e.g., "v219"
+                                val tagNum = tagName.removePrefix("v").toIntOrNull() ?: 0
+                                val releaseName = json.optString("name", "")
+                                latestVersionCode = tagNum
+                                latestVersionName = releaseName
+                                updateAvailable = tagNum > currentVersionCode
+                            }
+                        } catch (_: Exception) {
+                            // Network error — silent fail, just don't show update button
+                        } finally {
+                            checkingUpdate = false
+                        }
+                    }
+                }
+
+                // Version info display (top of page)
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    color = Color(0x14000000),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(0.08f))
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.Info,
+                            contentDescription = null,
+                            tint = Color.White.copy(0.6f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "DLavie Launcher v$currentVersionName (build $currentVersionCode)",
+                                color = Color.White.copy(0.8f),
+                                fontSize = 11.sp,
+                                fontFamily = GuideFont,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (checkingUpdate) {
+                                Text(
+                                    "Memeriksa update...",
+                                    color = Color.White.copy(0.4f),
+                                    fontSize = 10.sp,
+                                    fontFamily = GuideFont
+                                )
+                            } else if (updateAvailable && latestVersionCode != null) {
+                                Text(
+                                    "Update tersedia: v$latestVersionName (build $latestVersionCode)",
+                                    color = Color(0xFFFFAA00),
+                                    fontSize = 10.sp,
+                                    fontFamily = GuideFont,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            } else if (!checkingUpdate && latestVersionCode != null) {
+                                Text(
+                                    "✓ Versi terbaru",
+                                    color = Color(0xFF00D26A),
+                                    fontSize = 10.sp,
+                                    fontFamily = GuideFont,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            } else {
+                                Text(
+                                    "Tidak bisa cek update (offline)",
+                                    color = Color.White.copy(0.3f),
+                                    fontSize = 10.sp,
+                                    fontFamily = GuideFont
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Update button (hanya kalau update tersedia)
+                if (updateAvailable && latestVersionCode != null) {
+                    Button(
+                        onClick = {
+                            // Buka halaman releases/latest di browser
+                            val updateUrl = "https://github.com/drmacze/F16-Launcher/releases/latest"
+                            val intent = android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(updateUrl)
+                            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            runCatching { context.startActivity(intent) }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFF5252),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(Icons.Rounded.SystemUpdate, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text("Update ke Versi Terbaru", fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont)
+                            Text("v$latestVersionName (build $latestVersionCode) — tap untuk download", fontSize = 10.sp, fontFamily = GuideFont)
+                        }
+                    }
+                }
+
                 // Info text
                 Text(
                     "Login/register akun DLavie Anda melalui website portal.",
@@ -523,142 +663,154 @@ private fun GuidedLoginScreen(
                     modifier = Modifier.padding(horizontal = 32.dp)
                 )
 
-                // ── v7.9.53: Paste Connect URL (manual fallback) ──
+                // ── v7.9.54: Connect Manual — SELALU VISIBLE (bukan toggle) ──
                 // Untuk launcher versi lama yang tidak ada deep link handler,
                 // user bisa copy URL connect dari web dan paste di sini.
-                Spacer(Modifier.height(20.dp))
-                Text(
-                    "── atau connect manual ──",
-                    color = Color.White.copy(alpha = 0.3f),
-                    fontSize = 11.sp,
-                    fontFamily = GuideFont,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(24.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.weight(1f).height(1.dp).background(Color.White.copy(0.1f)))
+                    Text(
+                        "ATAU CONNECT MANUAL",
+                        color = Color.White.copy(alpha = 0.4f),
+                        fontSize = 10.sp,
+                        fontFamily = GuideFont,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                    Box(Modifier.weight(1f).height(1.dp).background(Color.White.copy(0.1f)))
+                }
+                Spacer(Modifier.height(16.dp))
 
-                // Toggle untuk show/hide paste field
-                var showPasteField by remember { mutableStateOf(false) }
                 var pasteUrl by remember { mutableStateOf("") }
                 var pasteError by remember { mutableStateOf("") }
 
-                Text(
-                    "Connect Manual (untuk launcher versi lama)",
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 13.sp,
-                    fontFamily = GuideFont,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable {
-                        showPasteField = !showPasteField
-                        pasteError = ""
-                    }.padding(vertical = 6.dp)
-                )
-
-                if (showPasteField) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = Color(0xF0111111),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color.White.copy(0.08f))
-                    ) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0xF0111111),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(0.08f))
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Rounded.ContentPaste,
+                                contentDescription = null,
+                                tint = Color(0xFFFFAA00),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
                             Text(
-                                "Copy URL dari web setelah klik \"Connect to DLavie\". URL format: dlavie://connect?token=...&uid=...&refresh=...",
-                                color = Color.White.copy(alpha = 0.5f),
+                                "Connect Manual (untuk versi lama)",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontFamily = GuideFont,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            "Cocok untuk launcher v218 dan sebelumnya yang tidak ada deep link handler otomatis.\n\n" +
+                            "Cara pakai:\n" +
+                            "1. Login di web DLavie\n" +
+                            "2. Klik \"Connect to DLavie\"\n" +
+                            "3. Setelah 2.5 detik, web akan tampilkan URL connect\n" +
+                            "4. Copy URL tersebut, paste di bawah ini\n" +
+                            "5. Tap \"Connect Manual\"",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 10.sp,
+                            fontFamily = GuideFont,
+                            lineHeight = 14.sp
+                        )
+                        OutlinedTextField(
+                            value = pasteUrl,
+                            onValueChange = { pasteUrl = it; pasteError = "" },
+                            placeholder = { Text("dlavie://connect?token=...&uid=...", fontSize = 11.sp) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = false,
+                            minLines = 2,
+                            maxLines = 4,
+                            textStyle = androidx.compose.ui.text.TextStyle(
                                 fontSize = 11.sp,
-                                fontFamily = GuideFont
+                                fontFamily = GuideFont,
+                                color = Color.White
+                            ),
+                            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                cursorColor = Color.White,
+                                focusedBorderColor = Color.White.copy(0.5f),
+                                unfocusedBorderColor = Color.White.copy(0.2f),
+                                focusedContainerColor = Color(0xFF1A1A1A),
+                                unfocusedContainerColor = Color(0xFF1A1A1A)
                             )
-                            OutlinedTextField(
-                                value = pasteUrl,
-                                onValueChange = { pasteUrl = it; pasteError = "" },
-                                placeholder = { Text("dlavie://connect?token=...&uid=...", fontSize = 11.sp) },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = false,
-                                minLines = 2,
-                                maxLines = 4,
-                                textStyle = androidx.compose.ui.text.TextStyle(
-                                    fontSize = 11.sp,
-                                    fontFamily = GuideFont,
-                                    color = Color.White
-                                ),
-                                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White,
-                                    cursorColor = Color.White,
-                                    focusedBorderColor = Color.White.copy(0.5f),
-                                    unfocusedBorderColor = Color.White.copy(0.2f),
-                                    focusedContainerColor = Color(0xFF1A1A1A),
-                                    unfocusedContainerColor = Color(0xFF1A1A1A)
+                        )
+                        if (pasteError.isNotEmpty()) {
+                            Text(pasteError, color = Color(0xFFFF5252), fontSize = 11.sp, fontFamily = GuideFont)
+                        }
+                        Button(
+                            onClick = {
+                                val url = pasteUrl.trim()
+                                if (url.isBlank()) {
+                                    pasteError = "URL tidak boleh kosong"
+                                    return@Button
+                                }
+                                val uri = try { android.net.Uri.parse(url) } catch (e: Exception) {
+                                    pasteError = "URL tidak valid: ${e.message}"
+                                    return@Button
+                                }
+                                val token = uri.getQueryParameter("token")
+                                val uid = uri.getQueryParameter("uid")
+                                val refresh = uri.getQueryParameter("refresh") ?: ""
+
+                                if (token.isNullOrBlank() || uid.isNullOrBlank()) {
+                                    pasteError = "URL tidak berisi token dan uid yang valid"
+                                    return@Button
+                                }
+
+                                context.getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
+                                    .edit()
+                                    .putString("access_token", token)
+                                    .putString("refresh_token", refresh)
+                                    .apply()
+                                context.getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
+                                    .edit()
+                                    .putString("access_token", token)
+                                    .putString("refresh_token", refresh)
+                                    .putString("user_id", uid)
+                                    .putBoolean("portal_connected", true)
+                                    .putString("portal_connected_at", System.currentTimeMillis().toString())
+                                    .apply()
+
+                                try { CommunityApi(context).loadMyProfile() } catch (_: Exception) {}
+
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "✓ DLavie Portal Connected! Welcome.",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+
+                                val intent = android.content.Intent(
+                                    context,
+                                    ModernLauncherActivity::class.java
+                                ).addFlags(
+                                    android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                                 )
+                                context.startActivity(intent)
+                                (context as? android.app.Activity)?.finish()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFFFAA00),
+                                contentColor = Color.Black
                             )
-                            if (pasteError.isNotEmpty()) {
-                                Text(pasteError, color = Color(0xFFFF5252), fontSize = 11.sp, fontFamily = GuideFont)
-                            }
-                            Button(
-                                onClick = {
-                                    val url = pasteUrl.trim()
-                                    if (url.isBlank()) {
-                                        pasteError = "URL tidak boleh kosong"
-                                        return@Button
-                                    }
-                                    // Parse URL — support both dlavie://connect?... and plain token=...&uid=...
-                                    val uri = try { android.net.Uri.parse(url) } catch (e: Exception) {
-                                        pasteError = "URL tidak valid: ${e.message}"
-                                        return@Button
-                                    }
-                                    val token = uri.getQueryParameter("token")
-                                    val uid = uri.getQueryParameter("uid")
-                                    val refresh = uri.getQueryParameter("refresh") ?: ""
-
-                                    if (token.isNullOrBlank() || uid.isNullOrBlank()) {
-                                        pasteError = "URL tidak berisi token dan uid yang valid"
-                                        return@Button
-                                    }
-
-                                    // Save to SharedPreferences (same as deep link handler)
-                                    context.getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
-                                        .edit()
-                                        .putString("access_token", token)
-                                        .putString("refresh_token", refresh)
-                                        .apply()
-                                    context.getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
-                                        .edit()
-                                        .putString("access_token", token)
-                                        .putString("refresh_token", refresh)
-                                        .putString("user_id", uid)
-                                        .putBoolean("portal_connected", true)
-                                        .putString("portal_connected_at", System.currentTimeMillis().toString())
-                                        .apply()
-
-                                    // Load profile
-                                    try { CommunityApi(context).loadMyProfile() } catch (_: Exception) {}
-
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "✓ DLavie Portal Connected! Welcome.",
-                                        android.widget.Toast.LENGTH_LONG
-                                    ).show()
-
-                                    // Navigate to ModernLauncherActivity
-                                    val intent = android.content.Intent(
-                                        context,
-                                        ModernLauncherActivity::class.java
-                                    ).addFlags(
-                                        android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK or
-                                        android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                                    )
-                                    context.startActivity(intent)
-                                    (context as? android.app.Activity)?.finish()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color.White,
-                                    contentColor = Color.Black
-                                )
-                            ) {
-                                Text("Connect Manual", fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont)
-                            }
+                        ) {
+                            Icon(Icons.Rounded.Link, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Connect Manual", fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont)
                         }
                     }
                 }
