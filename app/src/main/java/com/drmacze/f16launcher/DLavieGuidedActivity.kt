@@ -77,6 +77,20 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -416,13 +430,11 @@ private fun GuidedLoginScreen(
                 )
         )
 
-        // Layer 2: Halftone particle matrix (existing — match web .halftone-canvas)
-        HalftoneBackground(
+        // Layer 2: Interactive Halftone Background (v7.9.57 — Canvas-based, touch drift)
+        InteractiveHalftoneBackground(
             modifier = Modifier.fillMaxSize(),
-            dotSize = 2.8f,
-            spacing = 22f,
-            baseColor = HalftoneBright,
-            alpha = 0.75f
+            dotSpacing = 28f,
+            dotSize = 2.2f
         )
 
         // Layer 3: Glow orbs (match web .glow-orb-1 + .glow-orb-2)
@@ -526,41 +538,10 @@ private fun GuidedLoginScreen(
                 .padding(top = 100.dp, bottom = 40.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── v7.9.56: Portal-style logo (match web .portal-logo) ──
-            // White square dengan "D" letter, pulse animation
-            val logoPulse = rememberInfiniteTransition(label = "logoPulse")
-            val logoAlpha by logoPulse.animateFloat(
-                initialValue = 1f, targetValue = 0.7f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(3000, easing = GuideEase),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "logoAlpha"
-            )
-            Surface(
-                modifier = Modifier
-                    .size(72.dp)
-                    .graphicsLayer { alpha = logoAlpha },
-                shape = RoundedCornerShape(18.dp),
-                color = Color.White,
-                shadowElevation = 12.dp,
-                tonalElevation = 0.dp
-            ) {
-                Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "D",
-                        color = Color.Black,
-                        fontSize = 38.sp,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = GuideFont
-                    )
-                }
-            }
+            // ── v7.9.57: Animated DL Logo (custom drawn, unique modern animation) ──
+            AnimatedDLLogo(size = 80.dp)
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(24.dp))
 
             // ── Title: "DLavie Portal" (match web .portal-title) ──
             Text(
@@ -2199,3 +2180,290 @@ private fun guidedReadMarkerSmart(): String = runCatching { File(MARKER_PATH).re
 private fun guidedShortMarker(marker: String): String = if (marker.length > 12) marker.take(12) else marker
 private suspend fun guidedDownloadPatch(context: Context, onProgress: (GuidedUpdateState) -> Unit): GuidedUpdateState { val s = GuidedUpdateState(message = "Download patch akan masuk setelah login foundation hijau."); onProgress(s); return s }
 private suspend fun guidedInstallPatch(context: Context): GuidedUpdateState = GuidedUpdateState(message = "Apply patch akan masuk setelah login foundation hijau.")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// v7.9.57 TOTAL REMAKE — Interactive Halftone Background + Animated DL Logo
+// Match DLavie website style: Canvas-based halftone with touch drift,
+// custom drawn animated DL logo, loading screen
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Interactive Halftone Background — Canvas-based, dots drift on touch.
+ * Match web .halftone-canvas: auto-drift + touch response.
+ * Dots arranged in grid, opacity varies by distance from center (vignette).
+ */
+@Composable
+private fun InteractiveHalftoneBackground(
+    modifier: Modifier = Modifier,
+    dotSpacing: Float = 28f,
+    dotSize: Float = 2.2f
+) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val screenWidth = with(density) { config.screenWidthDp.dp.toPx() }
+    val screenHeight = with(density) { config.screenHeightDp.dp.toPx() }
+
+    // Touch position for parallax drift
+    var touchX by remember { mutableStateOf(screenWidth / 2f) }
+    var touchY by remember { mutableStateOf(screenHeight / 2f) }
+    // Target touch (smooth lerp)
+    var targetX by remember { mutableStateOf(screenWidth / 2f) }
+    var targetY by remember { mutableStateOf(screenHeight / 2f) }
+
+    // Auto-drift animation
+    val autoDrift = rememberInfiniteTransition(label = "halftoneDrift")
+    val driftX by autoDrift.animateFloat(
+        initialValue = 0f, targetValue = 30f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(8000, easing = GuideEase),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "driftX"
+    )
+    val driftY by autoDrift.animateFloat(
+        initialValue = 0f, targetValue = -20f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(10000, easing = GuideEase),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "driftY"
+    )
+
+    // Smooth lerp touch position toward target
+    LaunchedEffect(targetX, targetY) {
+        while (true) {
+            touchX += (targetX - touchX) * 0.08f
+            touchY += (targetY - touchY) * 0.08f
+            kotlinx.coroutines.delay(16) // ~60fps
+        }
+    }
+
+    Canvas(
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                androidx.compose.foundation.gestures.detectDragGestures(
+                    onDrag = { change, _ ->
+                        targetX = change.position.x
+                        targetY = change.position.y
+                    }
+                )
+            }
+            .pointerInput(Unit) {
+                androidx.compose.foundation.gestures.detectTapGestures(
+                    onTap = { offset ->
+                        targetX = offset.x
+                        targetY = offset.y
+                    }
+                )
+            }
+    ) {
+        val cols = (size.width / dotSpacing).toInt() + 2
+        val rows = (size.height / dotSpacing).toInt() + 2
+
+        // Center of screen for vignette
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val maxDist = kotlin.math.sqrt(cx * cx + cy * cy)
+
+        // Parallax offset from touch (lerped)
+        val parallaxX = (touchX - cx) * 0.02f
+        val parallaxY = (touchY - cy) * 0.02f
+
+        for (row in 0 until rows) {
+            for (col in 0 until cols) {
+                val baseX = col * dotSpacing
+                val baseY = row * dotSpacing
+
+                // Distance from touch → parallax depth
+                val dx = baseX - touchX
+                val dy = baseY - touchY
+                val distFromTouch = kotlin.math.sqrt(dx * dx + dy * dy)
+                val depthFactor = (1f - (distFromTouch / 400f).coerceIn(0f, 1f)) * 8f
+
+                // Parallax: dots closer to touch move more
+                val px = baseX + parallaxX * (1f + depthFactor) + driftX
+                val py = baseY + parallaxY * (1f + depthFactor) + driftY
+
+                // Vignette: dots further from center are dimmer
+                val distFromCenter = kotlin.math.sqrt((baseX - cx) * (baseX - cx) + (baseY - cy) * (baseY - cy))
+                val vignette = 1f - (distFromCenter / maxDist).coerceIn(0f, 1f) * 0.7f
+
+                // Dot size varies slightly
+                val sz = dotSize * (0.6f + vignette * 0.6f)
+                val alpha = 0.04f + vignette * 0.08f
+
+                drawCircle(
+                    color = Color.White.copy(alpha = alpha),
+                    radius = sz,
+                    center = androidx.compose.ui.geometry.Offset(px, py)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Animated DL Logo — custom drawn dengan Canvas.
+ * "DL" letters dengan breathing + sweep animation.
+ * Unique modern look, bukan text biasa.
+ */
+@Composable
+private fun AnimatedDLLogo(
+    modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 80.dp
+) {
+    val breathAnim = rememberInfiniteTransition(label = "dlBreath")
+    val breathScale by breathAnim.animateFloat(
+        initialValue = 1f, targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2500, easing = GuideEase),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "breathScale"
+    )
+
+    val sweepAnim = rememberInfiniteTransition(label = "dlSweep")
+    val sweepAngle by sweepAnim.animateFloat(
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(4000, easing = androidx.compose.animation.core.LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "sweepAngle"
+    )
+
+    val glowAnim = rememberInfiniteTransition(label = "dlGlow")
+    val glowAlpha by glowAnim.animateFloat(
+        initialValue = 0.3f, targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000, easing = GuideEase),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowAlpha"
+    )
+
+    Box(
+        modifier = modifier.size(size),
+        contentAlignment = Alignment.Center
+    ) {
+        // Outer glow ring (sweep)
+        Canvas(
+            modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = breathScale; scaleY = breathScale }
+        ) {
+            val w = this.size.width
+            val h = this.size.height
+            val center = androidx.compose.ui.geometry.Offset(w / 2f, h / 2f)
+            val radius = (minOf(w, h) / 2f) * 0.9f
+
+            // Sweep arc (rotating gradient ring)
+            drawArc(
+                color = Color.White.copy(alpha = glowAlpha * 0.3f),
+                startAngle = sweepAngle,
+                sweepAngle = 90f,
+                useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(center.x - radius, center.y - radius),
+                size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)
+            )
+            drawArc(
+                color = Color.White.copy(alpha = glowAlpha * 0.15f),
+                startAngle = sweepAngle + 180f,
+                sweepAngle = 60f,
+                useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(center.x - radius, center.y - radius),
+                size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5f)
+            )
+        }
+
+        // White square card (match web .portal-logo)
+        Surface(
+            modifier = Modifier
+                .fillMaxSize(0.72f)
+                .graphicsLayer { scaleX = breathScale; scaleY = breathScale },
+            shape = RoundedCornerShape(20.dp),
+            color = Color.White,
+            shadowElevation = 16.dp
+        ) {
+            Box(
+                Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                // Custom drawn "DL" with Canvas
+                Canvas(Modifier.fillMaxSize(0.6f)) {
+                    val w = this.size.width
+                    val h = this.size.height
+                    val strokeW = minOf(w, h) * 0.12f
+
+                    // Draw "D"
+                    val dPath = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(w * 0.05f, h * 0.1f)
+                        lineTo(w * 0.05f, h * 0.9f)
+                        // D curve
+                        cubicTo(
+                            w * 0.6f, h * 0.9f,
+                            w * 0.55f, h * 0.1f,
+                            w * 0.05f, h * 0.1f
+                        )
+                    }
+                    drawPath(
+                        dPath,
+                        color = Color.Black,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeW, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                    )
+
+                    // Draw "L"
+                    val lPath = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(w * 0.55f, h * 0.1f)
+                        lineTo(w * 0.55f, h * 0.9f)
+                        lineTo(w * 0.95f, h * 0.9f)
+                    }
+                    drawPath(
+                        lPath,
+                        color = Color.Black,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeW, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Loading Screen dengan animated DL logo.
+ * Tampil saat app pertama kali buka / processing auth.
+ */
+@Composable
+private fun LoadingScreen(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.fillMaxSize().background(GuideDark),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            AnimatedDLLogo(size = 96.dp)
+            Spacer(Modifier.height(24.dp))
+            // Loading dots animation
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                repeat(3) { index ->
+                    val dotAnim = rememberInfiniteTransition(label = "dot$index")
+                    val dotAlpha by dotAnim.animateFloat(
+                        initialValue = 0.2f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(600, delayMillis = index * 200, easing = GuideEase),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "dotAlpha$index"
+                    )
+                    Box(
+                        Modifier.size(6.dp).background(
+                            Color.White.copy(alpha = dotAlpha),
+                            CircleShape
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
