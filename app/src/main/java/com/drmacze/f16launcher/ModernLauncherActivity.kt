@@ -475,9 +475,7 @@ fun DLavieModernApp(initialPostId: String? = null) {
     var manualCheckMessage by remember { mutableStateOf("") }
     val updateScope = rememberCoroutineScope()
 
-    // v7.9.50: Play Protect Install Dialog state — deklarasi di awal supaya bisa diakses
-    // dari dialog render (line ~679) dan dari onInstall callback (line ~1392)
-    var showPlayProtectInstall by remember { mutableStateOf(false) }
+    // v7.9.50: showPlayProtectInstall dipindah ke MainShell (scope yang benar)
 
     // ── Staff bypass (Bug 3): admin/developer/moderator/owner skip maintenance entirely ──
     val userRole = api.role()
@@ -984,7 +982,8 @@ fun MainShell(
     var dlProgress by remember { mutableStateOf(-1f) }
     var dlError    by remember { mutableStateOf("") }
 
-    // v7.9.50: showPlayProtectInstall sudah dideklarasikan di atas (line ~480)
+    // v7.9.50: Play Protect Install Dialog state
+    var showPlayProtectInstall by remember { mutableStateOf(false) }
 
     fun startDownload() {
         if (dlProgress >= 0f && dlProgress < 2f) return  // already downloading
