@@ -489,6 +489,8 @@ class ModernLauncherActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // Update intent so subsequent DLavieModernApp reads pick up the new post_id.
+        setIntent(intent)
         // v7.9.53: Handle deep link saat launcher sudah running (singleTop)
         // Kalau user klik Connect to DLavie di web saat launcher sudah terbuka,
         // deep link masuk ke onNewIntent, bukan onCreate.
@@ -502,12 +504,6 @@ class ModernLauncherActivity : ComponentActivity() {
         // before any local notification fires (Android O+).
         NotificationHelper.createChannel(this)
         setContent { DLavieModernApp(initialPostId = intent?.getStringExtra("post_id")) }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        // Update intent so subsequent DLavieModernApp reads pick up the new post_id.
-        setIntent(intent)
     }
 }
 
