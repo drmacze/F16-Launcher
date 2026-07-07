@@ -442,6 +442,9 @@ fun GameDetailScreen(
                 Text("Trusted by DLavie", color = NeonGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
             }
 
+            // ── v7.9.37: Save Game Manager (multi-mode) ──
+            SaveGameModeSection(game = game)
+
             Spacer(Modifier.height(100.dp))  // space for sticky CTA
         }
 
@@ -809,4 +812,122 @@ private fun FeatureItem(icon: ImageVector, title: String, description: String) {
             }
         }
     }
+}
+
+// ─── v7.9.37: Save Game Manager Section (Multi-Mode) ─────────────────────────
+
+@Composable
+private fun SaveGameModeSection(game: GameItem) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var selectedMode by remember { mutableStateOf(SaveGameModeManager.GameMode.LIGA) }
+    var slots by remember(selectedMode) { mutableStateOf(SaveGameModeManager.listSlots(selectedMode)) }
+    var loading by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("") }
+    var showLabelDialog by remember { mutableStateOf<Pair<SaveGameModeManager.GameMode, Int>?>(null) }
+    var labelInput by remember { mutableStateOf("") }
+    var showRestoreConfirm by remember { mutableStateOf<Pair<SaveGameModeManager.GameMode, Int>?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf<Pair<SaveGameModeManager.GameMode, Int>?>(null) }
+
+    if (game.packageName != "com.ea.gp.fifaworld") return
+
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Save, null, tint = Color.White, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Save Game", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text("Backup & restore progress game per mode. ${SaveGameModeManager.getMaxSlots()} slot per mode.",
+            color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontFamily = InterFontFamily)
+        Spacer(Modifier.height(16.dp))
+
+        // Mode tabs
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.05f)),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            SaveGameModeManager.GameMode.values().forEach { mode ->
+                val isSelected = selectedMode == mode
+                Box(
+                    Modifier.weight(1f).clickable { selectedMode = mode; slots = SaveGameModeManager.listSlots(mode); message = "" }.padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(mode.label, color = if (isSelected) Color.White else Color.White.copy(alpha = 0.4f),
+                            fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium, fontFamily = InterFontFamily)
+                        if (isSelected) { Spacer(Modifier.height(3.dp)); Box(Modifier.width(20.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(Color.White)) }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(selectedMode.desc, color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp, fontFamily = InterFontFamily)
+        Spacer(Modifier.height(12.dp))
+
+        slots.forEach { slot ->
+            Surface(
+                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = if (slot.exists) Color.White.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.02f),
+                border = BorderStroke(1.dp, if (slot.exists) Color.White.copy(alpha = 0.1f) else Color.White.copy(alpha = 0.05f))
+            ) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(36.dp).clip(CircleShape).background(if (slot.exists) Color(0xFF4CAF50).copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f)), contentAlignment = Alignment.Center) {
+                        Text(slot.slotNumber.toString(), color = if (slot.exists) Color(0xFF4CAF50) else Color.White.copy(alpha = 0.3f), fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        if (slot.exists) {
+                            Text(slot.label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
+                            Text("${formatBytes(slot.sizeBytes)} • ${slot.fileCount} file • ${java.text.SimpleDateFormat("dd MMM yyyy HH:mm", java.util.Locale("id", "ID")).format(java.util.Date(slot.timestamp))}", color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp, fontFamily = InterFontFamily, maxLines = 1)
+                        } else {
+                            Text("Slot ${slot.slotNumber} — Kosong", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp, fontFamily = InterFontFamily)
+                        }
+                    }
+                    if (slot.exists) {
+                        Surface(Modifier.size(32.dp).clickable { showRestoreConfirm = selectedMode to slot.slotNumber }, shape = CircleShape, color = Color(0xFF4CAF50).copy(alpha = 0.1f)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Restore, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp)) } }
+                        Spacer(Modifier.width(8.dp))
+                        Surface(Modifier.size(32.dp).clickable { showDeleteConfirm = selectedMode to slot.slotNumber }, shape = CircleShape, color = Color(0xFFFF5252).copy(alpha = 0.1f)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Delete, null, tint = Color(0xFFFF5252), modifier = Modifier.size(16.dp)) } }
+                    } else {
+                        Surface(Modifier.size(32.dp).clickable { labelInput = ""; showLabelDialog = selectedMode to slot.slotNumber }, shape = CircleShape, color = Color(0xFF4CAF50).copy(alpha = 0.1f)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Save, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp)) } }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Surface(Modifier.fillMaxWidth().clickable { val s = SaveGameModeManager.findEmptySlot(selectedMode); if (s == -1) { message = "Semua slot penuh." } else { labelInput = ""; showLabelDialog = selectedMode to s } },
+            shape = RoundedCornerShape(12.dp), color = Color(0xFF4CAF50).copy(alpha = 0.08f), border = BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.2f))) {
+            Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.SaveAlt, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                Text("Backup ke Slot Kosong", color = Color(0xFF4CAF50), fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFamily = InterFontFamily)
+            }
+        }
+        if (message.isNotBlank()) { Spacer(Modifier.height(8.dp)); Text(message, color = if (message.startsWith("Error") || message.startsWith("Gagal") || message.startsWith("Semua")) Color(0xFFFF5252) else Color(0xFF4CAF50), fontSize = 11.sp, fontFamily = InterFontFamily, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
+    }
+
+    showLabelDialog?.let { (mode, slot) ->
+        AlertDialog(onDismissRequest = { showLabelDialog = null }, title = { Text("Save ${mode.label}", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) },
+            text = { Column { Text("Slot $slot — Beri label:", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, fontFamily = InterFontFamily); Spacer(Modifier.height(8.dp)); OutlinedTextField(value = labelInput, onValueChange = { labelInput = it }, placeholder = { Text("Contoh: Musim 3", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) }, singleLine = true, colors = TextFieldDefaults.colors(focusedContainerColor = Color.White.copy(alpha = 0.05f), unfocusedContainerColor = Color.White.copy(alpha = 0.05f), focusedTextColor = Color.White, unfocusedTextColor = Color.White, cursorColor = Color.White), modifier = Modifier.fillMaxWidth()) } },
+            confirmButton = { TextButton(onClick = { showLabelDialog = null; loading = true; scope.launch(Dispatchers.IO) { val r = SaveGameModeManager.backupSave(context, mode, slot, labelInput); loading = false; message = r.message; slots = SaveGameModeManager.listSlots(selectedMode) } }) { Text("Simpan", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) } },
+            dismissButton = { TextButton(onClick = { showLabelDialog = null }) { Text("Batal", color = Color.White, fontFamily = InterFontFamily) } }, containerColor = Carbon)
+    }
+    showRestoreConfirm?.let { (mode, slot) ->
+        AlertDialog(onDismissRequest = { showRestoreConfirm = null }, title = { Text("Restore ${mode.label}?", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) },
+            text = { Text("Save game saat ini akan ditimpa dengan Slot $slot.", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, fontFamily = InterFontFamily) },
+            confirmButton = { TextButton(onClick = { showRestoreConfirm = null; loading = true; scope.launch(Dispatchers.IO) { val r = SaveGameModeManager.restoreSave(context, mode, slot); loading = false; message = r.message } }) { Text("Restore", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) } },
+            dismissButton = { TextButton(onClick = { showRestoreConfirm = null }) { Text("Batal", color = Color.White, fontFamily = InterFontFamily) } }, containerColor = Carbon)
+    }
+    showDeleteConfirm?.let { (mode, slot) ->
+        AlertDialog(onDismissRequest = { showDeleteConfirm = null }, title = { Text("Hapus Slot $slot?", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) },
+            text = { Text("Save akan dihapus permanen.", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, fontFamily = InterFontFamily) },
+            confirmButton = { TextButton(onClick = { showDeleteConfirm = null; val r = SaveGameModeManager.deleteSlot(mode, slot); message = r.message; slots = SaveGameModeManager.listSlots(selectedMode) }) { Text("Hapus", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) } },
+            dismissButton = { TextButton(onClick = { showDeleteConfirm = null }) { Text("Batal", color = Color.White, fontFamily = InterFontFamily) } }, containerColor = Carbon)
+    }
+    if (loading) { AlertDialog(onDismissRequest = {}, title = { Text("Memproses...", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily) }, text = { CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp)) }, confirmButton = {}, containerColor = Carbon) }
+}
+
+private fun formatBytes(bytes: Long): String {
+    return when { bytes < 1024 -> "$bytes B"; bytes < 1024 * 1024 -> "${bytes / 1024} KB"; else -> "${bytes / 1024 / 1024} MB" }
 }
