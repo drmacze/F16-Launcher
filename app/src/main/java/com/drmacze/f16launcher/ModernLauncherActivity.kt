@@ -9427,7 +9427,7 @@ fun GameHubScreen(
                 // Server status
                 games.firstOrNull()?.let { game ->
                     QuickStatChip(
-                        icon = Icons.Rounded.Speed,
+                        icon = Icons.Rounded.SportsEsports,
                         label = game.serverStatus.label,
                         color = game.serverStatus.dotColor,
                         modifier = Modifier.weight(1f)
@@ -9439,7 +9439,7 @@ fun GameHubScreen(
                         modifier = Modifier.weight(1f)
                     )
                     QuickStatChip(
-                        icon = Icons.Rounded.CloudQueue,
+                        icon = Icons.Rounded.CloudDone,
                         label = "Cloud Ready",
                         color = Color(0xFF64B5F6),
                         modifier = Modifier.weight(1f)
