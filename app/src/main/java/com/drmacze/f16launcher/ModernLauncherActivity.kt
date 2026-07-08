@@ -566,45 +566,68 @@ class ModernLauncherActivity : ComponentActivity() {
 
         android.util.Log.i(TAG, "Token saved: uid=$uid, email=$email, defaultName=$defaultDisplayName")
 
-        // Step 4: Load profile dengan fallback ke ensureMyProfile
+        // Step 4: Load REAL profile dari Supabase (jangan create fake profile!)
+        // v7.9.62 CRITICAL FIX: Sebelumnya, kalau loadMyProfile gagal, kita panggil
+        // ensureMyProfile(defaultUsername, defaultDisplayName) yang akan CREATE/UPDATE
+        // profile dengan DEFAULT values (dari email). Ini DANGEROUS karena:
+        //   1. Kalau user sudah punya profile (e.g., "DLavie" dengan role=developer),
+        //      display_name + username akan di-OVERWRITE dengan default dari email
+        //   2. User lihat "Dlaviecom" (dari dlaviecom@gmail.com) padahal seharusnya "DLavie"
+        //   3. Profile portal dan launcher jadi TIDAK SAMA — ini yang user complain!
+        //
+        // FIX: JANGAN panggil ensureMyProfile dengan default values.
+        // Sebaliknya:
+        //   - Coba loadMyProfile() dengan retry (backoff 1s, 2s, 4s)
+        //   - Profile row di Supabase SUDAH ADA (dibuat oleh trigger handle_new_user
+        //     saat user register di portal). Mungkin saja ada delay/race condition.
+        //   - Kalau setelah 3 retry masih gagal, tampilkan error tapi TIDAK create fake profile.
+        //   - User bisa refresh profile nanti (pull-to-refresh di Profile screen).
         val api = CommunityApi(this)
         var profileLoaded = false
         var displayName = defaultDisplayName
 
-        try {
-            val profile = api.loadMyProfile()
-            profileLoaded = true
-            displayName = api.displayName().ifEmpty { defaultDisplayName }
-            android.util.Log.i(TAG, "Profile loaded: username=${api.username()}, name=${api.displayName()}")
-        } catch (e: Exception) {
-            android.util.Log.w(TAG, "loadMyProfile failed: ${e.message}")
-
-            // Fallback: kalau profile belum ada, create dengan default values
-            if (e.message?.contains("Profile community belum tersedia") == true ||
-                e.message?.contains("belum ada") == true) {
-                try {
-                    android.util.Log.i(TAG, "Profile belum ada, mencoba ensureMyProfile...")
-                    api.ensureMyProfile(defaultUsername, defaultDisplayName, null)
-                    try {
-                        api.loadMyProfile()
-                        profileLoaded = true
-                        displayName = api.displayName().ifEmpty { defaultDisplayName }
-                        android.util.Log.i(TAG, "Profile created + loaded: ${api.displayName()}")
-                    } catch (e2: Exception) {
-                        android.util.Log.w(TAG, "loadMyProfile after ensure masih gagal: ${e2.message}")
-                    }
-                } catch (e2: Exception) {
-                    android.util.Log.e(TAG, "ensureMyProfile juga gagal: ${e2.message}")
+        // v7.9.62: Retry loadMyProfile dengan backoff (1s, 2s, 4s)
+        // Mengatasi: profile belum ter-create di Supabase saat connect (race condition
+        // dengan trigger handle_new_user)
+        val retryDelays = longArrayOf(0, 1000, 2000, 4000)
+        for ((attempt, delay) in retryDelays.withIndex()) {
+            if (delay > 0) {
+                android.util.Log.i(TAG, "Retry attempt $attempt in ${delay}ms...")
+                Thread.sleep(delay)
+            }
+            try {
+                val profile = api.loadMyProfile()
+                profileLoaded = true
+                displayName = api.displayName().ifEmpty { defaultDisplayName }
+                android.util.Log.i(TAG, "Profile loaded on attempt $attempt: username=${api.username()}, name=${api.displayName()}, role=${api.role()}")
+                break
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "loadMyProfile attempt $attempt failed: ${e.message}")
+                if (attempt == retryDelays.lastIndex) {
+                    // Final attempt juga gagal — TIDAK create fake profile
+                    // User bisa refresh nanti. Tampilkan pesan jelas.
+                    android.util.Log.e(TAG, "All retries exhausted. Profile belum tersedia di Supabase. " +
+                        "User mungkin perlu tunggu beberapa detik lalu pull-to-refresh di Profile screen.")
                 }
             }
         }
 
         // Step 5: Show toast
-        android.widget.Toast.makeText(
-            this,
-            "✓ DLavie Portal Connected! Welcome, $displayName.",
-            android.widget.Toast.LENGTH_LONG
-        ).show()
+        if (profileLoaded) {
+            android.widget.Toast.makeText(
+                this,
+                "✓ DLavie Portal Connected! Welcome, $displayName.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        } else {
+            // v7.9.62: Profile belum ter-load (mungkin trigger handle_new_user belum selesai)
+            // TETAP navigasi ke launcher — user bisa pull-to-refresh di Profile screen.
+            android.widget.Toast.makeText(
+                this,
+                "✓ Connected! Profile sedang dimuat, tarik ke bawah di halaman Profile untuk refresh.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
 
         android.util.Log.i(TAG, "connectPortalAccount selesai: profileLoaded=$profileLoaded, name=$displayName")
     }
@@ -1108,7 +1131,6 @@ fun MainShell(
     var detailAvgRating         by remember { mutableStateOf(0.0) }
     var detailRatingCount       by remember { mutableStateOf(0) }
     var detailMaintenanceBlocked by remember { mutableStateOf(false) }
-    var detailGameId            by remember { mutableStateOf("fifa16") }  // v7.9.63: per-game rating
     // v6.8.1: lifted myRating state — shared antara HomeScreen & GameDetailScreen
     // supaya Rate button di detail screen bisa cek "sudah rating atau belum".
     // 0 = belum rating, 1-5 = sudah rating.
@@ -1601,20 +1623,34 @@ fun MainShell(
                                     } else if (detailMyRating > 0) {
                                         // Sudah rate — silent ignore
                                     } else {
-                                        // Submit rating directly (star bar already selected the value)
+                                        // v7.9.61 FIX: Submit rating dengan error surfacing.
+                                        // Sebelumnya: runCatching swallow error → state tetap 0.0 →
+                                        // user bingung "saya sudah rating tapi 0.0".
+                                        // Sekarang: try/catch eksplisit + Toast feedback.
                                         scope.launch {
                                             try {
-                                                withContext(Dispatchers.IO) { api.submitRating(rating, "", detailGameId) }
-                                                android.util.Log.i("GameDetail", "Rating submitted: $rating")
-                                                // Re-fetch stats untuk update aggregate
-                                                val stats = withContext(Dispatchers.IO) { api.fetchRatingStats(detailGameId) }
+                                                api.submitRating(rating, "")
+                                                val stats = api.fetchRatingStats()
                                                 detailAvgRating   = stats.optDouble("avg", 0.0)
                                                 detailRatingCount = stats.optInt("count", 0)
                                                 detailMyRating    = rating
-                                                android.util.Log.i("GameDetail", "Updated: avg=$detailAvgRating, count=$detailRatingCount")
+                                                // Success toast supaya user tahu rating tersimpan
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    t.ratingSuccess,
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
                                             } catch (e: Exception) {
-                                                android.util.Log.e("GameDetail", "submitRating failed", e)
-                                                android.widget.Toast.makeText(context, "Gagal submit rating: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                                                android.util.Log.e("DLavieRating",
+                                                    "submitRating FAILED: ${e.message}", e)
+                                                // Error toast dengan pesan spesifik
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "${t.ratingErrorPrefix} ${e.message}",
+                                                    android.widget.Toast.LENGTH_LONG
+                                                ).show()
+                                                // Reset star bar supaya user bisa coba lagi
+                                                detailMyRating = 0
                                             }
                                         }
                                     }
@@ -1759,29 +1795,16 @@ fun MainShell(
 
                                                     val game = baseGame.copy(serverStatus = realStatus)
                                                     detailGameItem = game
-                                                    // v7.9.63: Set gameId untuk per-game rating
-                                                    detailGameId = if (game.packageName == GAME_PKG_16) "fifa16" else "fifa15"
                                                     // Cek installed status
                                                     detailGameInstalled = try {
                                                         context.packageManager.getPackageInfo(game.packageName, 0); true
                                                     } catch (_: Throwable) { false }
-                                                    // Fetch rating stats — v7.9.61: proper error handling, no swallow
-                                                    try {
-                                                        val stats = withContext(Dispatchers.IO) { api.fetchRatingStats(detailGameId) }
+                                                    // Fetch rating stats
+                                                    runCatching {
+                                                        val stats = api.fetchRatingStats()
                                                         detailAvgRating   = stats.optDouble("avg", 0.0)
                                                         detailRatingCount = stats.optInt("count", 0)
-                                                        android.util.Log.i("GameDetail", "Rating stats: avg=$detailAvgRating, count=$detailRatingCount")
-                                                    } catch (e: Exception) {
-                                                        android.util.Log.e("GameDetail", "fetchRatingStats failed", e)
-                                                    }
-                                                    // Fetch my rating (hanya kalau login)
-                                                    if (api.loggedIn()) {
-                                                        try {
-                                                            detailMyRating = withContext(Dispatchers.IO) { api.getMyRating(detailGameId) }
-                                                            android.util.Log.i("GameDetail", "My rating: $detailMyRating")
-                                                        } catch (e: Exception) {
-                                                            android.util.Log.e("GameDetail", "getMyRating failed", e)
-                                                        }
+                                                        detailMyRating    = api.getMyRating()
                                                     }
                                                     // Cek maintenance — block install/play kalau maintenance atau offline
                                                     detailMaintenanceBlocked = game.serverStatus == ServerStatus.MAINTENANCE ||
@@ -1961,27 +1984,35 @@ fun MainShell(
                 },
                 onSubmit = { rating, review ->
                     scope.launch {
+                        var errorMsg: String? = null
                         val ok = withContext(Dispatchers.IO) {
                             try {
-                                api.submitRating(rating, review, detailGameId)
-                                android.util.Log.i("GameDetail", "Rating submitted via popup: $rating")
-                                val stats = api.fetchRatingStats(detailGameId)
+                                api.submitRating(rating, review)
+                                // Refresh stats + my rating after submit
+                                val stats = api.fetchRatingStats()
                                 detailAvgRating   = stats.optDouble("avg", 0.0)
                                 detailRatingCount = stats.optInt("count", 0)
                                 detailMyRating    = rating
-                                android.util.Log.i("GameDetail", "Updated: avg=$detailAvgRating, count=$detailRatingCount")
                                 true
                             } catch (e: Exception) {
-                                android.util.Log.e("GameDetail", "submitRating popup failed", e)
-                                ratingSubmitError = "Gagal: ${e.message}"
+                                android.util.Log.e("DLavieRating",
+                                    "popup submitRating FAILED: ${e.message}", e)
+                                errorMsg = e.message
                                 false
                             }
                         }
                         if (ok) {
                             ratingSubmitError = ""
                             showRatingPopup = false
+                            // v7.9.61: Success toast
+                            android.widget.Toast.makeText(
+                                context,
+                                t.ratingSuccess,
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
                         } else {
-                            ratingSubmitError = t.ratingFailed
+                            // v7.9.61: Tampilkan pesan error spesifik, bukan generic
+                            ratingSubmitError = "${t.ratingErrorPrefix} ${errorMsg ?: t.ratingFailed}"
                         }
                     }
                 }
@@ -6017,6 +6048,10 @@ fun ProfileScreen(
     var totalPlayMin   by remember { mutableStateOf(0) }
     var bio            by remember { mutableStateOf("") }
 
+    // v7.9.62: Cover/banner state untuk profile (Photo 2 style)
+    var coverUrlState  by remember { mutableStateOf(api.coverUrl()) }
+    var coverUploading by remember { mutableStateOf(false) }
+
     // ── Badges state ──
     var myBadges by remember { mutableStateOf<List<EarnedBadge>>(emptyList()) }
 
@@ -6068,6 +6103,41 @@ fun ProfileScreen(
                     toast(t.photoUploadFailed)
                 } finally {
                     avatarUploading = false
+                }
+            }
+        }
+    }
+
+    // v7.9.62: Cover/banner picker — mirror dari avatarPicker
+    val coverPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            coverUploading = true
+            scope.launch {
+                try {
+                    val newUrl = withContext(Dispatchers.IO) {
+                        val inputStream = context.contentResolver.openInputStream(uri)
+                        val bytes = inputStream?.readBytes()
+                        inputStream?.close()
+                        if (bytes == null || bytes.isEmpty())
+                            throw IllegalStateException("Gagal membaca gambar dari gallery.")
+                        val uploadedUrl = api.uploadCover(bytes)
+                        api.updateCover(uploadedUrl)
+                        uploadedUrl
+                    }
+                    coverUrlState = newUrl
+                    toast("Cover diperbarui")
+                } catch (e: Throwable) {
+                    // v7.9.62: Cover column mungkin belum ada — tampilkan pesan jelas
+                    val msg = e.message ?: ""
+                    if (msg.contains("cover_url") || msg.contains("42703") || msg.contains("could not find column")) {
+                        toast("Column cover_url belum ada. Jalankan SQL migration di Supabase Dashboard.")
+                    } else {
+                        toast("Gagal upload cover: $msg")
+                    }
+                } finally {
+                    coverUploading = false
                 }
             }
         }
@@ -6170,183 +6240,286 @@ fun ProfileScreen(
             }
         } else {
 
-            // ── Top bar: "Profile" + streak + settings gear ──
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // ════════════════════════════════════════════════════════════════════
+            // v7.9.62: PROFILE REDESIGN — Photo 2 style (cover banner + floating avatar)
+            // Layout:
+            //   1. Cover banner (full-width, 160dp) — tap to upload
+            //   2. Floating avatar (overlapping banner, -40dp offset)
+            //   3. Name + verified badge
+            //   4. @username handle
+            //   5. Stats row (followers | following | likes)
+            //   6. Bio (optional)
+            //   7. Action buttons row (Edit Profile + Settings)
+            //   8. Tab bar (Posts | Saved | Drafts | Issues)
+            // ════════════════════════════════════════════════════════════════════
+
+            // ── Cover Banner (Photo 2 style) — full-width, 160dp ──
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(160.dp)
+                    .clickable {
+                        if (api.loggedIn() && !coverUploading) {
+                            coverPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
+                    }
             ) {
-                Text(t.profile, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Badges count (glass pill)
-                    Surface(
-                        shape = RoundedCornerShape(999.dp),
-                        color = Color.White.copy(0.06f),
-                        border = BorderStroke(1.dp, Color.White.copy(0.1f))
+                if (coverUrlState.isNotEmpty()) {
+                    AsyncImage(
+                        model = coverUrlState,
+                        contentDescription = "Cover",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    // Dark gradient overlay (top + bottom) supaya top bar icons terlihat
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                listOf(
+                                    Color.Black.copy(0.5f),
+                                    Color.Transparent,
+                                    Color.Black.copy(0.3f)
+                                )
+                            )
+                        )
+                    )
+                } else {
+                    // Default gradient cover (DLavie brand colors)
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                listOf(
+                                    Color(0xFF1A1A2E),
+                                    Color(0xFF16213E),
+                                    Color(0xFF0F3460)
+                                )
+                            )
+                        )
+                    )
+                    // DLavie logo watermark di tengah
+                    Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        Text(
+                            "DL",
+                            color = Color.White.copy(0.08f),
+                            fontSize = 72.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = InterFontFamily
+                        )
+                    }
+                }
+
+                // Cover uploading overlay
+                if (coverUploading) {
+                    Box(
+                        Modifier.fillMaxSize().background(Color.Black.copy(0.6f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(32.dp))
+                    }
+                }
+
+                // Top bar overlay (back/title + settings) — floating di atas cover
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Title "Profile" + badges pill
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(t.profile, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp)
+                        // Badges count (glass pill)
+                        Surface(
+                            shape = RoundedCornerShape(999.dp),
+                            color = Color.Black.copy(0.4f),
+                            border = BorderStroke(1.dp, Color.White.copy(0.15f))
                         ) {
-                            Icon(Icons.Rounded.LocalFireDepartment, null, tint = Color(0xFFFFAA00), modifier = Modifier.size(14.dp))
-                            Text("${myBadges.size}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Row(
+                                Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(Icons.Rounded.LocalFireDepartment, null, tint = Color(0xFFFFAA00), modifier = Modifier.size(14.dp))
+                                Text("${myBadges.size}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                     // Settings gear (glass circle)
                     Box(
                         Modifier.size(38.dp).clip(CircleShape)
-                            .background(Color.White.copy(0.06f))
-                            .border(1.dp, Color.White.copy(0.1f), CircleShape)
+                            .background(Color.Black.copy(0.4f))
+                            .border(1.dp, Color.White.copy(0.15f), CircleShape)
                             .clickable { onOpenSettings() },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(Icons.Rounded.Settings, null, tint = Color.White, modifier = Modifier.size(18.dp))
                     }
                 }
+
+                // Camera badge for cover (bottom-right)
+                Box(
+                    Modifier.align(Alignment.BottomEnd).padding(12.dp).size(32.dp)
+                        .background(Color.Black.copy(0.6f), CircleShape)
+                        .border(1.dp, Color.White.copy(0.3f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.CameraAlt, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                }
             }
 
-            // ── Glass Hero Card: avatar + name + stats (glassmorphism) ──
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                shape = RoundedCornerShape(24.dp),
-                color = Color.White.copy(0.03f),
-                border = BorderStroke(1.dp, Color.White.copy(0.08f))
+            // ── Profile info section (below cover, with floating avatar) ──
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Column(
-                    Modifier.fillMaxWidth().padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                // Avatar floating (-50dp offset ke atas, overlapping cover)
+                Box(
+                    Modifier.size(100.dp).offset(y = (-50).dp).clickable {
+                        if (api.loggedIn() && !avatarUploading) {
+                            avatarPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
+                    }
                 ) {
-                    // Avatar with glass ring
+                    // Glass ring around avatar
                     Box(
-                        Modifier.size(92.dp).clickable {
-                            if (api.loggedIn() && !avatarUploading) {
-                                avatarPicker.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
-                            }
-                        }
+                        Modifier.size(100.dp).clip(CircleShape)
+                            .background(Color(0xFF0A0A0A))
+                            .border(3.dp, Color(0xFF0A0A0A), CircleShape)
+                            .padding(3.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(0.08f)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        // Glass ring around avatar
-                        Box(
-                            Modifier.size(92.dp).clip(CircleShape)
-                                .background(Color.White.copy(0.08f))
-                                .border(1.dp, Color.White.copy(0.15f), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (avatarUrlState.isNotEmpty()) {
-                                AsyncImage(
-                                    model = avatarUrlState,
-                                    contentDescription = "Avatar",
-                                    modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
-                                DLavieLogoCover(
-                                    size = 80.dp, text = initial,
-                                    fontSize = 32.sp, shape = CircleShape
-                                )
-                            }
-                        }
-                        if (avatarUploading) {
-                            Box(
-                                Modifier.fillMaxSize().clip(CircleShape)
-                                    .background(Color.Black.copy(0.6f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
-                            }
-                        }
-                        // Camera badge (glass)
-                        Box(
-                            Modifier.align(Alignment.BottomEnd).size(28.dp)
-                                .background(Color.White, CircleShape)
-                                .border(3.dp, Color(0xFF0A0A0A), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.CameraAlt, null, tint = Color.Black, modifier = Modifier.size(14.dp))
+                        if (avatarUrlState.isNotEmpty()) {
+                            AsyncImage(
+                                model = avatarUrlState,
+                                contentDescription = "Avatar",
+                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            DLavieLogoCover(
+                                size = 88.dp, text = initial,
+                                fontSize = 36.sp, shape = CircleShape
+                            )
                         }
                     }
-
-                    Spacer(Modifier.height(14.dp))
-
-                    // Name + verified badge
-                    Row(
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            api.displayName().ifEmpty { "DLavie Player" },
-                            color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black,
-                            letterSpacing = (-0.3).sp
-                        )
-                        if (role.equals("admin", true) || role.equals("developer", true)) {
-                            Spacer(Modifier.width(5.dp))
-                            Icon(Icons.Rounded.Verified, null, tint = Color(0xFF2ED3F6), modifier = Modifier.size(16.dp))
+                    if (avatarUploading) {
+                        Box(
+                            Modifier.fillMaxSize().clip(CircleShape)
+                                .background(Color.Black.copy(0.6f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
                         }
                     }
+                    // Camera badge (glass)
+                    Box(
+                        Modifier.align(Alignment.BottomEnd).size(28.dp)
+                            .background(Color.White, CircleShape)
+                            .border(3.dp, Color(0xFF0A0A0A), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.CameraAlt, null, tint = Color.Black, modifier = Modifier.size(14.dp))
+                    }
+                }
 
-                    // Username
+                Spacer(Modifier.height(8.dp))
+
+                // Name + verified badge
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        "@${api.username().ifEmpty { "unknown" }}",
-                        color = SubText, fontSize = 12.sp, fontFamily = FontFamily.Monospace
+                        api.displayName().ifEmpty { "DLavie Player" },
+                        color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black,
+                        letterSpacing = (-0.3).sp
                     )
+                    if (role.equals("admin", true) || role.equals("developer", true)) {
+                        Spacer(Modifier.width(5.dp))
+                        Icon(Icons.Rounded.Verified, null, tint = Color(0xFF2ED3F6), modifier = Modifier.size(16.dp))
+                    }
+                }
 
+                // Username handle
+                Text(
+                    "@${api.username().ifEmpty { "unknown" }}",
+                    color = SubText, fontSize = 13.sp, fontFamily = FontFamily.Monospace
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // Stats row (3 columns) — clean, no glass card
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    ProfileStatItem(count = followerCount, label = t.followers.lowercase())
+                    Box(Modifier.width(1.dp).height(28.dp).background(Color.White.copy(0.1f)))
+                    ProfileStatItem(count = followingCount, label = t.followingCount.lowercase())
+                    Box(Modifier.width(1.dp).height(28.dp).background(Color.White.copy(0.1f)))
+                    ProfileStatItem(count = likesCount, label = "likes")
+                }
+
+                // Bio (optional)
+                if (bio.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
+                    Text(
+                        bio,
+                        color = SoftText, fontSize = 12.sp, lineHeight = 17.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                    )
+                }
 
-                    // Stats row (3 columns, glass)
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        ProfileStatItem(count = followerCount, label = t.followers.lowercase())
-                        // Divider
-                        Box(Modifier.width(1.dp).height(28.dp).background(Color.White.copy(0.1f)))
-                        ProfileStatItem(count = followingCount, label = t.followingCount.lowercase())
-                        Box(Modifier.width(1.dp).height(28.dp).background(Color.White.copy(0.1f)))
-                        ProfileStatItem(count = likesCount, label = "likes")
-                    }
+                Spacer(Modifier.height(14.dp))
 
-                    // Bio (optional)
-                    if (bio.isNotBlank()) {
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            bio,
-                            color = SoftText, fontSize = 12.sp, lineHeight = 17.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
-                        )
-                    }
-
-                    Spacer(Modifier.height(14.dp))
-
-                    // Edit Profile button (glass pill)
+                // Action buttons row: Edit Profile + Settings (side by side, Photo 2 style)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Edit Profile (primary, white)
                     Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(42.dp)
-                            .clickable { onOpenEditProfile() },
+                        modifier = Modifier.weight(1f).height(42.dp).clickable { onOpenEditProfile() },
                         shape = RoundedCornerShape(14.dp),
-                        color = Color.White.copy(0.06f),
-                        border = BorderStroke(1.dp, Color.White.copy(0.12f))
+                        color = Color.White
                     ) {
                         Row(
                             Modifier.fillMaxSize(),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Rounded.Edit, null, tint = Color.White, modifier = Modifier.size(15.dp))
+                            Icon(Icons.Rounded.Edit, null, tint = Color.Black, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text(t.editProfile, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text(t.editProfile, color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    // Settings (secondary, glass)
+                    Surface(
+                        modifier = Modifier.size(42.dp).clickable { onOpenSettings() },
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color.White.copy(0.06f),
+                        border = BorderStroke(1.dp, Color.White.copy(0.12f))
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.Settings, null, tint = Color.White, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
 
             // ── Glass Pill Tabs (Posts | Saved | Drafts | Issues) ──
             Surface(
