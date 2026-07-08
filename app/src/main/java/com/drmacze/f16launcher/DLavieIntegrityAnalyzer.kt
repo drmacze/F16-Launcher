@@ -516,13 +516,28 @@ object DLavieIntegrityAnalyzer {
      * @return true kalau ada Google account, false kalau tidak ada
      */
     fun hasGoogleAccount(context: Context): Boolean {
+        // v7.9.63: Fix false positive — GET_ACCOUNTS adalah runtime permission di Android 6+.
+        // getAccountsByType("com.google") akan return empty array jika permission belum granted,
+        // meskipun user punya Google account. Solusi: cek permission dulu.
+        // Kalau permission belum granted, jangan block user (assume ada account).
         return try {
+            // Cek apakah GET_ACCOUNTS permission sudah granted
+            val hasPermission = context.checkSelfPermission("android.permission.GET_ACCOUNTS") ==
+                PackageManager.PERMISSION_GRANTED
+
+            if (!hasPermission) {
+                Log.w(TAG, "GET_ACCOUNTS permission belum granted — assume user has Google account (don't block)")
+                return true  // Don't block user if we can't check
+            }
+
             val accountManager = android.accounts.AccountManager.get(context)
             val accounts = accountManager.getAccountsByType("com.google")
-            accounts.isNotEmpty()
+            val hasAccount = accounts.isNotEmpty()
+            Log.i(TAG, "Google account check: ${accounts.size} accounts found")
+            hasAccount
         } catch (e: Exception) {
-            Log.w(TAG, "Cannot check Google account: ${e.message}")
-            false  // Assume no account if error (safe side)
+            Log.w(TAG, "Cannot check Google account: ${e.message} — assume user has account (don't block)")
+            true  // v7.9.63: Don't block user if check fails (was: false)
         }
     }
 

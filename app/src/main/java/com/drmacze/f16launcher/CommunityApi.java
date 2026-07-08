@@ -846,12 +846,16 @@ public class CommunityApi {
 
     /**
      * Fetch average rating (1-5) and total count.
+     * v7.9.63: Support per-game rating via game_id column.
      * Returns: { "avg": <double 1-5>, "count": <int> }.
      * Public read (anon key) — does NOT require login.
+     *
+     * @param gameId Game identifier: "fifa16" or "fifa15". Default: "fifa16"
      */
-    public JSONObject fetchRatingStats() throws Exception {
+    public JSONObject fetchRatingStats(String gameId) throws Exception {
+        String gid = (gameId == null || gameId.isEmpty()) ? "fifa16" : gameId;
         JSONArray arr = new JSONArray(request("GET",
-            "/rest/v1/game_ratings?select=rating", null, false, false));
+            "/rest/v1/game_ratings?game_id=eq." + enc(gid) + "&select=rating", null, false, false));
         if (arr.length() == 0) return new JSONObject().put("avg", 0.0).put("count", 0);
         double sum = 0;
         for (int i = 0; i < arr.length(); i++) sum += arr.getJSONObject(i).optInt("rating", 0);
@@ -860,36 +864,67 @@ public class CommunityApi {
     }
 
     /**
-     * Submit or update current user's rating (1-5 stars).
-     * Uses upsert (on_conflict=user_id, resolution=merge-duplicates).
-     * Login required.
+     * Legacy method — defaults to FIFA 16.
      */
-    public void submitRating(int rating, String review) throws Exception {
+    public JSONObject fetchRatingStats() throws Exception {
+        return fetchRatingStats("fifa16");
+    }
+
+    /**
+     * Submit or update current user's rating (1-5 stars) for a specific game.
+     * v7.9.63: Support per-game rating via game_id column.
+     * Uses upsert (on_conflict=user_id,game_id, resolution=merge-duplicates).
+     * Login required.
+     *
+     * @param rating 1-5 stars
+     * @param review Optional review text
+     * @param gameId Game identifier: "fifa16" or "fifa15"
+     */
+    public void submitRating(int rating, String review, String gameId) throws Exception {
         if (!loggedIn()) throw new IllegalStateException("Belum login.");
         if (rating < 1 || rating > 5) throw new IllegalArgumentException("Rating harus 1-5.");
+        String gid = (gameId == null || gameId.isEmpty()) ? "fifa16" : gameId;
         JSONObject body = new JSONObject()
             .put("user_id", userId())
-            .put("rating", rating);
+            .put("rating", rating)
+            .put("game_id", gid);
         if (review != null && !review.trim().isEmpty()) body.put("review", review.trim());
-        request("POST", "/rest/v1/game_ratings?on_conflict=user_id", body, true,
+        request("POST", "/rest/v1/game_ratings?on_conflict=user_id,game_id", body, true,
             "resolution=merge-duplicates,return=minimal");
-        // Task 5: log activity + award badges — fire-and-forget.
         try {
-            logActivity("rate_game", new JSONObject().put("rating", rating));
+            logActivity("rate_game", new JSONObject().put("rating", rating).put("game_id", gid));
             checkAndAwardBadges();
         } catch (Throwable ignored) { }
     }
 
     /**
-     * Get current user's rating (1-5), or 0 if not yet rated.
-     * Login required.
+     * Legacy method — defaults to FIFA 16.
      */
-    public int getMyRating() throws Exception {
+    public void submitRating(int rating, String review) throws Exception {
+        submitRating(rating, review, "fifa16");
+    }
+
+    /**
+     * Get current user's rating (1-5) for a specific game, or 0 if not yet rated.
+     * v7.9.63: Support per-game rating via game_id column.
+     * Login required.
+     *
+     * @param gameId Game identifier: "fifa16" or "fifa15"
+     */
+    public int getMyRating(String gameId) throws Exception {
         if (!loggedIn()) return 0;
+        String gid = (gameId == null || gameId.isEmpty()) ? "fifa16" : gameId;
         JSONArray arr = new JSONArray(request("GET",
-            "/rest/v1/game_ratings?user_id=eq." + enc(userId()) + "&select=rating",
+            "/rest/v1/game_ratings?user_id=eq." + enc(userId()) + "&game_id=eq." + enc(gid) + "&select=rating",
             null, true, false));
         return arr.length() > 0 ? arr.getJSONObject(0).optInt("rating", 0) : 0;
+    }
+
+    /**
+     * Legacy method — defaults to FIFA 16.
+     */
+    public int getMyRating() throws Exception {
+        return getMyRating("fifa16");
     }
 
     /**

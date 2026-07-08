@@ -1108,6 +1108,7 @@ fun MainShell(
     var detailAvgRating         by remember { mutableStateOf(0.0) }
     var detailRatingCount       by remember { mutableStateOf(0) }
     var detailMaintenanceBlocked by remember { mutableStateOf(false) }
+    var detailGameId            by remember { mutableStateOf("fifa16") }  // v7.9.63: per-game rating
     // v6.8.1: lifted myRating state — shared antara HomeScreen & GameDetailScreen
     // supaya Rate button di detail screen bisa cek "sudah rating atau belum".
     // 0 = belum rating, 1-5 = sudah rating.
@@ -1603,10 +1604,10 @@ fun MainShell(
                                         // Submit rating directly (star bar already selected the value)
                                         scope.launch {
                                             try {
-                                                withContext(Dispatchers.IO) { api.submitRating(rating, "") }
+                                                withContext(Dispatchers.IO) { api.submitRating(rating, "", detailGameId) }
                                                 android.util.Log.i("GameDetail", "Rating submitted: $rating")
                                                 // Re-fetch stats untuk update aggregate
-                                                val stats = withContext(Dispatchers.IO) { api.fetchRatingStats() }
+                                                val stats = withContext(Dispatchers.IO) { api.fetchRatingStats(detailGameId) }
                                                 detailAvgRating   = stats.optDouble("avg", 0.0)
                                                 detailRatingCount = stats.optInt("count", 0)
                                                 detailMyRating    = rating
@@ -1758,13 +1759,15 @@ fun MainShell(
 
                                                     val game = baseGame.copy(serverStatus = realStatus)
                                                     detailGameItem = game
+                                                    // v7.9.63: Set gameId untuk per-game rating
+                                                    detailGameId = if (game.packageName == GAME_PKG_16) "fifa16" else "fifa15"
                                                     // Cek installed status
                                                     detailGameInstalled = try {
                                                         context.packageManager.getPackageInfo(game.packageName, 0); true
                                                     } catch (_: Throwable) { false }
                                                     // Fetch rating stats — v7.9.61: proper error handling, no swallow
                                                     try {
-                                                        val stats = withContext(Dispatchers.IO) { api.fetchRatingStats() }
+                                                        val stats = withContext(Dispatchers.IO) { api.fetchRatingStats(detailGameId) }
                                                         detailAvgRating   = stats.optDouble("avg", 0.0)
                                                         detailRatingCount = stats.optInt("count", 0)
                                                         android.util.Log.i("GameDetail", "Rating stats: avg=$detailAvgRating, count=$detailRatingCount")
@@ -1774,7 +1777,7 @@ fun MainShell(
                                                     // Fetch my rating (hanya kalau login)
                                                     if (api.loggedIn()) {
                                                         try {
-                                                            detailMyRating = withContext(Dispatchers.IO) { api.getMyRating() }
+                                                            detailMyRating = withContext(Dispatchers.IO) { api.getMyRating(detailGameId) }
                                                             android.util.Log.i("GameDetail", "My rating: $detailMyRating")
                                                         } catch (e: Exception) {
                                                             android.util.Log.e("GameDetail", "getMyRating failed", e)
@@ -1960,9 +1963,9 @@ fun MainShell(
                     scope.launch {
                         val ok = withContext(Dispatchers.IO) {
                             try {
-                                api.submitRating(rating, review)
+                                api.submitRating(rating, review, detailGameId)
                                 android.util.Log.i("GameDetail", "Rating submitted via popup: $rating")
-                                val stats = api.fetchRatingStats()
+                                val stats = api.fetchRatingStats(detailGameId)
                                 detailAvgRating   = stats.optDouble("avg", 0.0)
                                 detailRatingCount = stats.optInt("count", 0)
                                 detailMyRating    = rating
