@@ -9342,39 +9342,113 @@ fun GameHubScreen(
 
     Box(Modifier.fillMaxSize().background(PureBlack)) {
         Column(Modifier.fillMaxSize()) {
-            // Header
+            // v7.9.64: Console-style header with live stats
             Row(
-                Modifier.fillMaxWidth().padding(16.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(Icons.Rounded.SportsEsports, null, tint = Color.White, modifier = Modifier.size(28.dp))
                 Spacer(Modifier.width(12.dp))
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text("GameHub", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
-                    Text("${games.size} games available — tap to install & play", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp, fontFamily = InterFontFamily)
+                    Text("${games.size} games · Cloud Gaming Ready", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontFamily = InterFontFamily)
+                }
+                // v7.9.64: Live online indicator (console style)
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color(0xFF4CAF50).copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.3f))
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Box(
+                            Modifier.size(6.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF4CAF50))
+                        )
+                        Text("LIVE", color = Color(0xFF4CAF50), fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                    }
                 }
             }
 
-            // Game cards (horizontal scroll, landscape-style)
-            LazyRow(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp)
+            // v7.9.64: Hero Carousel (featured game — console style, full-width)
+            val pagerState = rememberPagerState(pageCount = { games.size })
+            val coroutineScope = rememberCoroutineScope()
+
+            // Auto-rotate every 5 seconds
+            LaunchedEffect(pagerState) {
+                while (true) {
+                    kotlinx.coroutines.delay(5000L)
+                    val nextPage = (pagerState.currentPage + 1) % games.size
+                    coroutineScope.launch { pagerState.animateScrollToPage(nextPage) }
+                }
+            }
+
+            Box(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                contentAlignment = Alignment.BottomCenter
             ) {
-                items(games) { game ->
-                    GameCard(
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxWidth().height(200.dp)
+                ) { page ->
+                    val game = games[page]
+                    HeroGameCard(
                         game = game,
-                        onClick = {
-                            // v7.9.3: Open GameDetailScreen (console-style) — NOT GameActionPanel.
-                            // Pass game packageName so MainShell can find the right GameItem.
-                            onGameClick(game.packageName)
-                        }
+                        onClick = { onGameClick(game.packageName) }
+                    )
+                }
+
+                // Page indicator dots (console style)
+                Row(
+                    Modifier.padding(bottom = 10.dp).align(Alignment.BottomCenter),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    for (i in games.indices) {
+                        val isSelected = pagerState.currentPage == i
+                        Box(
+                            Modifier
+                                .size(if (isSelected) 20.dp else 6.dp, 4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(if (isSelected) Color.White else Color.White.copy(alpha = 0.3f))
+                        )
+                    }
+                }
+            }
+
+            // v7.9.64: Quick stats bar (console style)
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Server status
+                games.firstOrNull()?.let { game ->
+                    QuickStatChip(
+                        icon = Icons.Rounded.Wifi,
+                        label = game.serverStatus.label,
+                        color = game.serverStatus.dotColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                    QuickStatChip(
+                        icon = Icons.Rounded.People,
+                        label = "Online",
+                        color = Color(0xFF4CAF50),
+                        modifier = Modifier.weight(1f)
+                    )
+                    QuickStatChip(
+                        icon = Icons.Rounded.Cloud,
+                        label = "Cloud Ready",
+                        color = Color(0xFF64B5F6),
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
 
-            // Recently played / All games section
-            Spacer(Modifier.height(24.dp))
+            // All Games section (console style list)
+            Spacer(Modifier.height(8.dp))
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -9382,10 +9456,12 @@ fun GameHubScreen(
                 Box(Modifier.size(width = 3.dp, height = 18.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
                 Spacer(Modifier.width(8.dp))
                 Text("All Games", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                Spacer(Modifier.weight(1f))
+                Text("${games.size} titles", color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp, fontFamily = InterFontFamily)
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
 
-            // Game list (vertical)
+            // Game list (vertical — console style)
             LazyColumn(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -9394,7 +9470,6 @@ fun GameHubScreen(
                     GameListItem(
                         game = game,
                         onClick = {
-                            // v7.9.3: Open GameDetailScreen — same as card click.
                             onGameClick(game.packageName)
                         }
                     )
@@ -9403,7 +9478,6 @@ fun GameHubScreen(
         }
 
         // ── Floating Action Panel (overlay) ──
-        // Shown when user taps a game card. Tap background to dismiss.
         activeGame?.let { game ->
             GameActionPanel(
                 game = game,
@@ -9413,6 +9487,136 @@ fun GameHubScreen(
                     onNav(Page.DLC)
                 }
             )
+        }
+    }
+}
+
+// v7.9.64: Hero Game Card — featured game, full-width, console style
+@Composable
+private fun HeroGameCard(game: GameItem, onClick: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp)
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            },
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Black),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            // Cover image
+            if (game.coverImageRes != null) {
+                coil.compose.AsyncImage(
+                    model = game.coverImageRes,
+                    contentDescription = game.title,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(game.coverGradient)))
+            }
+
+            // Gradient overlay (bottom fade)
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.4f),
+                        0.4f to Color.Transparent,
+                        0.7f to Color.Black.copy(alpha = 0.6f),
+                        1f to Color.Black.copy(alpha = 0.95f)
+                    )
+                )
+            )
+
+            // Featured badge (top-left)
+            Surface(
+                modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF64B5F6).copy(alpha = 0.9f)
+            ) {
+                Text(
+                    "FEATURED",
+                    color = Color.Black,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = InterFontFamily,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                )
+            }
+
+            // Server status (top-right)
+            Surface(
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                shape = RoundedCornerShape(999.dp),
+                color = game.serverStatus.bgColor,
+                border = BorderStroke(1.dp, game.serverStatus.dotColor.copy(alpha = 0.4f))
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(Modifier.size(6.dp).clip(CircleShape).background(game.serverStatus.dotColor))
+                    Text(game.serverStatus.label, color = game.serverStatus.textColor, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                }
+            }
+
+            // Game info (bottom)
+            Column(
+                Modifier.align(Alignment.BottomStart).padding(16.dp)
+            ) {
+                Text(game.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily, maxLines = 1)
+                Text(game.subtitle, color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp, fontFamily = InterFontFamily, maxLines = 1)
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Play button (console style)
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color.White
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Text("Play", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                        }
+                    }
+                    // Quick info
+                    Text("· ${game.sizeMb}", color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp, fontFamily = InterFontFamily)
+                    Text("· ${game.version}", color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp, fontFamily = InterFontFamily)
+                }
+            }
+        }
+    }
+}
+
+// v7.9.64: Quick Stat Chip — small stat indicator (console style)
+@Composable
+private fun QuickStatChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        color = color.copy(alpha = 0.1f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.2f))
+    ) {
+        Row(
+            Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(icon, null, tint = color, modifier = Modifier.size(12.dp))
+            Text(label, color = color, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
         }
     }
 }
