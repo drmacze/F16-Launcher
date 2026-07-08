@@ -4838,8 +4838,8 @@ private fun FeedPostCard(
                                 Icon(
                                     Icons.Rounded.Verified,
                                     contentDescription = "Verified",
-                                    tint = TextWhite,
-                                    modifier = Modifier.size(13.dp)
+                                    tint = Color(0xFF2ED3F6),  // v7.9.65: Blue verified badge (was: TextWhite)
+                                    modifier = Modifier.size(14.dp)
                                 )
                             }
                         }
@@ -7656,12 +7656,22 @@ fun UserProfileScreen(
                             }
                         }
 
-                        // Display name
-                        Text(
-                            displayName.ifEmpty { "DLavie Player" },
-                            fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color.White,
-                            textAlign = TextAlign.Center
-                        )
+                        // Display name + verified badge
+                        Row(
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                displayName.ifEmpty { "DLavie Player" },
+                                fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color.White,
+                                textAlign = TextAlign.Center
+                            )
+                            // v7.9.65: Verified badge for admin/developer
+                            if (profile?.role == "admin" || profile?.role == "developer") {
+                                Spacer(Modifier.width(5.dp))
+                                Icon(Icons.Rounded.Verified, null, tint = Color(0xFF2ED3F6), modifier = Modifier.size(18.dp))
+                            }
+                        }
 
                         // Unique ID
                         if (uniqueId > 0) {
@@ -9745,19 +9755,26 @@ private fun GameListItem(game: GameItem, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.05f))
-            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(18.dp))
+            .background(
+                Brush.horizontalGradient(
+                    listOf(
+                        game.coverGradient.first().copy(alpha = 0.15f),
+                        Color.White.copy(alpha = 0.03f)
+                    )
+                )
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
             .clickable {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 onClick()
             }
-            .padding(12.dp),
+            .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // v7.0.3: Cover thumbnail — real image OR gradient fallback
+        // v7.9.65: Larger cover thumbnail (console style)
         Box(
-            Modifier.size(56.dp).clip(RoundedCornerShape(14.dp))
+            Modifier.size(64.dp).clip(RoundedCornerShape(16.dp))
                 .background(Brush.verticalGradient(game.coverGradient)),
             contentAlignment = Alignment.Center
         ) {
@@ -9769,35 +9786,40 @@ private fun GameListItem(game: GameItem, onClick: () -> Unit) {
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                Text(game.coverText, color = Color.White.copy(alpha = 0.3f), fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
+                Text(game.coverText, color = Color.White.copy(alpha = 0.3f), fontSize = 18.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
             }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(game.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
+            Text(game.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
             Text(game.subtitle, color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontFamily = InterFontFamily, maxLines = 1)
-            // v7.8.0: Server status indicator (cloud gaming style)
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(6.dp))
+            // v7.9.65: Console-style info row (status + size + version)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Box(
-                    Modifier.size(5.dp)
-                        .clip(CircleShape)
-                        .background(game.serverStatus.dotColor)
-                )
-                Text(
-                    game.serverStatus.label,
-                    color = game.serverStatus.textColor,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = InterFontFamily,
-                    maxLines = 1
-                )
+                // Status with dot
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Box(Modifier.size(5.dp).clip(CircleShape).background(game.serverStatus.dotColor))
+                    Text(game.serverStatus.label, color = game.serverStatus.textColor, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
+                }
+                // Divider
+                Box(Modifier.size(width = 1.dp, height = 8.dp).background(Color.White.copy(alpha = 0.1f)))
+                // Size
+                Text(game.sizeMb, color = Color.White.copy(alpha = 0.4f), fontSize = 9.sp, fontFamily = InterFontFamily)
+                // Version
+                Text("· ${game.version}", color = Color.White.copy(alpha = 0.3f), fontSize = 9.sp, fontFamily = InterFontFamily)
             }
         }
-        Icon(Icons.Rounded.ChevronRight, null, tint = Color.White.copy(alpha = 0.3f), modifier = Modifier.size(20.dp))
+        // v7.9.65: Play button mini (console style)
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = Color.White.copy(alpha = 0.1f),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+        ) {
+            Icon(Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.padding(6.dp).size(18.dp))
+        }
     }
 }
 
