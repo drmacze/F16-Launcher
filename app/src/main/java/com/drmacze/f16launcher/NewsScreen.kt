@@ -1,5 +1,7 @@
 package com.drmacze.f16launcher
 
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -12,6 +14,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -23,8 +26,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -554,7 +562,7 @@ private fun NewsDetailContent(news: NewsItem, onBack: () -> Unit) {
             // Body
             if (news.body.isNotBlank()) {
                 Text("Deskripsi", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
-                Text(news.body, color = Color.White.copy(0.7f), fontSize = 13.sp, lineHeight = 20.sp, fontFamily = InterFontFamily)
+                LinkifyText(news.body, color = Color.White.copy(0.7f), fontSize = 13.sp, lineHeight = 20.sp)
             }
 
             // v7.9.6: Slider images gallery (promo images)
@@ -778,7 +786,17 @@ private suspend fun fetchSliderPosts(api: CommunityApi): List<NewsItem> = withCo
 private fun parseIsoDate(iso: String): Long? {
     if (iso.isBlank()) return null
     return try {
-        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).parse(iso)?.time
+        // v7.9.62: Fix timezone — Supabase mengirim timestamp dalam UTC (ISO 8601 dengan +00:00)
+        // Sebelumnya parser tidak handle timezone offset, jadi waktu dianggap local time.
+        // Akibatnya, "baru upload" muncul sebagai "7 jam lalu" (beda UTC vs WIB = UTC+7).
+        // Sekarang: strip microseconds, parse dengan timezone offset.
+        val cleanIso = iso
+            .substringBefore(".")  // hapus microseconds (.123456)
+            .replace("+00:00", "")  // hapus timezone offset (Supabase default UTC)
+            .replace("Z", "")       // hapus Z suffix (jika ada)
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")  // parse sebagai UTC
+        }.parse(cleanIso)?.time
     } catch (_: Exception) { null }
 }
 
@@ -794,5 +812,106 @@ private fun timeAgo(createdAt: Long, now: Long): String {
         hr < 24 -> "${hr} jam lalu"
         day < 7 -> "${day} hari lalu"
         else -> SimpleDateFormat("dd MMM yyyy", Locale("id", "ID")).format(Date(createdAt))
+    }
+}
+
+// v7.9.62: LinkifyText — Composable yang detect URL di text dan bikin clickable.
+// Link akan dibuka via in-app browser (Custom Tabs) seperti Telegram, bukan browser external.
+@Composable
+fun LinkifyText(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = Color.White.copy(0.7f),
+    linkColor: Color = Color(0xFF64B5F6),
+    fontSize: androidx.compose.ui.unit.TextUnit = 13.sp,
+    lineHeight: androidx.compose.ui.unit.TextUnit = 20.sp,
+    fontFamily: androidx.compose.ui.text.font.FontFamily = InterFontFamily
+) {
+    val context = LocalContext.current
+
+    // Regex untuk detect URL (http/https/www/t.me/dl.id)
+    val urlPattern = Regex("""(?i)\b((?:https?://|www\.|t\.me/|dl\.id/)[^\s<>"']+)""")
+
+    // Build annotated string dengan link styling
+    val annotatedString = buildAnnotatedString {
+        var lastIndex = 0
+        for (match in urlPattern.findAll(text)) {
+            // Text sebelum URL
+            if (match.range.first > lastIndex) {
+                append(text.substring(lastIndex, match.range.first))
+            }
+            // URL dengan styling
+            val url = match.value
+            val fullUrl = when {
+                url.startsWith("http://") || url.startsWith("https://") -> url
+                url.startsWith("www.") -> "https://$url"
+                url.startsWith("t.me/") -> "https://$url"
+                url.startsWith("dl.id/") -> "https://$url"
+                else -> "https://$url"
+            }
+            pushStringAnnotation(tag = "URL", annotation = fullUrl)
+            withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline, fontWeight = FontWeight.Medium)) {
+                append(url)
+            }
+            pop()
+            lastIndex = match.range.last + 1
+        }
+        // Text setelah URL terakhir
+        if (lastIndex < text.length) {
+            append(text.substring(lastIndex))
+        }
+    }
+
+    ClickableText(
+        text = annotatedString,
+        modifier = modifier,
+        style = androidx.compose.ui.text.TextStyle(
+            color = color,
+            fontSize = fontSize,
+            lineHeight = lineHeight,
+            fontFamily = fontFamily
+        ),
+        onClick = { offset ->
+            // Cek apakah user klik di dalam URL annotation
+            annotatedString.getStringAnnotations("URL", offset, offset).firstOrNull()?.let { annotation ->
+                val url = annotation.item
+                openInAppBrowser(context, url)
+            }
+        }
+    )
+}
+
+// v7.9.62: Buka URL via Custom Tabs (in-app browser seperti Telegram)
+// Kalau Custom Tabs tidak tersedia, fallback ke browser external
+fun openInAppBrowser(context: android.content.Context, url: String) {
+    try {
+        val uri = Uri.parse(url)
+        // Coba pakai Custom Tabs Intent (in-app browser)
+        val customTabsIntent = androidx.browser.customtabs.CustomTabsIntent.Builder()
+            .setShowTitle(true)
+            .setToolbarColor(0xFF0F1117.toInt())
+            .setSecondaryToolbarColor(0xFF1A1D2A.toInt())
+            .build()
+
+        // Set package ke Chrome Custom Tabs kalau tersedia
+        val packageName = "com.android.chrome"
+        try {
+            context.packageManager.getPackageInfo(packageName, 0)
+            customTabsIntent.intent.setPackage(packageName)
+        } catch (_: Exception) {
+            // Chrome tidak tersedia, biarkan default browser handle
+        }
+
+        customTabsIntent.launchUrl(context, uri)
+    } catch (e: Exception) {
+        // Fallback: buka browser external
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            android.widget.Toast.makeText(context, "Tidak bisa membuka link: $url", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 }
