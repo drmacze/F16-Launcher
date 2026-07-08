@@ -7667,7 +7667,7 @@ fun UserProfileScreen(
                                 textAlign = TextAlign.Center
                             )
                             // v7.9.65: Verified badge for admin/developer
-                            if (profile?.role == "admin" || profile?.role == "developer") {
+                            if (role == "admin" || role == "developer") {
                                 Spacer(Modifier.width(5.dp))
                                 Icon(Icons.Rounded.Verified, null, tint = Color(0xFF2ED3F6), modifier = Modifier.size(18.dp))
                             }
