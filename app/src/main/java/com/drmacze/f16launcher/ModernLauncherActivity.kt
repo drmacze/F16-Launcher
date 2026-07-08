@@ -9439,7 +9439,7 @@ fun GameHubScreen(
                         modifier = Modifier.weight(1f)
                     )
                     QuickStatChip(
-                        icon = Icons.Rounded.CloudDone,
+                        icon = Icons.Rounded.CheckCircle,
                         label = "Cloud Ready",
                         color = Color(0xFF64B5F6),
                         modifier = Modifier.weight(1f)
