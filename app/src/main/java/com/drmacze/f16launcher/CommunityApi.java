@@ -214,6 +214,11 @@ public class CommunityApi {
             .putString("display_name", p.optString("display_name", ""))
             .putString("avatar_url", p.optString("avatar_url", ""))
             .putString("role", p.optString("role", "member"));
+        // v7.9.62: cache cover_url (banner) — optional, mungkin null kalau column belum ada
+        String coverUrl = p.optString("cover_url", "");
+        if (!coverUrl.isEmpty() && !coverUrl.equals("null")) {
+            e.putString("cover_url", coverUrl);
+        }
         if (!country.isEmpty()) e.putString("country", country);
         // v7.9.17: cache user_type, use_case, android_version untuk onboarding check
         e.putString("user_type", p.optString("user_type", ""));
@@ -226,6 +231,8 @@ public class CommunityApi {
 
     public String role() { return prefs.getString("role", "member"); }
     public String avatarUrl() { return prefs.getString("avatar_url", ""); }
+    // v7.9.62: cover_url getter untuk profile banner
+    public String coverUrl() { return prefs.getString("cover_url", ""); }
 
     public JSONArray feedPosts() throws Exception {
         // Authenticated request — uses user's access token so RLS policies can resolve author + visibility.
@@ -687,6 +694,78 @@ public class CommunityApi {
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    //  v7.9.62: Cover/Banner upload — untuk profile banner (Photo 2 style)
+    //  Mirror dari uploadAvatar tapi pakai filename "cover_" dan column "cover_url"
+    //  Storage: community-images bucket (sama dengan avatar)
+    //  DB: profiles.cover_url (NEW column — butuh SQL migration, see backend/supabase_schema.sql)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Upload cover/banner image to Supabase Storage.
+     * @param imageBytes raw JPEG bytes (size < 4MB recommended, aspect ratio 3:1 or 2.5:1)
+     * @return public URL of uploaded image
+     */
+    public String uploadCover(byte[] imageBytes) throws Exception {
+        if (!loggedIn()) throw new IllegalStateException("Belum login.");
+        if (imageBytes == null || imageBytes.length == 0)
+            throw new IllegalArgumentException("Image bytes kosong.");
+
+        String filename = "cover_" + userId() + ".jpg";
+        String path = userId() + "/" + filename;
+        String encodedPath = java.net.URLEncoder.encode(path, "UTF-8");
+        String url = SUPABASE_URL + "/storage/v1/object/community-images/" + encodedPath;
+
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        try {
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(60000);
+            conn.setRequestProperty("apikey", SUPABASE_KEY);
+            conn.setRequestProperty("Authorization", "Bearer " + token());
+            conn.setRequestProperty("Content-Type", "image/jpeg");
+            conn.setRequestProperty("x-upsert", "true");
+            conn.getOutputStream().write(imageBytes);
+
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) {
+                String err = "";
+                java.io.InputStream errStream = conn.getErrorStream();
+                if (errStream != null) {
+                    try {
+                        java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(errStream));
+                        StringBuilder sb = new StringBuilder();
+                        String line;
+                        while ((line = br.readLine()) != null) sb.append(line).append('\n');
+                        err = sb.toString().trim();
+                    } catch (Throwable ignored) { }
+                }
+                throw new IllegalStateException("Upload cover gagal: HTTP " + code + (err.isEmpty() ? "" : " " + err));
+            }
+        } finally {
+            conn.disconnect();
+        }
+
+        return SUPABASE_URL + "/storage/v1/object/public/community-images/" + encodedPath;
+    }
+
+    /**
+     * Update cover_url column on the logged-in user's profile row.
+     * Also writes the new URL to local prefs so coverUrl() returns it immediately.
+     * Note: Butuh column cover_url di profiles table (run SQL migration dulu).
+     * Kalau column belum ada, PATCH akan return 400 — caller handle error.
+     */
+    public void updateCover(String coverUrl) throws Exception {
+        if (userId().isEmpty()) throw new IllegalStateException("Belum login.");
+        if (coverUrl == null || coverUrl.trim().isEmpty())
+            throw new IllegalArgumentException("Cover URL kosong.");
+        JSONObject body = new JSONObject().put("cover_url", coverUrl.trim());
+        request("PATCH", "/rest/v1/profiles?id=eq." + enc(userId()), body, true, "return=minimal");
+        // Update local prefs supaya coverUrl() langsung return URL baru
+        prefs.edit().putString("cover_url", coverUrl.trim()).apply();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     //  Profile lookup — for author info in feed cards
     // ──────────────────────────────────────────────────────────────────────
 
@@ -846,16 +925,12 @@ public class CommunityApi {
 
     /**
      * Fetch average rating (1-5) and total count.
-     * v7.9.63: Support per-game rating via game_id column.
      * Returns: { "avg": <double 1-5>, "count": <int> }.
      * Public read (anon key) — does NOT require login.
-     *
-     * @param gameId Game identifier: "fifa16" or "fifa15". Default: "fifa16"
      */
-    public JSONObject fetchRatingStats(String gameId) throws Exception {
-        String gid = (gameId == null || gameId.isEmpty()) ? "fifa16" : gameId;
+    public JSONObject fetchRatingStats() throws Exception {
         JSONArray arr = new JSONArray(request("GET",
-            "/rest/v1/game_ratings?game_id=eq." + enc(gid) + "&select=rating", null, false, false));
+            "/rest/v1/game_ratings?select=rating", null, false, false));
         if (arr.length() == 0) return new JSONObject().put("avg", 0.0).put("count", 0);
         double sum = 0;
         for (int i = 0; i < arr.length(); i++) sum += arr.getJSONObject(i).optInt("rating", 0);
@@ -864,67 +939,116 @@ public class CommunityApi {
     }
 
     /**
-     * Legacy method — defaults to FIFA 16.
-     */
-    public JSONObject fetchRatingStats() throws Exception {
-        return fetchRatingStats("fifa16");
-    }
-
-    /**
-     * Submit or update current user's rating (1-5 stars) for a specific game.
-     * v7.9.63: Support per-game rating via game_id column.
-     * Uses upsert (on_conflict=user_id,game_id, resolution=merge-duplicates).
+     * Submit or update current user's rating (1-5 stars).
+     * Uses upsert (on_conflict=user_id, resolution=merge-duplicates).
      * Login required.
      *
-     * @param rating 1-5 stars
-     * @param review Optional review text
-     * @param gameId Game identifier: "fifa16" or "fifa15"
+     * v7.9.61 FIX: Rating masih 0.0 setelah submit — silent fail.
+     * Root cause: runCatching di UI swallow error tanpa log/toast.
+     * Sekarang:
+     *   1. Log semua error dengan HTTP code + message
+     *   2. Fallback: kalau POST upsert gagal (RLS/conflict), coba PATCH (UPDATE)
+     *      row existing user_id
+     *   3. Throw exception dengan pesan yang informatif supaya UI bisa tampilkan
+     *      ke user
      */
-    public void submitRating(int rating, String review, String gameId) throws Exception {
+    public void submitRating(int rating, String review) throws Exception {
         if (!loggedIn()) throw new IllegalStateException("Belum login.");
         if (rating < 1 || rating > 5) throw new IllegalArgumentException("Rating harus 1-5.");
-        String gid = (gameId == null || gameId.isEmpty()) ? "fifa16" : gameId;
-        JSONObject body = new JSONObject()
-            .put("user_id", userId())
-            .put("rating", rating)
-            .put("game_id", gid);
-        if (review != null && !review.trim().isEmpty()) body.put("review", review.trim());
-        request("POST", "/rest/v1/game_ratings?on_conflict=user_id,game_id", body, true,
-            "resolution=merge-duplicates,return=minimal");
+
+        // v7.9.61: Verify JWT sub matches prefs user_id.
+        // Kalau mismatch (e.g., token dari user A tapi uid dari user B disimpen di prefs),
+        // RLS policy auth.uid() = user_id akan block INSERT → silent fail.
+        // Detection: decode JWT, extract sub, compare dengan prefs user_id.
+        String prefsUid = userId();
+        String jwtSub = "";
         try {
-            logActivity("rate_game", new JSONObject().put("rating", rating).put("game_id", gid));
+            String token = token();
+            String[] parts = token.split("\\.");
+            if (parts.length >= 2) {
+                String payload = parts[1];
+                String padded = payload + "=".repeat((4 - payload.length() % 4) % 4);
+                byte[] decoded = android.util.Base64.decode(padded, android.util.Base64.URL_SAFE);
+                JSONObject jwt = new JSONObject(new String(decoded));
+                jwtSub = jwt.optString("sub", "");
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "submitRating: failed to decode JWT sub — " + t.getMessage());
+        }
+        if (jwtSub.isEmpty()) {
+            Log.w(TAG, "submitRating: JWT sub kosong — token mungkin invalid atau bukan Supabase JWT");
+        } else if (!jwtSub.equals(prefsUid)) {
+            // CRITICAL: uid mismatch akan block RLS policy
+            Log.e(TAG, "submitRating: UID MISMATCH! prefs.user_id=" + prefsUid
+                + " ≠ JWT.sub=" + jwtSub + " — RLS akan block INSERT. "
+                + "User harus reconnect via Portal.");
+            throw new IllegalStateException(
+                "UID mismatch: token tidak cocok dengan user_id tersimpan. "
+                + "Silakan logout lalu reconnect via DLavie Portal."
+            );
+        }
+
+        JSONObject body = new JSONObject()
+            .put("user_id", prefsUid)
+            .put("rating", rating);
+        if (review != null && !review.trim().isEmpty()) body.put("review", review.trim());
+
+        // v7.9.61: Log payload + uid untuk debugging RLS
+        Log.i(TAG, "submitRating: uid=" + prefsUid + ", jwtSub=" + jwtSub
+            + ", rating=" + rating + ", review=" + (review == null ? "" : review));
+
+        // Attempt 1: POST upsert (INSERT or UPDATE via on_conflict)
+        try {
+            request("POST", "/rest/v1/game_ratings?on_conflict=user_id", body, true,
+                "resolution=merge-duplicates,return=minimal");
+            Log.i(TAG, "submitRating: POST upsert SUCCESS for uid=" + userId());
+        } catch (Exception e) {
+            Log.w(TAG, "submitRating: POST upsert failed — " + e.getMessage() + " | trying PATCH fallback");
+
+            // Attempt 2: PATCH (UPDATE) existing row by user_id
+            // Kalau row sudah ada (user pernah rate), PATCH lebih reliable
+            // karena tidak trigger INSERT RLS policy (yang mungkin lebih ketat)
+            try {
+                JSONObject patchBody = new JSONObject().put("rating", rating);
+                if (review != null && !review.trim().isEmpty()) patchBody.put("review", review.trim());
+                request("PATCH",
+                    "/rest/v1/game_ratings?user_id=eq." + enc(userId()),
+                    patchBody, true, "return=minimal");
+                Log.i(TAG, "submitRating: PATCH fallback SUCCESS for uid=" + userId());
+            } catch (Exception e2) {
+                Log.e(TAG, "submitRating: BOTH POST + PATCH failed. POST err=" + e.getMessage()
+                    + " | PATCH err=" + e2.getMessage());
+
+                // Attempt 3: kalau PATCH return 0 rows affected (row belum ada),
+                // coba POST tanpa on_conflict (raw INSERT)
+                try {
+                    request("POST", "/rest/v1/game_ratings", body, true, "return=minimal");
+                    Log.i(TAG, "submitRating: raw INSERT (no on_conflict) SUCCESS for uid=" + userId());
+                } catch (Exception e3) {
+                    Log.e(TAG, "submitRating: ALL 3 attempts failed. Final err=" + e3.getMessage());
+                    // Throw original POST error supaya UI tampilkan
+                    throw new IllegalStateException("Rating submit gagal: " + e.getMessage()
+                        + " (fallback juga gagal: " + e3.getMessage() + ")", e3);
+                }
+            }
+        }
+        // Task 5: log activity + award badges — fire-and-forget.
+        try {
+            logActivity("rate_game", new JSONObject().put("rating", rating));
             checkAndAwardBadges();
         } catch (Throwable ignored) { }
     }
 
     /**
-     * Legacy method — defaults to FIFA 16.
-     */
-    public void submitRating(int rating, String review) throws Exception {
-        submitRating(rating, review, "fifa16");
-    }
-
-    /**
-     * Get current user's rating (1-5) for a specific game, or 0 if not yet rated.
-     * v7.9.63: Support per-game rating via game_id column.
+     * Get current user's rating (1-5), or 0 if not yet rated.
      * Login required.
-     *
-     * @param gameId Game identifier: "fifa16" or "fifa15"
-     */
-    public int getMyRating(String gameId) throws Exception {
-        if (!loggedIn()) return 0;
-        String gid = (gameId == null || gameId.isEmpty()) ? "fifa16" : gameId;
-        JSONArray arr = new JSONArray(request("GET",
-            "/rest/v1/game_ratings?user_id=eq." + enc(userId()) + "&game_id=eq." + enc(gid) + "&select=rating",
-            null, true, false));
-        return arr.length() > 0 ? arr.getJSONObject(0).optInt("rating", 0) : 0;
-    }
-
-    /**
-     * Legacy method — defaults to FIFA 16.
      */
     public int getMyRating() throws Exception {
-        return getMyRating("fifa16");
+        if (!loggedIn()) return 0;
+        JSONArray arr = new JSONArray(request("GET",
+            "/rest/v1/game_ratings?user_id=eq." + enc(userId()) + "&select=rating",
+            null, true, false));
+        return arr.length() > 0 ? arr.getJSONObject(0).optInt("rating", 0) : 0;
     }
 
     /**
