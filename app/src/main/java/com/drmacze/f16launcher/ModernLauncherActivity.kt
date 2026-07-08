@@ -9427,19 +9427,19 @@ fun GameHubScreen(
                 // Server status
                 games.firstOrNull()?.let { game ->
                     QuickStatChip(
-                        icon = Icons.Rounded.Wifi,
+                        icon = Icons.Rounded.Speed,
                         label = game.serverStatus.label,
                         color = game.serverStatus.dotColor,
                         modifier = Modifier.weight(1f)
                     )
                     QuickStatChip(
-                        icon = Icons.Rounded.People,
+                        icon = Icons.Rounded.Person,
                         label = "Online",
                         color = Color(0xFF4CAF50),
                         modifier = Modifier.weight(1f)
                     )
                     QuickStatChip(
-                        icon = Icons.Rounded.Cloud,
+                        icon = Icons.Rounded.CloudQueue,
                         label = "Cloud Ready",
                         color = Color(0xFF64B5F6),
                         modifier = Modifier.weight(1f)
