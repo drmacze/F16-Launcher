@@ -9363,18 +9363,30 @@ fun GameHubScreen(
 
     Box(Modifier.fillMaxSize().background(PureBlack)) {
         Column(Modifier.fillMaxSize()) {
-            // v7.9.64: Console-style header with live stats
+            // v7.9.71: Cloud gaming header — premium console style
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Rounded.SportsEsports, null, tint = Color.White, modifier = Modifier.size(28.dp))
-                Spacer(Modifier.width(12.dp))
+                // DLavie logo badge (cloud gaming style)
+                Box(
+                    Modifier.size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            Brush.linearGradient(
+                                listOf(Color(0xFF1A73E8), Color(0xFF64B5F6))
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("DL", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
+                }
+                Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text("GameHub", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
-                    Text("${games.size} games · Cloud Gaming Ready", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontFamily = InterFontFamily)
+                    Text("${games.size} games · Cloud Gaming Platform", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontFamily = InterFontFamily)
                 }
-                // v7.9.64: Live online indicator (console style)
+                // Live indicator
                 Surface(
                     shape = RoundedCornerShape(999.dp),
                     color = Color(0xFF4CAF50).copy(alpha = 0.15f),
@@ -9385,21 +9397,16 @@ fun GameHubScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
-                        Box(
-                            Modifier.size(6.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF4CAF50))
-                        )
+                        Box(Modifier.size(6.dp).clip(CircleShape).background(Color(0xFF4CAF50)))
                         Text("LIVE", color = Color(0xFF4CAF50), fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
                     }
                 }
             }
 
-            // v7.9.64: Hero Carousel (featured game — console style, full-width)
+            // v7.9.71: Hero Carousel dengan glow effect
             val pagerState = rememberPagerState(pageCount = { games.size })
             val coroutineScope = rememberCoroutineScope()
 
-            // Auto-rotate every 5 seconds
             LaunchedEffect(pagerState) {
                 while (true) {
                     kotlinx.coroutines.delay(5000L)
@@ -9414,75 +9421,93 @@ fun GameHubScreen(
             ) {
                 HorizontalPager(
                     state = pagerState,
-                    modifier = Modifier.fillMaxWidth().height(200.dp)
+                    modifier = Modifier.fillMaxWidth().height(220.dp)
                 ) { page ->
                     val game = games[page]
+                    val isSelected = pagerState.currentPage == page
                     HeroGameCard(
                         game = game,
+                        isSelected = isSelected,
                         onClick = { onGameClick(game.packageName) }
                     )
                 }
 
-                // Page indicator dots (console style)
+                // Page indicator (cloud gaming style — pill dots)
                 Row(
-                    Modifier.padding(bottom = 10.dp).align(Alignment.BottomCenter),
+                    Modifier.padding(bottom = 12.dp).align(Alignment.BottomCenter),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     for (i in games.indices) {
-                        val isSelected = pagerState.currentPage == i
+                        val isCurrent = pagerState.currentPage == i
                         Box(
                             Modifier
-                                .size(if (isSelected) 20.dp else 6.dp, 4.dp)
+                                .height(4.dp)
+                                .then(if (isCurrent) Modifier.width(24.dp) else Modifier.width(8.dp))
                                 .clip(RoundedCornerShape(2.dp))
-                                .background(if (isSelected) Color.White else Color.White.copy(alpha = 0.3f))
+                                .background(
+                                    if (isCurrent) Brush.horizontalGradient(
+                                        listOf(Color(0xFF64B5F6), Color.White)
+                                    ) else Brush.horizontalGradient(
+                                        listOf(Color.White.copy(0.3f), Color.White.copy(0.3f))
+                                    )
+                                )
                         )
                     }
                 }
             }
 
-            // v7.9.64: Quick stats bar (console style)
+            // v7.9.71: Cloud gaming stats bar — premium style
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Server status
                 games.firstOrNull()?.let { game ->
-                    QuickStatChip(
+                    CloudStatChip(
                         icon = Icons.Rounded.SportsEsports,
                         label = game.serverStatus.label,
                         color = game.serverStatus.dotColor,
                         modifier = Modifier.weight(1f)
                     )
-                    QuickStatChip(
+                    CloudStatChip(
                         icon = Icons.Rounded.Person,
-                        label = "Online",
+                        label = "Players",
                         color = Color(0xFF4CAF50),
                         modifier = Modifier.weight(1f)
                     )
-                    QuickStatChip(
+                    CloudStatChip(
+                        icon = Icons.Rounded.Star,
+                        label = "Rated",
+                        color = Color(0xFFFFB74D),
+                        modifier = Modifier.weight(1f)
+                    )
+                    CloudStatChip(
                         icon = Icons.Rounded.CheckCircle,
-                        label = "Cloud Ready",
+                        label = "Cloud",
                         color = Color(0xFF64B5F6),
                         modifier = Modifier.weight(1f)
                     )
                 }
             }
 
-            // All Games section (console style list)
-            Spacer(Modifier.height(8.dp))
+            // All Games section header (cloud gaming style)
+            Spacer(Modifier.height(6.dp))
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(Modifier.size(width = 3.dp, height = 18.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
+                Box(
+                    Modifier.size(width = 3.dp, height = 16.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Brush.verticalGradient(listOf(Color(0xFF64B5F6), Color(0xFF1A73E8))))
+                )
                 Spacer(Modifier.width(8.dp))
-                Text("All Games", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                Text("Library", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
                 Spacer(Modifier.weight(1f))
                 Text("${games.size} titles", color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp, fontFamily = InterFontFamily)
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
 
-            // Game list (vertical — console style)
+            // Game list (cloud gaming library style)
             LazyColumn(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -9490,15 +9515,15 @@ fun GameHubScreen(
                 items(games) { game ->
                     GameListItem(
                         game = game,
-                        onClick = {
-                            onGameClick(game.packageName)
-                        }
+                        onClick = { onGameClick(game.packageName) }
                     )
                 }
+                // Bottom padding
+                item { Spacer(Modifier.height(80.dp)) }
             }
         }
 
-        // ── Floating Action Panel (overlay) ──
+        // Floating Action Panel
         activeGame?.let { game ->
             GameActionPanel(
                 game = game,
@@ -9512,21 +9537,29 @@ fun GameHubScreen(
     }
 }
 
-// v7.9.64: Hero Game Card — featured game, full-width, console style
+// v7.9.71: Hero Game Card — cloud gaming style with glow effect
 @Composable
-private fun HeroGameCard(game: GameItem, onClick: () -> Unit) {
+private fun HeroGameCard(game: GameItem, isSelected: Boolean = false, onClick: () -> Unit) {
     val haptic = LocalHapticFeedback.current
+    val scale by animateFloatAsState(
+        targetValue = if (isSelected) 1f else 0.95f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "hero_scale"
+    )
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(200.dp)
+            .height(220.dp)
+            .scale(scale)
             .clickable {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 onClick()
             },
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Black),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+        border = if (isSelected) BorderStroke(2.dp, Brush.horizontalGradient(
+            listOf(Color(0xFF64B5F6), Color.White, Color(0xFF64B5F6))
+        )) else BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
     ) {
         Box(Modifier.fillMaxSize()) {
             // Cover image
@@ -9617,9 +9650,9 @@ private fun HeroGameCard(game: GameItem, onClick: () -> Unit) {
     }
 }
 
-// v7.9.64: Quick Stat Chip — small stat indicator (console style)
+// v7.9.71: Cloud Stat Chip — premium cloud gaming style
 @Composable
-private fun QuickStatChip(
+private fun CloudStatChip(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     color: Color,
@@ -9627,17 +9660,17 @@ private fun QuickStatChip(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(10.dp),
-        color = color.copy(alpha = 0.1f),
-        border = BorderStroke(1.dp, color.copy(alpha = 0.2f))
+        shape = RoundedCornerShape(12.dp),
+        color = color.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.15f))
     ) {
-        Row(
-            Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        Column(
+            Modifier.padding(horizontal = 6.dp, vertical = 8.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(12.dp))
-            Text(label, color = color, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1)
+            Icon(icon, null, tint = color, modifier = Modifier.size(14.dp))
+            Text(label, color = color, fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily, maxLines = 1, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
     }
 }
