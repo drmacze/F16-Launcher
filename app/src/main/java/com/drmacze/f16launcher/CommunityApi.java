@@ -925,17 +925,32 @@ public class CommunityApi {
 
     /**
      * Fetch average rating (1-5) and total count.
+     * v7.9.68: Support per-game rating via game_id. Fallback ke tanpa game_id
+     * kalau kolom game_id belum ada (backward compat).
      * Returns: { "avg": <double 1-5>, "count": <int> }.
      * Public read (anon key) — does NOT require login.
      */
     public JSONObject fetchRatingStats() throws Exception {
-        JSONArray arr = new JSONArray(request("GET",
-            "/rest/v1/game_ratings?select=rating", null, false, false));
-        if (arr.length() == 0) return new JSONObject().put("avg", 0.0).put("count", 0);
-        double sum = 0;
-        for (int i = 0; i < arr.length(); i++) sum += arr.getJSONObject(i).optInt("rating", 0);
-        double avg = sum / arr.length();
-        return new JSONObject().put("avg", avg).put("count", arr.length());
+        // Coba query dengan game_id filter (untuk per-game rating)
+        try {
+            JSONArray arr = new JSONArray(request("GET",
+                "/rest/v1/game_ratings?game_id=eq.fifa16&select=rating", null, false, false));
+            if (arr.length() == 0) return new JSONObject().put("avg", 0.0).put("count", 0);
+            double sum = 0;
+            for (int i = 0; i < arr.length(); i++) sum += arr.getJSONObject(i).optInt("rating", 0);
+            double avg = sum / arr.length();
+            return new JSONObject().put("avg", avg).put("count", arr.length());
+        } catch (Exception e) {
+            // Fallback: query tanpa game_id (kalau kolom belum ada)
+            Log.w(TAG, "fetchRatingStats with game_id failed, fallback: " + e.getMessage());
+            JSONArray arr = new JSONArray(request("GET",
+                "/rest/v1/game_ratings?select=rating", null, false, false));
+            if (arr.length() == 0) return new JSONObject().put("avg", 0.0).put("count", 0);
+            double sum = 0;
+            for (int i = 0; i < arr.length(); i++) sum += arr.getJSONObject(i).optInt("rating", 0);
+            double avg = sum / arr.length();
+            return new JSONObject().put("avg", avg).put("count", arr.length());
+        }
     }
 
     /**
@@ -1019,17 +1034,30 @@ public class CommunityApi {
             Log.w(TAG, "submitRating: on_conflict=user_id failed — " + e.getMessage());
         }
 
-        // Attempt 3: PATCH existing row
+        // Attempt 3: PATCH existing row (with game_id)
         try {
             JSONObject patchBody = new JSONObject().put("rating", rating);
             if (review != null && !review.trim().isEmpty()) patchBody.put("review", review.trim());
             request("PATCH",
                 "/rest/v1/game_ratings?user_id=eq." + enc(userId()) + "&game_id=eq.fifa16",
                 patchBody, true, "return=minimal");
-            Log.i(TAG, "submitRating: PATCH fallback SUCCESS");
+            Log.i(TAG, "submitRating: PATCH (game_id) SUCCESS");
             return;
         } catch (Exception e2) {
-            Log.w(TAG, "submitRating: PATCH failed — " + e2.getMessage());
+            Log.w(TAG, "submitRating: PATCH (game_id) failed — " + e2.getMessage());
+        }
+
+        // Attempt 3b: PATCH existing row (without game_id — fallback)
+        try {
+            JSONObject patchBody = new JSONObject().put("rating", rating);
+            if (review != null && !review.trim().isEmpty()) patchBody.put("review", review.trim());
+            request("PATCH",
+                "/rest/v1/game_ratings?user_id=eq." + enc(userId()),
+                patchBody, true, "return=minimal");
+            Log.i(TAG, "submitRating: PATCH (no game_id) SUCCESS");
+            return;
+        } catch (Exception e2b) {
+            Log.w(TAG, "submitRating: PATCH (no game_id) failed — " + e2b.getMessage());
         }
 
         // Attempt 4: Raw INSERT (no on_conflict)
@@ -1040,7 +1068,7 @@ public class CommunityApi {
         } catch (Exception e3) {
             Log.e(TAG, "submitRating: ALL attempts failed. Final err=" + e3.getMessage());
             throw new IllegalStateException("Rating submit gagal: " + e3.getMessage()
-                + " — jalankan SQL migration di Supabase SQL Editor (fix_rating_constraint.sql)", e3);
+                + " — jalankan SQL migration: fix_rating_complete.sql di Supabase SQL Editor", e3);
         }
     }
 
