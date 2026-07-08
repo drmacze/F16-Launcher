@@ -1042,11 +1042,6 @@ public class CommunityApi {
             throw new IllegalStateException("Rating submit gagal: " + e3.getMessage()
                 + " — jalankan SQL migration di Supabase SQL Editor (fix_rating_constraint.sql)", e3);
         }
-        // Task 5: log activity + award badges — fire-and-forget.
-        try {
-            logActivity("rate_game", new JSONObject().put("rating", rating));
-            checkAndAwardBadges();
-        } catch (Throwable ignored) { }
     }
 
     /**
