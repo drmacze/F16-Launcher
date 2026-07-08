@@ -1629,8 +1629,8 @@ fun MainShell(
                                         // Sekarang: try/catch eksplisit + Toast feedback.
                                         scope.launch {
                                             try {
-                                                api.submitRating(rating, "")
-                                                val stats = api.fetchRatingStats()
+                                                withContext(Dispatchers.IO) { api.submitRating(rating, "") }
+                                                val stats = withContext(Dispatchers.IO) { api.fetchRatingStats() }
                                                 detailAvgRating   = stats.optDouble("avg", 0.0)
                                                 detailRatingCount = stats.optInt("count", 0)
                                                 detailMyRating    = rating
@@ -1799,12 +1799,23 @@ fun MainShell(
                                                     detailGameInstalled = try {
                                                         context.packageManager.getPackageInfo(game.packageName, 0); true
                                                     } catch (_: Throwable) { false }
-                                                    // Fetch rating stats
-                                                    runCatching {
-                                                        val stats = api.fetchRatingStats()
+                                                    // Fetch rating stats — v7.9.69: NO runCatching, proper error handling
+                                                    try {
+                                                        val stats = withContext(Dispatchers.IO) { api.fetchRatingStats() }
                                                         detailAvgRating   = stats.optDouble("avg", 0.0)
                                                         detailRatingCount = stats.optInt("count", 0)
-                                                        detailMyRating    = api.getMyRating()
+                                                        android.util.Log.i("GameDetail", "Rating stats loaded: avg=$detailAvgRating, count=$detailRatingCount")
+                                                    } catch (e: Exception) {
+                                                        android.util.Log.e("GameDetail", "fetchRatingStats failed: ${e.message}", e)
+                                                    }
+                                                    // Fetch my rating (hanya kalau login)
+                                                    if (api.loggedIn()) {
+                                                        try {
+                                                            detailMyRating = withContext(Dispatchers.IO) { api.getMyRating() }
+                                                            android.util.Log.i("GameDetail", "My rating: $detailMyRating")
+                                                        } catch (e: Exception) {
+                                                            android.util.Log.e("GameDetail", "getMyRating failed: ${e.message}")
+                                                        }
                                                     }
                                                     // Cek maintenance — block install/play kalau maintenance atau offline
                                                     detailMaintenanceBlocked = game.serverStatus == ServerStatus.MAINTENANCE ||
