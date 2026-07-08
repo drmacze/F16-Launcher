@@ -990,47 +990,57 @@ public class CommunityApi {
 
         JSONObject body = new JSONObject()
             .put("user_id", prefsUid)
-            .put("rating", rating);
+            .put("rating", rating)
+            .put("game_id", "fifa16");  // v7.9.66: Always include game_id
         if (review != null && !review.trim().isEmpty()) body.put("review", review.trim());
 
         // v7.9.61: Log payload + uid untuk debugging RLS
         Log.i(TAG, "submitRating: uid=" + prefsUid + ", jwtSub=" + jwtSub
             + ", rating=" + rating + ", review=" + (review == null ? "" : review));
 
-        // Attempt 1: POST upsert (INSERT or UPDATE via on_conflict)
+        // v7.9.66: Try multiple upsert strategies (unique constraint mungkin belum ada)
+        // Attempt 1: POST with on_conflict=user_id,game_id (needs unique constraint)
+        try {
+            request("POST", "/rest/v1/game_ratings?on_conflict=user_id,game_id", body, true,
+                "resolution=merge-duplicates,return=minimal");
+            Log.i(TAG, "submitRating: POST upsert (user_id,game_id) SUCCESS");
+            return;
+        } catch (Exception e) {
+            Log.w(TAG, "submitRating: on_conflict=user_id,game_id failed — " + e.getMessage());
+        }
+
+        // Attempt 2: POST with on_conflict=user_id (old constraint, might exist)
         try {
             request("POST", "/rest/v1/game_ratings?on_conflict=user_id", body, true,
                 "resolution=merge-duplicates,return=minimal");
-            Log.i(TAG, "submitRating: POST upsert SUCCESS for uid=" + userId());
+            Log.i(TAG, "submitRating: POST upsert (user_id) SUCCESS");
+            return;
         } catch (Exception e) {
-            Log.w(TAG, "submitRating: POST upsert failed — " + e.getMessage() + " | trying PATCH fallback");
+            Log.w(TAG, "submitRating: on_conflict=user_id failed — " + e.getMessage());
+        }
 
-            // Attempt 2: PATCH (UPDATE) existing row by user_id
-            // Kalau row sudah ada (user pernah rate), PATCH lebih reliable
-            // karena tidak trigger INSERT RLS policy (yang mungkin lebih ketat)
-            try {
-                JSONObject patchBody = new JSONObject().put("rating", rating);
-                if (review != null && !review.trim().isEmpty()) patchBody.put("review", review.trim());
-                request("PATCH",
-                    "/rest/v1/game_ratings?user_id=eq." + enc(userId()),
-                    patchBody, true, "return=minimal");
-                Log.i(TAG, "submitRating: PATCH fallback SUCCESS for uid=" + userId());
-            } catch (Exception e2) {
-                Log.e(TAG, "submitRating: BOTH POST + PATCH failed. POST err=" + e.getMessage()
-                    + " | PATCH err=" + e2.getMessage());
+        // Attempt 3: PATCH existing row
+        try {
+            JSONObject patchBody = new JSONObject().put("rating", rating);
+            if (review != null && !review.trim().isEmpty()) patchBody.put("review", review.trim());
+            request("PATCH",
+                "/rest/v1/game_ratings?user_id=eq." + enc(userId()) + "&game_id=eq.fifa16",
+                patchBody, true, "return=minimal");
+            Log.i(TAG, "submitRating: PATCH fallback SUCCESS");
+            return;
+        } catch (Exception e2) {
+            Log.w(TAG, "submitRating: PATCH failed — " + e2.getMessage());
+        }
 
-                // Attempt 3: kalau PATCH return 0 rows affected (row belum ada),
-                // coba POST tanpa on_conflict (raw INSERT)
-                try {
-                    request("POST", "/rest/v1/game_ratings", body, true, "return=minimal");
-                    Log.i(TAG, "submitRating: raw INSERT (no on_conflict) SUCCESS for uid=" + userId());
-                } catch (Exception e3) {
-                    Log.e(TAG, "submitRating: ALL 3 attempts failed. Final err=" + e3.getMessage());
-                    // Throw original POST error supaya UI tampilkan
-                    throw new IllegalStateException("Rating submit gagal: " + e.getMessage()
-                        + " (fallback juga gagal: " + e3.getMessage() + ")", e3);
-                }
-            }
+        // Attempt 4: Raw INSERT (no on_conflict)
+        try {
+            request("POST", "/rest/v1/game_ratings", body, true, "return=minimal");
+            Log.i(TAG, "submitRating: raw INSERT SUCCESS");
+            return;
+        } catch (Exception e3) {
+            Log.e(TAG, "submitRating: ALL attempts failed. Final err=" + e3.getMessage());
+            throw new IllegalStateException("Rating submit gagal: " + e3.getMessage()
+                + " — jalankan SQL migration di Supabase SQL Editor (fix_rating_constraint.sql)", e3);
         }
         // Task 5: log activity + award badges — fire-and-forget.
         try {
