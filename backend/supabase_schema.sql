@@ -28,6 +28,7 @@ create table if not exists public.profiles (
     username text unique not null check (username ~ '^[a-zA-Z0-9_]{3,24}$'),
     display_name text not null check (char_length(display_name) between 2 and 40),
     avatar_url text,
+    cover_url text,  -- v7.9.62: Profile cover/banner image URL
     country text,
     role public.user_role not null default 'user',
     badges text[] not null default '{}',
