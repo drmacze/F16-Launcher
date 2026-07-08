@@ -1602,12 +1602,18 @@ fun MainShell(
                                     } else {
                                         // Submit rating directly (star bar already selected the value)
                                         scope.launch {
-                                            runCatching {
-                                                api.submitRating(rating, "")
-                                                val stats = api.fetchRatingStats()
+                                            try {
+                                                withContext(Dispatchers.IO) { api.submitRating(rating, "") }
+                                                android.util.Log.i("GameDetail", "Rating submitted: $rating")
+                                                // Re-fetch stats untuk update aggregate
+                                                val stats = withContext(Dispatchers.IO) { api.fetchRatingStats() }
                                                 detailAvgRating   = stats.optDouble("avg", 0.0)
                                                 detailRatingCount = stats.optInt("count", 0)
                                                 detailMyRating    = rating
+                                                android.util.Log.i("GameDetail", "Updated: avg=$detailAvgRating, count=$detailRatingCount")
+                                            } catch (e: Exception) {
+                                                android.util.Log.e("GameDetail", "submitRating failed", e)
+                                                android.widget.Toast.makeText(context, "Gagal submit rating: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                                             }
                                         }
                                     }
@@ -1756,12 +1762,23 @@ fun MainShell(
                                                     detailGameInstalled = try {
                                                         context.packageManager.getPackageInfo(game.packageName, 0); true
                                                     } catch (_: Throwable) { false }
-                                                    // Fetch rating stats
-                                                    runCatching {
-                                                        val stats = api.fetchRatingStats()
+                                                    // Fetch rating stats — v7.9.61: proper error handling, no swallow
+                                                    try {
+                                                        val stats = withContext(Dispatchers.IO) { api.fetchRatingStats() }
                                                         detailAvgRating   = stats.optDouble("avg", 0.0)
                                                         detailRatingCount = stats.optInt("count", 0)
-                                                        detailMyRating    = api.getMyRating()
+                                                        android.util.Log.i("GameDetail", "Rating stats: avg=$detailAvgRating, count=$detailRatingCount")
+                                                    } catch (e: Exception) {
+                                                        android.util.Log.e("GameDetail", "fetchRatingStats failed", e)
+                                                    }
+                                                    // Fetch my rating (hanya kalau login)
+                                                    if (api.loggedIn()) {
+                                                        try {
+                                                            detailMyRating = withContext(Dispatchers.IO) { api.getMyRating() }
+                                                            android.util.Log.i("GameDetail", "My rating: $detailMyRating")
+                                                        } catch (e: Exception) {
+                                                            android.util.Log.e("GameDetail", "getMyRating failed", e)
+                                                        }
                                                     }
                                                     // Cek maintenance — block install/play kalau maintenance atau offline
                                                     detailMaintenanceBlocked = game.serverStatus == ServerStatus.MAINTENANCE ||
@@ -1942,15 +1959,20 @@ fun MainShell(
                 onSubmit = { rating, review ->
                     scope.launch {
                         val ok = withContext(Dispatchers.IO) {
-                            runCatching {
+                            try {
                                 api.submitRating(rating, review)
-                                // Refresh stats + my rating after submit
+                                android.util.Log.i("GameDetail", "Rating submitted via popup: $rating")
                                 val stats = api.fetchRatingStats()
                                 detailAvgRating   = stats.optDouble("avg", 0.0)
                                 detailRatingCount = stats.optInt("count", 0)
                                 detailMyRating    = rating
+                                android.util.Log.i("GameDetail", "Updated: avg=$detailAvgRating, count=$detailRatingCount")
                                 true
-                            }.getOrDefault(false)
+                            } catch (e: Exception) {
+                                android.util.Log.e("GameDetail", "submitRating popup failed", e)
+                                ratingSubmitError = "Gagal: ${e.message}"
+                                false
+                            }
                         }
                         if (ok) {
                             ratingSubmitError = ""
