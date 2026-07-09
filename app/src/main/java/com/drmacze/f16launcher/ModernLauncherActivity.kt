@@ -53,6 +53,7 @@ import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -425,6 +426,8 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
     var dataReady     by remember { mutableStateOf(false) }
     var updateInfo    by remember { mutableStateOf<UpdateInfo?>(null) }
     var feed          by remember { mutableStateOf<List<FeedItem>>(emptyList()) }
+    // v7.9.76: State untuk dialog bantuan install failure
+    var showInstallHelpDialog by remember { mutableStateOf("") }
 
     // ── Pull-to-refresh state ──
     val pullState    = rememberPullToRefreshState()
@@ -855,6 +858,226 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
         Spacer(Modifier.height(8.dp))
     }
     } // end PullToRefreshBox
+
+    // ── v7.9.76: Fullscreen update popup with snooze + install-failure UX ──
+    val updatePrefs = remember { context.getSharedPreferences("dlavie_update_popup", android.content.Context.MODE_PRIVATE) }
+    val snoozeUntil = remember { updatePrefs.getLong("snooze_until_ms", 0L) }
+    val nowMs       = remember { System.currentTimeMillis() }
+    val snoozed     = snoozeUntil > nowMs
+    val ui          = updateInfo
+    val showPopup   = ui != null && !ui.upToDate && !snoozed
+
+    if (showPopup) {
+        FullscreenUpdatePopup(
+            info           = ui!!,
+            onLater        = {
+                // Snooze 24 jam
+                updatePrefs.edit()
+                    .putLong("snooze_until_ms", System.currentTimeMillis() + 24L * 60L * 60L * 1000L)
+                    .apply()
+            },
+            onInstallFail  = { msg ->
+                // Tampilkan dialog bantuan signature mismatch
+                showInstallHelpDialog = msg
+            }
+        )
+    }
+
+    if (showInstallHelpDialog.isNotBlank()) {
+        AlertDialog(
+            onDismissRequest = { showInstallHelpDialog = "" },
+            title            = { Text("Update Gagal", color = DangerRed, fontWeight = FontWeight.Black) },
+            text             = {
+                Column {
+                    Text(
+                        showInstallHelpDialog,
+                        color = SoftText, fontSize = 13.sp, lineHeight = 18.sp
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Kemungkinan penyebab: signature APK lama berbeda dengan APK baru (debug keystore berbeda).\n\n" +
+                        "Solusi (SEKALI SAJA):\n" +
+                        "1. Uninstall DLavie Launcher yang sekarang.\n" +
+                        "2. Install APK baru dari folder Download.\n" +
+                        "3. Setelah ini, semua update berikutnya akan otomatis tanpa uninstall.",
+                        color = SoftText, fontSize = 12.sp, lineHeight = 17.sp
+                    )
+                }
+            },
+            confirmButton    = {
+                TextButton(onClick = { showInstallHelpDialog = "" }) {
+                    Text("Mengerti", color = CandyCyan, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor   = GlassBase
+        )
+    }
+}
+
+// ── v7.9.76: Fullscreen update popup ──────────────────────────────────────────
+@Composable
+fun FullscreenUpdatePopup(
+    info: UpdateInfo,
+    onLater: () -> Unit,
+    onInstallFail: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+    var downloading   by remember { mutableStateOf(false) }
+    var downloadPct   by remember { mutableStateOf(0f) }
+    var downloadErr   by remember { mutableStateOf("") }
+
+    fun startApkDownload() {
+        downloading = true; downloadPct = 0f; downloadErr = ""
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val apkUrl = fetchLauncherApkUrl()
+                    android.util.Log.i("UpdateCheck", "Downloading launcher APK from: $apkUrl")
+                    val outDir  = java.io.File(context.getExternalFilesDir(null), "launcher-updates").also { it.mkdirs() }
+                    val apkFile = java.io.File(outDir, "dlavie-launcher-update.apk")
+                    if (apkFile.exists()) apkFile.delete()
+                    val conn    = URL(apkUrl).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 30_000; conn.readTimeout = 300_000; conn.connect()
+                    val total   = conn.contentLengthLong.toFloat().coerceAtLeast(1f)
+                    val buf     = ByteArray(32 * 1024)
+                    conn.inputStream.use { inp ->
+                        apkFile.outputStream().use { out ->
+                            var n: Int; var read = 0L
+                            while (inp.read(buf).also { n = it } != -1) {
+                                out.write(buf, 0, n); read += n
+                                downloadPct = (read / total).coerceIn(0f, 0.99f)
+                            }
+                        }
+                    }
+                    apkFile
+                }
+            }.onSuccess { apkFile ->
+                downloadPct = 1f
+                // Launch installer
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context, "${context.packageName}.files", apkFile)
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                }
+                context.startActivity(intent)
+                downloading = false
+            }.onFailure { t ->
+                android.util.Log.e("UpdateCheck", "Launcher APK download failed", t)
+                downloadErr = t.message ?: "Unduhan gagal. Periksa koneksi internet."
+                downloading = false
+                onInstallFail(downloadErr)
+            }
+        }
+    }
+
+    // Fullscreen overlay (semi-transparent backdrop + centered card)
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.85f)),
+        contentAlignment = Alignment.Center
+    ) {
+        GlassCard(
+            borderColor = CandyCyan.copy(0.6f),
+            modifier = Modifier.fillMaxWidth(0.92f).padding(horizontal = 8.dp)
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                // Title with download icon
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(44.dp).background(CandyCyan.copy(0.15f), RoundedCornerShape(14.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.SystemUpdate, null, tint = CandyCyan, modifier = Modifier.size(24.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text("Update Tersedia!", color = CandyCyan, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        Text("Versi baru ${info.latestName} sudah tersedia", color = SoftText, fontSize = 12.sp)
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                // Release notes
+                if (info.releaseNotes.isNotEmpty()) {
+                    Text("Catatan rilis:", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        info.releaseNotes.take(5).forEach { note ->
+                            Row {
+                                Text("• ", color = CandyCyan, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                                Text(note, color = SoftText, fontSize = 12.sp, lineHeight = 16.sp)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Download progress (jika sedang download)
+                if (downloading) {
+                    LinearProgressIndicator(
+                        progress   = { downloadPct },
+                        modifier   = Modifier.fillMaxWidth(),
+                        color      = CandyCyan,
+                        trackColor = GlassStroke
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Mengunduh… ${(downloadPct * 100).toInt()}%",
+                        color = SoftText, fontSize = 11.sp
+                    )
+                    Spacer(Modifier.height(14.dp))
+                }
+
+                // Action buttons
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick  = { onLater() },
+                        enabled  = !downloading,
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        shape    = RoundedCornerShape(14.dp),
+                        border   = BorderStroke(1.dp, GlassStroke)
+                    ) {
+                        Text("Nanti", color = SoftText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                    Button(
+                        onClick  = { startApkDownload() },
+                        enabled  = !downloading,
+                        modifier = Modifier.weight(2f).height(52.dp),
+                        shape    = RoundedCornerShape(14.dp),
+                        colors   = ButtonDefaults.buttonColors(
+                            containerColor = CandyCyan,
+                            contentColor   = Color(0xFF00111D)
+                        )
+                    ) {
+                        if (downloading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color    = Color(0xFF00111D),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Mengunduh…", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                        } else {
+                            Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Update Sekarang", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                        }
+                    }
+                }
+
+                // Hint text
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Tips: Jika update gagal dengan error signature, uninstall versi lama SEKALI saja. " +
+                    "Setelah install APK baru, semua update berikutnya akan otomatis.",
+                    color = SubText, fontSize = 10.sp, lineHeight = 14.sp
+                )
+            }
+        }
+    }
 }
 
 // ─── Step progress indicator ──────────────────────────────────────────────────
@@ -2284,7 +2507,10 @@ fun readMarker(): String =
     try { File(MARKER_PATH).readText().trim() } catch (_: Exception) { "" }
 
 fun fetchUpdateInfo(): UpdateInfo {
-    val json = fetchJson(DEFAULT_MANIFEST)
+    // v7.9.76: Cache-bust setiap fetch supaya CDN tidak return manifest lama.
+    val url = if (DEFAULT_MANIFEST.contains("?")) "$DEFAULT_MANIFEST&_ts=${System.currentTimeMillis()}"
+              else "$DEFAULT_MANIFEST?_ts=${System.currentTimeMillis()}"
+    val json = fetchJson(url)
     // v7.9.74: Read from launcher section (new manifest format)
     val launcher = json.optJSONObject("launcher")
     val latestCode = if (launcher != null) {
@@ -2305,6 +2531,24 @@ fun fetchUpdateInfo(): UpdateInfo {
     val notes = if (notesArr != null) List(notesArr.length()) { i -> notesArr.optString(i) } else emptyList()
     android.util.Log.i("UpdateCheck", "fetchUpdateInfo: latestCode=$latestCode, LOCAL_VER=$LOCAL_VER, upToDate=${latestCode <= LOCAL_VER}")
     return UpdateInfo(latestCode, latestName, latestCode <= LOCAL_VER, notes)
+}
+
+/**
+ * v7.9.76: Ambil URL APK launcher dari manifest (untuk self-update).
+ * Return apk_url dari launcher section, atau fallback ke hardcoded v248 URL.
+ */
+fun fetchLauncherApkUrl(): String {
+    return try {
+        val url = if (DEFAULT_MANIFEST.contains("?")) "$DEFAULT_MANIFEST&_ts=${System.currentTimeMillis()}"
+                  else "$DEFAULT_MANIFEST?_ts=${System.currentTimeMillis()}"
+        val json = fetchJson(url)
+        val launcher = json.optJSONObject("launcher")
+        launcher?.optString("apk_url", "")?.takeIf { it.isNotBlank() }
+            ?: "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26-Launcher-v248.apk"
+    } catch (t: Throwable) {
+        android.util.Log.e("UpdateCheck", "fetchLauncherApkUrl failed", t)
+        "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26-Launcher-v248.apk"
+    }
 }
 
 fun parseFeed(arr: JSONArray): List<FeedItem> = try {

@@ -158,14 +158,76 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
+          set -euo pipefail
           APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
           if [ -z "$APK_FILE" ]; then echo "No APK"; exit 0; fi
+          
+          # Read version from build.gradle so the manifest URL is always in sync
+          NEW_VERSION_CODE=$(grep '^        versionCode' "$GITHUB_WORKSPACE/app/build.gradle" | head -1 | sed 's/[^0-9]//g')
+          NEW_VERSION_NAME=$(grep '^        versionName' "$GITHUB_WORKSPACE/app/build.gradle" | head -1 | sed 's/.*versionName "//;s/".*//')
+          PREDICTABLE_NAME="DLavie26-Launcher-v${NEW_VERSION_CODE}.apk"
+          echo "Publishing APK: $PREDICTABLE_NAME (versionCode=$NEW_VERSION_CODE, versionName=$NEW_VERSION_NAME)"
+          
+          # Save version for next step
+          echo "$NEW_VERSION_CODE" > /tmp/version_code.txt
+          echo "$NEW_VERSION_NAME" > /tmp/version_name.txt
+          
           TAG="v${{ github.run_number }}"
           gh release create "$TAG" "$APK_FILE" \
             --title "DLavie Launcher ${{ github.run_number }}" \
-            --notes "Auto-built from commit ${{ github.sha }}" \
+            --notes "Auto-built from commit ${{ github.sha }} — version $NEW_VERSION_NAME (code $NEW_VERSION_CODE)" \
             --repo drmacze/F16-Launcher || echo "Release create skipped (may already exist)"
           
-          # Also upload to DLavie-Launcher-Data release v26
-          gh release upload v26 "$APK_FILE" --repo drmacze/DLavie-Launcher-Data --clobber || echo "Upload to v26 skipped"
+          # Upload to DLavie-Launcher-Data release v26 with predictable name
+          cp "$APK_FILE" "/tmp/$PREDICTABLE_NAME"
+          gh release upload v26 "/tmp/$PREDICTABLE_NAME" --repo drmacze/DLavie-Launcher-Data --clobber || echo "Upload to v26 skipped"
+
+      - name: Update manifest.json on DLavie-Launcher-Data (launcher section only)
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          export NEW_VERSION_CODE=$(cat /tmp/version_code.txt)
+          export NEW_VERSION_NAME=$(cat /tmp/version_name.txt)
+          echo "→ Updating manifest.json launcher section to v$NEW_VERSION_NAME (code $NEW_VERSION_CODE)..."
+          
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/drmacze/DLavie-Launcher-Data.git" /tmp/data-repo
+          cd /tmp/data-repo
+          git config user.email "drma801@gmail.com"
+          git config user.name "Drmacze DEV"
+          
+          COMMIT_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+          export APK_URL="https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26-Launcher-v${NEW_VERSION_CODE}.apk"
+          export NEW_NOTE="v${NEW_VERSION_NAME}: Auto-built from commit ${COMMIT_SHORT}"
+          
+          python3 << 'PYEOF'
+          import json, os, datetime
+          with open('manifest.json', 'r') as f:
+              m = json.load(f)
+          if 'launcher' not in m:
+              m['launcher'] = {}
+          code = int(os.environ['NEW_VERSION_CODE'])
+          name = os.environ['NEW_VERSION_NAME']
+          url  = os.environ['APK_URL']
+          note = os.environ['NEW_NOTE']
+          m['launcher']['min_version_code']    = m['launcher'].get('min_version_code', 206)
+          m['launcher']['latest_version_code'] = code
+          m['launcher']['latest_version_name'] = name
+          m['launcher']['apk_url']             = url
+          notes = m['launcher'].get('release_notes', [])
+          if not notes or notes[0] != note:
+              notes.insert(0, note)
+              m['launcher']['release_notes'] = notes[:5]
+          m['updated_at'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+          with open('manifest.json', 'w') as f:
+              json.dump(m, f, indent=2, ensure_ascii=False)
+          print('manifest.json launcher section updated →', code, name)
+          PYEOF
+          
+          git add manifest.json
+          git commit -m "chore: bump launcher version to $NEW_VERSION_NAME (code $NEW_VERSION_CODE)" || echo "No changes to commit"
+          git push origin main
+          echo "✓ manifest.json pushed to DLavie-Launcher-Data"
 
