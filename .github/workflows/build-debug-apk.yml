@@ -99,3 +99,63 @@ jobs:
           name: DLavie-26-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      - name: Sign APK with fixed keystore (same signature every build)
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+          if [ -z "$APK_FILE" ]; then
+            echo "⚠ No APK found to sign"
+            exit 0
+          fi
+          
+          # Check if signing secrets are available
+          if [ -z "${{ secrets.SIGNING_KEYSTORE }}" ]; then
+            echo "⚠ SIGNING_KEYSTORE secret not set — using debug-signed APK as-is"
+            exit 0
+          fi
+          
+          echo "Signing $APK_FILE with fixed keystore..."
+          
+          # Decode keystore
+          echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > /tmp/dlavie.keystore
+          
+          # Zipalign
+          ${ANDROID_HOME}/build-tools/35.0.0/zipalign -f -v 4 "$APK_FILE" /tmp/aligned.apk || cp "$APK_FILE" /tmp/aligned.apk
+          
+          # Sign with apksigner (v1+v2+v3)
+          ${ANDROID_HOME}/build-tools/35.0.0/apksigner sign \
+            --ks /tmp/dlavie.keystore \
+            --ks-key-alias ${{ secrets.SIGNING_KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.SIGNING_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.SIGNING_KEY_PASSWORD }} \
+            --out /tmp/dlavie-signed.apk \
+            /tmp/aligned.apk || {
+              echo "⚠ apksigner failed — using debug-signed APK as-is"
+              rm -f /tmp/dlavie.keystore /tmp/aligned.apk
+              exit 0
+            }
+          
+          # Replace original with signed
+          cp /tmp/dlavie-signed.apk "$APK_FILE"
+          
+          # Verify
+          ${ANDROID_HOME}/build-tools/35.0.0/apksigner verify --print-certs "$APK_FILE" | head -5
+          
+          echo "✅ APK signed with fixed keystore (same signature every build)"
+          
+          # Cleanup
+          rm -f /tmp/dlavie.keystore /tmp/aligned.apk /tmp/dlavie-signed.apk
+
+      - name: Publish to GitHub Releases (auto-update)
+        if: success()
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ github.run_number }}
+          name: DLavie Launcher ${{ github.run_number }}
+          files: app/build/outputs/apk/debug/*.apk
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
