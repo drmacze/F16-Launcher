@@ -138,10 +138,10 @@ import java.net.URL
 // ─── Constants ────────────────────────────────────────────────────────────────
 private const val GAME_PKG         = "com.ea.gp.fifaworld"
 private const val FIFA_APK_URL     = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26.apk"
-private const val DEFAULT_MANIFEST = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/manifest.json"
+private const val DEFAULT_MANIFEST = "https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/manifest.json"
 private const val MARKER_PATH      = "/sdcard/Android/data/com.ea.gp.fifaworld/.dlavie26_data_installed"
-private const val LOCAL_VER        = 1
-private const val LOCAL_VER_NAME   = "v1"
+private val LOCAL_VER        = com.drmacze.f16launcher.BuildConfig.VERSION_CODE
+private val LOCAL_VER_NAME   = com.drmacze.f16launcher.BuildConfig.VERSION_NAME
 
 // ─── Data models ──────────────────────────────────────────────────────────────
 data class CategoryItem(val id: String, val name: String, val description: String)
@@ -2284,12 +2284,26 @@ fun readMarker(): String =
     try { File(MARKER_PATH).readText().trim() } catch (_: Exception) { "" }
 
 fun fetchUpdateInfo(): UpdateInfo {
-    val json       = fetchJson(DEFAULT_MANIFEST)
-    // Support both DLavie-Launcher-Data format {version:26} and legacy {latestVersionCode:N}
-    val latestCode = json.optInt("version", json.optInt("latestVersionCode", LOCAL_VER))
-    val latestName = json.optString("latestVersionName", "v$latestCode")
-    val notesArr   = json.optJSONArray("releaseNotes")
-    val notes      = if (notesArr != null) List(notesArr.length()) { i -> notesArr.optString(i) } else emptyList()
+    val json = fetchJson(DEFAULT_MANIFEST)
+    // v7.9.74: Read from launcher section (new manifest format)
+    val launcher = json.optJSONObject("launcher")
+    val latestCode = if (launcher != null) {
+        launcher.optInt("latest_version_code", json.optInt("version", LOCAL_VER))
+    } else {
+        json.optInt("version", json.optInt("latestVersionCode", LOCAL_VER))
+    }
+    val latestName = if (launcher != null) {
+        launcher.optString("latest_version_name", "v$latestCode")
+    } else {
+        json.optString("latestVersionName", "v$latestCode")
+    }
+    val notesArr = if (launcher != null) {
+        launcher.optJSONArray("release_notes")
+    } else {
+        json.optJSONArray("releaseNotes")
+    }
+    val notes = if (notesArr != null) List(notesArr.length()) { i -> notesArr.optString(i) } else emptyList()
+    android.util.Log.i("UpdateCheck", "fetchUpdateInfo: latestCode=$latestCode, LOCAL_VER=$LOCAL_VER, upToDate=${latestCode <= LOCAL_VER}")
     return UpdateInfo(latestCode, latestName, latestCode <= LOCAL_VER, notes)
 }
 
