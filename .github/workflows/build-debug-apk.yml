@@ -12,6 +12,9 @@ on:
       - '.github/scripts/**'
       - '.github/workflows/build-debug-apk.yml'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build DLavie 26 Debug APK
@@ -149,13 +152,20 @@ jobs:
           # Cleanup
           rm -f /tmp/dlavie.keystore /tmp/aligned.apk /tmp/dlavie-signed.apk
 
-      - name: Publish to GitHub Releases (auto-update)
+      - name: Publish to GitHub Releases
         if: success()
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ github.run_number }}
-          name: DLavie Launcher ${{ github.run_number }}
-          files: app/build/outputs/apk/debug/*.apk
-          prerelease: false
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+          if [ -z "$APK_FILE" ]; then echo "No APK"; exit 0; fi
+          TAG="v${{ github.run_number }}"
+          gh release create "$TAG" "$APK_FILE" \
+            --title "DLavie Launcher ${{ github.run_number }}" \
+            --notes "Auto-built from commit ${{ github.sha }}" \
+            --repo drmacze/F16-Launcher || echo "Release create skipped (may already exist)"
+          
+          # Also upload to DLavie-Launcher-Data release v26
+          gh release upload v26 "$APK_FILE" --repo drmacze/DLavie-Launcher-Data --clobber || echo "Upload to v26 skipped"
+
