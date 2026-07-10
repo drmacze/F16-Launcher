@@ -255,7 +255,6 @@ private fun BannerMediaContent(slide: BannerSlide) {
             val exoPlayer = remember {
                 ExoPlayer.Builder(context).build().apply {
                     setMediaItem(MediaItem.fromUri(slide.mediaUrl))
-                    repeatMode = android.media.MediaPlayer.MEDIA_ERROR // -1 (invalid), use ExoPlayer.REPEAT_MODE_ONE
                     repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
                     playWhenReady = true
                     volume = 0f  // muted
