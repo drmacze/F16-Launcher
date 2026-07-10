@@ -43,7 +43,6 @@ private val CinematicWhite = Color(0xFFFFFFFF)
 private val CinematicGray = Color(0xFF888888)
 private val CinematicDim = Color(0xFF333333)
 private val AccentAmber = Color(0xFFFFAA00)
-private val AccentGreen = Color(0xFF00D26A)
 private val AccentRed = Color(0xFFFF5252)
 
 @Composable
@@ -424,11 +423,11 @@ private fun VersionInfoCard() {
                 }
                 latestVersionCode != null -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(6.dp).clip(CircleShape).background(AccentGreen))
+                        Box(Modifier.size(6.dp).clip(CircleShape).background(Color(0xFF00D26A)))
                         Spacer(Modifier.width(6.dp))
                         Text(
                             "Latest",
-                            color = AccentGreen,
+                            color = Color(0xFF00D26A),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -529,6 +528,3 @@ private fun ManualConnectCard(onConnect: (String) -> Boolean) {
         }
     }
 }
-
-// Helper: Float.pow(2) extension
-private fun Float.pow(n: Int): Float = Math.pow(this.toDouble(), n.toDouble()).toFloat()
