@@ -686,18 +686,12 @@ fun DLavieModernApp(initialPostId: String? = null) {
     // Staff tetap lihat maintenance screen, tapi bisa bypass (tap "Masuk" untuk partial,
     // atau langsung masuk untuk full dengan tombol bypass khusus staff).
     // v7.9.78: BYPASS maintenance untuk APK dengan signature BARU (v243+).
-    // Maintenance sekarang dipakai untuk PAKSA user APK lama migrate ke versi baru.
-    // User APK baru (signature: CN=DLavie, OU=Dev) tidak perlu lihat maintenance migrasi.
+    // v7.9.78-v248: TEST MODE — disable bypass supaya popup modern muncul untuk SEMUA user.
+    // Setelah verify popup modern bagus, re-enable bypass.
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            val isOldSig = isOldApkSignature(context)
-            if (isOldSig) {
-                // APK lama — fetch maintenance (akan tampil full-screen migration notice)
-                runCatching { maintenanceState = fetchMaintenanceInfo(api) }
-            } else {
-                // APK baru — skip maintenance (bypass)
-                maintenanceState = null
-            }
+            // v248 TEST: always fetch maintenance (ignore signature bypass)
+            runCatching { maintenanceState = fetchMaintenanceInfo(api) }
         }
         maintenanceChecked = true
     }
