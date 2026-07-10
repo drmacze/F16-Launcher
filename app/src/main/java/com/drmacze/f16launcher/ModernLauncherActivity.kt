@@ -98,6 +98,7 @@ import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DataObject
@@ -163,6 +164,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -977,107 +979,179 @@ fun FullScreenMaintenance(
     isStaff: Boolean = false,
     onEnter: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scrollState = rememberScrollState()
+
     Box(
-        Modifier.fillMaxSize().background(Carbon),
+        Modifier.fillMaxSize().background(Color(0xFF000000)),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-            modifier = Modifier.padding(32.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(horizontal = 32.dp, vertical = 48.dp),
+            verticalArrangement = Arrangement.Center
         ) {
-            // Big warning icon dengan pulse
-            val infiniteTransition = rememberInfiniteTransition(label = "maint_pulse")
-            val pulseScale by infiniteTransition.animateFloat(
-                initialValue = 1f, targetValue = 1.1f,
-                animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-                label = "maint_pulse_scale"
-            )
+            // ── Minimal warning indicator (no icon, just a thin line) ──
             Box(
-                Modifier.size(96.dp).scale(pulseScale)
-                    .background(AmberWarn.copy(0.12f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Rounded.Warning, null, tint = AmberWarn, modifier = Modifier.size(48.dp))
-            }
-
-            Text(
-                maintenance.title.ifEmpty { "Sistem Sedang Maintenance" },
-                color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black,
-                textAlign = TextAlign.Center
+                Modifier
+                    .width(48.dp)
+                    .height(3.dp)
+                    .background(
+                        Color.White.copy(alpha = 0.8f),
+                        RoundedCornerShape(2.dp)
+                    )
             )
 
+            Spacer(Modifier.height(32.dp))
+
+            // ── Shiny title (gradient sweep animation) ──
+            ShinyText(
+                text = maintenance.title.ifEmpty { "Update Required" },
+                fontSize = 32,
+                fontWeight = FontWeight.Black
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            // ── Typing animation description ──
             if (maintenance.message.isNotEmpty()) {
-                Text(
-                    maintenance.message,
-                    color = SoftText, fontSize = 14.sp, lineHeight = 20.sp,
-                    textAlign = TextAlign.Center
+                TypingText(
+                    text = maintenance.message,
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 14,
+                    lineHeight = 22
                 )
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(36.dp))
 
-            when {
-                // scope=partial → always show "Masuk Launcher" button
-                maintenance.scope == "partial" -> {
-                    Button(
-                        onClick = onEnter,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = CandyCyan,
-                            contentColor = Carbon
-                        )
-                    ) {
-                        Icon(Icons.Rounded.PlayCircle, null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Masuk Launcher", fontWeight = FontWeight.Black)
-                    }
-                    Text(
-                        "Beberapa fitur dibatasi. Komunitas & Profil tetap tersedia.",
-                        color = SubText, fontSize = 11.sp, textAlign = TextAlign.Center
-                    )
-                }
-                // scope=full + staff → show bypass button
-                isStaff -> {
-                    Button(
-                        onClick = onEnter,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White.copy(0.2f),
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Icon(Icons.Rounded.AdminPanelSettings, null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Masuk sebagai Admin", fontWeight = FontWeight.Bold)
-                    }
-                    Text(
-                        "Anda adalah admin — bypass maintenance mode.",
-                        color = SubText, fontSize = 11.sp, textAlign = TextAlign.Center
-                    )
-                }
-                // scope=full + non-staff → NO button, blocked
-                else -> {
-                    Text(
-                        "Launcher tidak dapat diakses saat maintenance penuh.",
-                        color = SubText, fontSize = 12.sp, textAlign = TextAlign.Center
-                    )
-                    Text(
-                        "Silakan coba lagi nanti.",
-                        color = SubText, fontSize = 12.sp, textAlign = TextAlign.Center
-                    )
+            // ── Download button (always show for scope=full migration) ──
+            // Opens DLavie website in browser
+            Button(
+                onClick = {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://drmacze.github.io/dlavie-web/"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(intent)
+                    } catch (_: Exception) { }
+                },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Color.Black
+                )
+            ) {
+                Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("Download Latest Version", fontWeight = FontWeight.Black, fontSize = 15.sp)
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ── Secondary: staff bypass (only for staff) ──
+            if (isStaff) {
+                TextButton(
+                    onClick = onEnter,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Enter as Admin", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(24.dp))
+
+            // ── Footer ──
             Text(
-                "DLavie 26 · ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}",
-                color = SubText, fontSize = 10.sp
+                "DLavie Launcher",
+                color = Color.White.copy(alpha = 0.2f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 2.sp
             )
         }
     }
+}
+
+// ─── Shiny Text (gradient sweep animation on title) ─────────────────────────
+@Composable
+fun ShinyText(
+    text: String,
+    fontSize: Int = 32,
+    fontWeight: FontWeight = FontWeight.Black
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "shiny")
+    val progress by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shiny_progress"
+    )
+
+    // Gradient sweep: white → bright white → white
+    val sweepPos = progress * 2f  // 0 to 2
+    val colors = listOf(
+        Color.White.copy(alpha = 0.5f),
+        Color.White,
+        Color.White.copy(alpha = 0.5f)
+    )
+    val positions = listOf(
+        (sweepPos - 0.5f).coerceIn(0f, 1f),
+        sweepPos.coerceIn(0f, 1f),
+        (sweepPos + 0.5f).coerceIn(0f, 1f)
+    )
+
+    val brush = Brush.linearGradient(
+        colors = colors,
+        start = androidx.compose.ui.geometry.Offset(0f, 0f),
+        end = androidx.compose.ui.geometry.Offset(1000f, 0f)
+    )
+
+    Text(
+        text = text,
+        color = Color.White,
+        fontSize = fontSize.sp,
+        fontWeight = fontWeight,
+        textAlign = TextAlign.Center,
+        style = LocalTextStyle.current.copy(brush = brush)
+    )
+}
+
+// ─── Typing Text Animation (character-by-character reveal) ──────────────────
+@Composable
+fun TypingText(
+    text: String,
+    color: Color = Color.White,
+    fontSize: Int = 14,
+    lineHeight: Int = 22
+) {
+    var displayedText by remember { mutableStateOf("") }
+    var currentIndex by remember { mutableStateOf(0) }
+
+    LaunchedEffect(text) {
+        displayedText = ""
+        currentIndex = 0
+        while (currentIndex < text.length) {
+            delay(20)  // 20ms per character
+            displayedText = text.substring(0, currentIndex + 1)
+            currentIndex++
+        }
+    }
+
+    Text(
+        text = displayedText,
+        color = color,
+        fontSize = fontSize.sp,
+        lineHeight = lineHeight.sp,
+        textAlign = TextAlign.Center,
+        fontFamily = InterFontFamily
+    )
 }
 
 // ─── Main shell ───────────────────────────────────────────────────────────────
