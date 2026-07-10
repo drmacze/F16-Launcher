@@ -619,8 +619,7 @@ private fun GuidedLoginScreen(
             }) {
                 Text(
                     when (mode) {
-                        "chooser" -> "Sign in or connect your DLavie Launcher account
-to access all web features."
+                        "chooser" -> "Sign in or connect your DLavie Launcher account\nto access all web features."
                         else -> ""
                     },
                     color = GuideSoftText,
