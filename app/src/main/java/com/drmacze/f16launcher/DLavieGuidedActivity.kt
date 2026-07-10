@@ -530,6 +530,17 @@ private fun GuidedLoginScreen(
         )
 
         // ── Main content column ──
+        // v7.9.78: GSAP-style staggered entrance animation
+        // Each element fades in + slides up with 80ms stagger delay
+        val staggerSteps = 6
+        val staggers = remember { List(staggerSteps) { mutableStateOf(false) } }
+        LaunchedEffect(Unit) {
+            staggers.forEachIndexed { i, s ->
+                delay(80L * i)
+                s.value = true
+            }
+        }
+
         Column(
             Modifier
                 .fillMaxSize()
@@ -539,41 +550,84 @@ private fun GuidedLoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // ── v7.9.57: Animated DL Logo (custom drawn, unique modern animation) ──
-            AnimatedDLLogo(size = 80.dp)
+            // v7.9.78: GSAP-style staggered entrance
+            val logoAlpha by animateFloatAsState(
+                if (staggers[0].value) 1f else 0f,
+                tween(600, easing = GuideEase), label = "logo_alpha"
+            )
+            val logoOffsetY by animateFloatAsState(
+                if (staggers[0].value) 0f else 30f,
+                tween(600, easing = GuideEase), label = "logo_offset"
+            )
+            Box(Modifier.graphicsLayer {
+                this.alpha = logoAlpha
+                this.translationY = logoOffsetY
+            }) {
+                AnimatedDLLogo(size = 80.dp)
+            }
 
             Spacer(Modifier.height(24.dp))
 
             // ── Title: "DLavie Portal" (match web .portal-title) ──
-            Text(
-                when (mode) {
-                    "chooser"  -> "DLavie Portal"
-                    "login"    -> t.loginSubtitle
-                    "register" -> t.registerAccount
-                    "forgot"   -> t.forgotPassword
-                    else       -> "DLavie Portal"
-                },
-                color = GuideWhite,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = GuideFont,
-                letterSpacing = (-0.5).sp
+            // v7.9.78: GSAP-style staggered entrance
+            val titleAlpha by animateFloatAsState(
+                if (staggers[1].value) 1f else 0f,
+                tween(600, easing = GuideEase), label = "title_alpha"
             )
+            val titleOffsetY by animateFloatAsState(
+                if (staggers[1].value) 0f else 30f,
+                tween(600, easing = GuideEase), label = "title_offset"
+            )
+            // v7.9.78: Apply staggered animation to title
+            Box(Modifier.graphicsLayer {
+                this.alpha = titleAlpha
+                this.translationY = titleOffsetY
+            }) {
+                Text(
+                    when (mode) {
+                        "chooser"  -> "DLavie Portal"
+                        "login"    -> t.loginSubtitle
+                        "register" -> t.registerAccount
+                        "forgot"   -> t.forgotPassword
+                        else       -> "DLavie Portal"
+                    },
+                    color = GuideWhite,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = GuideFont,
+                    letterSpacing = (-0.5).sp
+                )
+            }
 
             Spacer(Modifier.height(8.dp))
 
             // Subtitle (match web .portal-sub)
-            Text(
-                when (mode) {
-                    "chooser" -> "Login atau connect akun DLavie Launcher untuk mengakses semua fitur web."
-                    else -> ""
-                },
-                color = GuideSoftText,
-                fontSize = 13.sp,
-                fontFamily = GuideFont,
-                textAlign = TextAlign.Center,
-                lineHeight = 18.sp,
-                modifier = Modifier.padding(horizontal = 24.dp)
+            // v7.9.78: GSAP-style staggered entrance
+            val subAlpha by animateFloatAsState(
+                if (staggers[2].value) 1f else 0f,
+                tween(600, easing = GuideEase), label = "sub_alpha"
             )
+            val subOffsetY by animateFloatAsState(
+                if (staggers[2].value) 0f else 30f,
+                tween(600, easing = GuideEase), label = "sub_offset"
+            )
+            Box(Modifier.graphicsLayer {
+                this.alpha = subAlpha
+                this.translationY = subOffsetY
+            }) {
+                Text(
+                    when (mode) {
+                        "chooser" -> "Login atau connect akun DLavie Launcher untuk mengakses semua fitur web."
+                        else -> ""
+                    },
+                    color = GuideSoftText,
+                    fontSize = 13.sp,
+                    fontFamily = GuideFont,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 18.sp,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+            }
 
             Spacer(Modifier.height(48.dp))
 
