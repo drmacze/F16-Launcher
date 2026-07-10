@@ -249,10 +249,10 @@ private fun HalftoneBackground() {
                 // Distance from center for vignette effect on dots
                 val centerX = size.width / 2
                 val centerY = size.height / 2
-                val dist = kotlin.math.sqrt(
-                    (x + xOffset - centerX).pow(2) + (y - centerY).pow(2)
-                )
-                val maxDist = kotlin.math.sqrt(centerX.pow(2) + centerY.pow(2))
+                val dx = (x + xOffset - centerX)
+                val dy = (y - centerY)
+                val dist = kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                val maxDist = kotlin.math.sqrt((centerX * centerX + centerY * centerY).toDouble()).toFloat()
                 val alpha = (1f - (dist / maxDist) * 0.8f).coerceIn(0.05f, 0.25f)
 
                 drawCircle(
