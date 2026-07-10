@@ -122,6 +122,7 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Refresh
@@ -171,6 +172,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -1147,6 +1149,24 @@ fun MainShell(
     var saveLabelInput          by remember { mutableStateOf("") }
     var pendingGameLaunch       by remember { mutableStateOf<GameItem?>(null) }
 
+    // ── v7.9.78: Old APK signature detection ────────────────────────────────
+    // Popup ini muncul SEBELUM popup maintenance/update.
+    // Cek signature APK: kalau signature LAMA (CN=DLavie, OU=Development, O=drmacze),
+    // tampilkan popup yang arahkan user ke website DLavie untuk uninstall+reinstall.
+    // Signature BARU (v243+): CN=DLavie, OU=Dev, O=DLavie
+    var showOldSignaturePopup by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val isOldSignature = withContext(Dispatchers.IO) { isOldApkSignature(context) }
+        if (isOldSignature) {
+            // Cek SharedPreferences — hanya tampilkan sekali per install
+            val prefs = context.getSharedPreferences("dlavie_signature_check", android.content.Context.MODE_PRIVATE)
+            val dismissed = prefs.getBoolean("old_signature_dismissed", false)
+            if (!dismissed) {
+                showOldSignaturePopup = true
+            }
+        }
+    }
+
     // ── Phase 4: Settings overlay state + lifted Profile expand state ──
     // profileExpandedSection di-lift ke MainShell supaya SettingsScreen bisa
     // membuka Profile dengan section tertentu (password/email/profile) ter-expand.
@@ -2053,6 +2073,141 @@ fun MainShell(
                             activeBanner = null
                         }
                     )
+                }
+            }
+        }
+
+        // ── v7.9.78: Old APK signature popup (SEBELUM popup maintenance/update) ──
+        // Tampil kalau APK ini pakai signature lama (CN=DLavie, OU=Development, O=drmacze)
+        // User harus uninstall + reinstall APK baru dari website DLavie.
+        if (showOldSignaturePopup) {
+            OldSignaturePopup(
+                onDismiss = {
+                    showOldSignaturePopup = false
+                    // Save dismiss preference — jangan tampilkan lagi di session ini
+                    context.getSharedPreferences("dlavie_signature_check", android.content.Context.MODE_PRIVATE)
+                        .edit()
+                        .putBoolean("old_signature_dismissed", true)
+                        .apply()
+                },
+                onOpenWebsite = {
+                    // Buka website DLavie di browser
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://drmacze.github.io/dlavie-web/"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(intent)
+                    } catch (_: Exception) { /* ignore */ }
+                }
+            )
+        }
+    }
+}
+
+// ─── v7.9.78: Old APK Signature Popup Composable ────────────────────────────
+@Composable
+fun OldSignaturePopup(
+    onDismiss: () -> Unit,
+    onOpenWebsite: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xFF0E0E0E),
+            border = BorderStroke(1.dp, Color(0xFFFFAA00).copy(alpha = 0.4f))
+        ) {
+            Column(
+                Modifier.padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Warning icon
+                Box(
+                    Modifier.size(64.dp)
+                        .background(Color(0xFFFFAA00).copy(alpha = 0.12f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Rounded.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFFFFAA00),
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+
+                Text(
+                    "Anda Pakai APK Lama",
+                    color = Color(0xFFFFAA00),
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = InterFontFamily
+                )
+                Spacer(Modifier.height(12.dp))
+
+                Text(
+                    "DLavie Launcher versi lama memakai signature berbeda.\n" +
+                    "Update otomatis tidak akan berhasil — akan muncul error\n" +
+                    "\"Paket bentrok\" atau \"App not installed\".",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    fontFamily = InterFontFamily,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                Spacer(Modifier.height(20.dp))
+
+                // Solution box
+                Column(
+                    Modifier.fillMaxWidth()
+                        .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        "Solusi (SEKALI SAJA):",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = InterFontFamily
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    listOf(
+                        "Uninstall DLavie Launcher yang sekarang",
+                        "Buka website DLavie (tombol di bawah)",
+                        "Download APK v7.9.78 (versi terbaru)",
+                        "Install APK baru — data akun tetap aman"
+                    ).forEachIndexed { idx, step ->
+                        Text(
+                            "${idx + 1}. $step",
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 12.sp,
+                            fontFamily = InterFontFamily,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
+
+                // Buka Website button
+                Button(
+                    onClick = onOpenWebsite,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFFFAA00),
+                        contentColor = Color(0xFF1A1A1A)
+                    )
+                ) {
+                    Icon(Icons.Rounded.Public, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Buka Website DLavie", fontWeight = FontWeight.Black, fontSize = 14.sp)
+                }
+                Spacer(Modifier.height(10.dp))
+
+                // Dismiss button
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Saya sudah paham", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
                 }
             }
         }
@@ -8709,6 +8864,43 @@ fun parseFeed(arr: JSONArray): List<FeedItem> = try {
         )
     }
 } catch (_: Exception) { emptyList() }
+
+// ─── v7.9.78: Detect old APK signature (CN=DLavie, OU=Development, O=drmacze) ─
+// Signature BARU (v243+): CN=DLavie, OU=Dev, O=DLavie
+// Signature LAMA (v242-): CN=DLavie, OU=Development, O=drmacze
+// Return true kalau APK ini pakai signature lama → perlu uninstall+reinstall.
+fun isOldApkSignature(context: android.content.Context): Boolean {
+    return try {
+        val pm = context.packageManager
+        val packageInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            pm.getPackageInfo(context.packageName, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES)
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(context.packageName, android.content.pm.PackageManager.GET_SIGNATURES)
+        }
+        val signatures = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            packageInfo.signingInfo?.apkContentsSigners ?: arrayOf()
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.signatures ?: arrayOf()
+        }
+        if (signatures.isEmpty()) return false
+        // Decode certificate DN
+        val sig = signatures[0]
+        val certStream = java.io.ByteArrayInputStream(sig.toByteArray())
+        val cf = java.security.cert.CertificateFactory.getInstance("X.509")
+        val cert = cf.generateCertificate(certStream) as java.security.cert.X509Certificate
+        val dn = cert.subjectX500Principal.name
+        android.util.Log.i("SignatureCheck", "APK certificate DN: $dn")
+        // Old signature: CN=DLavie, OU=Development, O=drmacze
+        // New signature: CN=DLavie, OU=Dev, O=DLavie
+        // Kalau DN mengandung "OU=Development" → old signature
+        dn.contains("OU=Development", ignoreCase = true)
+    } catch (e: Exception) {
+        android.util.Log.e("SignatureCheck", "Failed to read APK signature", e)
+        false  // fail-open: jangan show popup kalau gagal cek
+    }
+}
 
 fun roleBadgeColor(role: String): Color = when (role.lowercase()) {
     "admin"     -> DangerRed
