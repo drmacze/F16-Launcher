@@ -15,8 +15,8 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 36
-        versionCode 242
-        versionName "7.9.71-cloud-gaming-iter3-premium"
+        versionCode 243
+        versionName "7.9.78-banner-slider-news-posts"
         buildConfigField "String", "SUPABASE_URL", '"https://lvmucsxbmadtsgrxuwmo.supabase.co"'
         buildConfigField "String", "SUPABASE_ANON_KEY", '"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2bXVjc3hibWFkdHNncnh1d21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODUyODksImV4cCI6MjA5ODU2MTI4OX0.y-1sE6uYTn4Wbter6g6NozY6uojzD5x9YVeYif-5nJs"'
         buildConfigField "String", "SUPABASE_PUB_KEY", '"sb_publishable_aYFlbWVJMErOHwPsli33QQ_INJD9mhx"'
@@ -70,6 +70,12 @@ dependencies {
     implementation 'com.valentinilk.shimmer:compose-shimmer:1.2.0'
     // v6.8.3: AndroidX Custom Tabs — for Google OAuth in-app browser
     implementation 'androidx.browser:browser:1.8.0'
+
+    // ─── v7.9.78: Banner Slider — video player (Media3/ExoPlayer) ───────────
+    // Coil (image + gif) already in deps above. Media3 needed for MP4 video banners.
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    implementation 'androidx.media3:media3-ui:1.4.1'
+    implementation 'androidx.media3:media3-common:1.4.1'
 
     // ─── Firebase ────────────────────────────────────────────────────────────
     // BOM (Bill of Materials) — auto-pins compatible versions of all Firebase libs

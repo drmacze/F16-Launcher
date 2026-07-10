@@ -1107,6 +1107,32 @@ public class CommunityApi {
             null, false, false));
     }
 
+    // ─── v7.9.78: Banner Slides (banner_slides table) ──────────────────────
+    // Fetch active banner slides untuk Launcher Beranda.
+    // Public read (anon key, no auth required).
+    // Returns slides yang is_active=true dan dalam schedule window.
+    public JSONArray fetchBannerSlides() throws Exception {
+        return new JSONArray(request("GET",
+            "/rest/v1/banner_slides?is_active=eq.true"
+                + "&select=id,sort_order,title,subtitle,media_type,media_url,link_url,"
+                + "duration_seconds,starts_at,ends_at"
+                + "&order=sort_order.asc&limit=10",
+            null, false, false));
+    }
+
+    // ─── v7.9.78: News Posts (news_posts table) ────────────────────────────
+    // Fetch published news posts (official news dari dev, separate dari feed_posts).
+    // Public read (anon key, no auth required).
+    // Returns posts yang sudah published (published_at <= now) dan is_active=true.
+    public JSONArray fetchNewsPosts() throws Exception {
+        return new JSONArray(request("GET",
+            "/rest/v1/news_posts?is_active=eq.true&published_at=not.is.null"
+                + "&select=id,title,body,footer_text,image_url,label_type,official,"
+                + "scheduled_at,published_at,created_at"
+                + "&order=published_at.desc&limit=20",
+            null, false, false));
+    }
+
     /**
      * Fetch latest published update_post (highest version_code).
      *

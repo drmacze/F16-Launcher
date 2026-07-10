@@ -63,8 +63,11 @@ import java.util.*
 @Composable
 fun NewsScreen(api: CommunityApi) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var news by remember { mutableStateOf<List<NewsItem>>(emptyList()) }
     var sliderPosts by remember { mutableStateOf<List<NewsItem>>(emptyList()) }  // v7.9.7: pure image slider
+    var bannerSlides by remember { mutableStateOf<List<BannerSlide>>(emptyList()) }  // v7.9.78: new banner_slides table
+    var officialNews by remember { mutableStateOf<List<NewsPost>>(emptyList()) }  // v7.9.78: new news_posts table
     var loading by remember { mutableStateOf(true) }
     var selectedNews by remember { mutableStateOf<NewsItem?>(null) }
 
@@ -72,6 +75,9 @@ fun NewsScreen(api: CommunityApi) {
         loading = true
         news = fetchAllNews(api)
         sliderPosts = fetchSliderPosts(api)  // v7.9.7: fetch pure image slider posts
+        // v7.9.78: fetch new banner_slides + news_posts (fail-open, tidak block UI)
+        runCatching { bannerSlides = parseBannerSlides(api.fetchBannerSlides()) }
+        runCatching { officialNews = parseNewsPosts(api.fetchNewsPosts()) }
         loading = false
     }
 
@@ -91,10 +97,29 @@ fun NewsScreen(api: CommunityApi) {
     }
 
     Column(Modifier.fillMaxWidth()) {
-        // ── v7.9.7: Pure Image Slider (promo banner) ──
-        // Hanya gambar, ratio auto (16:9 fillMaxWidth), no text.
-        // Source: feed_posts WHERE is_slider=true AND official=true
-        if (sliderPosts.isNotEmpty()) {
+        // ── v7.9.78: NEW Banner Slider (banner_slides table) — PRIORITAS ──
+        // Pakai banner_slides kalau ada (managed via Dev Hub → Berita & Banner).
+        // Support image, GIF, dan MP4 video. Auto-slide per-slide duration.
+        // Pinterest-style 16:9 rounded corners.
+        if (bannerSlides.isNotEmpty()) {
+            BannerSlider(
+                slides = bannerSlides,
+                onClick = { slide ->
+                    slide.linkUrl?.let { url ->
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        } catch (_: Exception) { /* ignore */ }
+                    }
+                }
+            )
+            Spacer(Modifier.height(16.dp))
+        }
+
+        // ── v7.9.7: Pure Image Slider (promo banner) — FALLBACK ──
+        // Kalau banner_slides kosong, pakai slider lama dari feed_posts.
+        if (bannerSlides.isEmpty() && sliderPosts.isNotEmpty()) {
             PromoSliderCarousel(
                 items = sliderPosts,
                 onClick = { selectedNews = it }
@@ -104,12 +129,33 @@ fun NewsScreen(api: CommunityApi) {
 
         // ── v7.9.7: News Hero Carousel (top 3 news) — fallback if no slider ──
         // Kalau slider kosong, tetap tampilkan hero carousel dari news posts
-        if (sliderPosts.isEmpty() && news.isNotEmpty()) {
+        if (bannerSlides.isEmpty() && sliderPosts.isEmpty() && news.isNotEmpty()) {
             val heroNews = news.take(3)
             NewsHeroCarousel(
                 news = heroNews,
                 onClick = { selectedNews = it }
             )
+            Spacer(Modifier.height(16.dp))
+        }
+
+        // ── v7.9.78: Official News Posts (news_posts table) ──
+        // Tampilkan di atas news feed list (separate dari composite news lama).
+        if (officialNews.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.size(width = 3.dp, height = 18.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
+                Spacer(Modifier.width(8.dp))
+                Text("Berita Resmi", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                Spacer(Modifier.weight(1f))
+            }
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                officialNews.forEach { post -> OfficialNewsCard(post = post) }
+            }
             Spacer(Modifier.height(16.dp))
         }
 
@@ -912,6 +958,98 @@ fun openInAppBrowser(context: android.content.Context, url: String) {
             context.startActivity(intent)
         } catch (_: Exception) {
             android.widget.Toast.makeText(context, "Tidak bisa membuka link: $url", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+// ─── v7.9.78: Official News Card (news_posts table) ─────────────────────────
+@Composable
+private fun OfficialNewsCard(post: NewsPost) {
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF0F0F0F))
+            .padding(14.dp)
+    ) {
+        // Label + Official badge
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val (labelColor, labelText) = when (post.labelType) {
+                "maintenance"  -> Pair(Color(0xFFFFAA00), "Maintenance")
+                "information"  -> Pair(Color(0xFF00D4FF), "Information")
+                "other"        -> Pair(Color(0xFFB783FF), "Other")
+                else           -> Pair(Color.White.copy(0.7f), post.labelType)
+            }
+            Box(
+                Modifier.clip(RoundedCornerShape(6.dp))
+                    .background(labelColor.copy(0.15f))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(labelText, color = labelColor, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+            }
+            if (post.official) {
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    Modifier.clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF00D26A).copy(0.15f))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text("Official", color = Color(0xFF00D26A), fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // Title
+        Text(
+            post.title,
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = InterFontFamily,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        // Body
+        if (post.body.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                post.body,
+                color = Color.White.copy(0.7f),
+                fontSize = 13.sp,
+                fontFamily = InterFontFamily,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 18.sp
+            )
+        }
+
+        // Image
+        post.imageUrl?.let { url ->
+            if (url.isNotBlank()) {
+                Spacer(Modifier.height(10.dp))
+                AsyncImage(
+                    model = url,
+                    contentDescription = post.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp))
+                )
+            }
+        }
+
+        // Footer
+        post.footerText?.let { footer ->
+            if (footer.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    footer,
+                    color = Color.White.copy(0.4f),
+                    fontSize = 11.sp,
+                    fontFamily = InterFontFamily,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                )
+            }
         }
     }
 }
