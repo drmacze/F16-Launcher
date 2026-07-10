@@ -587,17 +587,17 @@ private fun GuidedLoginScreen(
             }) {
                 Text(
                     when (mode) {
-                        "chooser"  -> "DLavie Portal"
+                        "chooser"  -> "DLAVIE PORTAL"
                         "login"    -> t.loginSubtitle
                         "register" -> t.registerAccount
                         "forgot"   -> t.forgotPassword
-                        else       -> "DLavie Portal"
+                        else       -> "DLAVIE PORTAL"
                     },
                     color = GuideWhite,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Black,
                     fontFamily = GuideFont,
-                    letterSpacing = (-0.5).sp
+                    letterSpacing = 2.sp
                 )
             }
 
@@ -619,7 +619,8 @@ private fun GuidedLoginScreen(
             }) {
                 Text(
                     when (mode) {
-                        "chooser" -> "Login atau connect akun DLavie Launcher untuk mengakses semua fitur web."
+                        "chooser" -> "Sign in or connect your DLavie Launcher account
+to access all web features."
                         else -> ""
                     },
                     color = GuideSoftText,
@@ -737,14 +738,14 @@ private fun GuidedLoginScreen(
                             )
                             if (checkingUpdate) {
                                 Text(
-                                    "Memeriksa update...",
+                                    "Checking for updates...",
                                     color = Color.White.copy(0.4f),
                                     fontSize = 10.sp,
                                     fontFamily = GuideFont
                                 )
                             } else if (updateAvailable && latestVersionCode != null) {
                                 Text(
-                                    "Update tersedia: v$latestVersionName (build $latestVersionCode)",
+                                    "Update available: v$latestVersionName (build $latestVersionCode)",
                                     color = Color(0xFFFFAA00),
                                     fontSize = 10.sp,
                                     fontFamily = GuideFont,
@@ -752,7 +753,7 @@ private fun GuidedLoginScreen(
                                 )
                             } else if (!checkingUpdate && latestVersionCode != null) {
                                 Text(
-                                    "✓ Versi terbaru",
+                                    "Latest version",
                                     color = Color(0xFF00D26A),
                                     fontSize = 10.sp,
                                     fontFamily = GuideFont,
@@ -760,7 +761,7 @@ private fun GuidedLoginScreen(
                                 )
                             } else {
                                 Text(
-                                    "Tidak bisa cek update (offline)",
+                                    "Cannot check update (offline)",
                                     color = Color.White.copy(0.3f),
                                     fontSize = 10.sp,
                                     fontFamily = GuideFont
@@ -793,7 +794,7 @@ private fun GuidedLoginScreen(
                                 )
                                 Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text("Update ke Versi Terbaru", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont)
+                                    Text("Update to Latest Version", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont)
                                     Text(
                                         "v$latestVersionName (build $latestVersionCode)",
                                         color = Color.White.copy(0.7f),
@@ -936,7 +937,7 @@ private fun GuidedLoginScreen(
 
                 // Info text
                 Text(
-                    "Login/register akun DLavie Anda melalui website portal.",
+                    "Sign in or register your DLavie account via the portal website.",
                     color = Color.White.copy(alpha = 0.5f),
                     fontSize = 13.sp,
                     fontFamily = GuideFont,
@@ -947,7 +948,7 @@ private fun GuidedLoginScreen(
 
                 // 1. Connect via DLavie Portal (primary, white bg)
                 AuthProviderButton(
-                    label = "Connect via DLavie Portal",
+                    label = "Connect to Portal",
                     icon = {
                         Icon(
                             Icons.Rounded.Public,
@@ -973,7 +974,7 @@ private fun GuidedLoginScreen(
 
                 // 2. Already connected? Check token
                 Text(
-                    "Sudah pernah connect? Launcher akan auto-login jika token masih valid.",
+                    "Already connected? The launcher will auto-login if your token is still valid.",
                     color = Color.White.copy(alpha = 0.3f),
                     fontSize = 11.sp,
                     fontFamily = GuideFont,
@@ -991,7 +992,7 @@ private fun GuidedLoginScreen(
                 ) {
                     Box(Modifier.weight(1f).height(1.dp).background(Color.White.copy(0.1f)))
                     Text(
-                        "ATAU CONNECT MANUAL",
+                        "OR CONNECT MANUALLY",
                         color = Color.White.copy(alpha = 0.4f),
                         fontSize = 10.sp,
                         fontFamily = GuideFont,
@@ -1021,7 +1022,7 @@ private fun GuidedLoginScreen(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                "Connect Manual (untuk versi lama)",
+                                "Connect Manual (for older versions)",
                                 color = Color.White,
                                 fontSize = 13.sp,
                                 fontFamily = GuideFont,
@@ -1029,12 +1030,12 @@ private fun GuidedLoginScreen(
                             )
                         }
                         Text(
-                            "Cocok untuk launcher v218 dan sebelumnya yang tidak ada deep link handler otomatis.\n\n" +
-                            "Cara pakai:\n" +
-                            "1. Login di web DLavie\n" +
-                            "2. Klik \"Connect to DLavie\"\n" +
-                            "3. Setelah 2.5 detik, web akan tampilkan URL connect\n" +
-                            "4. Copy URL tersebut, paste di bawah ini\n" +
+                            "For launcher v218 and earlier without automatic deep link handling.\n\n" +
+                            "How to use:\n" +
+                            "1. Sign in at DLavie web\n" +
+                            "2. Click \"Connect to DLavie\"\n" +
+                            "3. After 2.5 seconds, the web will show a connect URL\n" +
+                            "4. Copy that URL and paste it below\n" +
                             "5. Tap \"Connect Manual\"",
                             color = Color.White.copy(alpha = 0.5f),
                             fontSize = 10.sp,
@@ -1071,11 +1072,11 @@ private fun GuidedLoginScreen(
                             onClick = {
                                 val url = pasteUrl.trim()
                                 if (url.isBlank()) {
-                                    pasteError = "URL tidak boleh kosong"
+                                    pasteError = "URL cannot be empty"
                                     return@Button
                                 }
                                 val uri = try { android.net.Uri.parse(url) } catch (e: Exception) {
-                                    pasteError = "URL tidak valid: ${e.message}"
+                                    pasteError = "Invalid URL: ${e.message}"
                                     return@Button
                                 }
                                 val token = uri.getQueryParameter("token")
@@ -1083,7 +1084,7 @@ private fun GuidedLoginScreen(
                                 val refresh = uri.getQueryParameter("refresh") ?: ""
 
                                 if (token.isNullOrBlank() || uid.isNullOrBlank()) {
-                                    pasteError = "URL tidak berisi token dan uid yang valid"
+                                    pasteError = "URL does not contain valid token and uid"
                                     return@Button
                                 }
 
