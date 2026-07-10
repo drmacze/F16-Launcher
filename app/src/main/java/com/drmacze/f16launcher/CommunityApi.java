@@ -1133,6 +1133,27 @@ public class CommunityApi {
             null, false, false));
     }
 
+    // ─── v7.9.78: Auto-publish scheduled news (no pg_cron needed) ──────────
+    // Call RPC function publish_due_scheduled_news() untuk publish posts yang
+    // scheduled_at <= now() dan belum published. Fail-open (tidak throw exception).
+    // Return: jumlah posts yang baru saja di-publish (0 kalau tidak ada).
+    public int publishDueScheduledNews() throws Exception {
+        String resp = request("POST",
+            "/rest/v1/rpc/publish_due_scheduled_news",
+            new org.json.JSONObject(),  // empty body
+            false, false);
+        try {
+            // Response bisa berupa integer (published_count) atau null
+            if (resp == null || resp.trim().isEmpty() || resp.trim().equals("null")) {
+                return 0;
+            }
+            return Integer.parseInt(resp.trim());
+        } catch (NumberFormatException e) {
+            // Response bukan integer — anggap sukses tapi count unknown
+            return 0;
+        }
+    }
+
     /**
      * Fetch latest published update_post (highest version_code).
      *

@@ -75,6 +75,9 @@ fun NewsScreen(api: CommunityApi) {
         loading = true
         news = fetchAllNews(api)
         sliderPosts = fetchSliderPosts(api)  // v7.9.7: fetch pure image slider posts
+        // v7.9.78: Auto-publish scheduled news yang sudah due (no pg_cron needed)
+        // Call RPC sebelum fetch news_posts — fail-open, tidak block UI
+        runCatching { api.publishDueScheduledNews() }
         // v7.9.78: fetch new banner_slides + news_posts (fail-open, tidak block UI)
         runCatching { bannerSlides = parseBannerSlides(api.fetchBannerSlides()) }
         runCatching { officialNews = parseNewsPosts(api.fetchNewsPosts()) }
