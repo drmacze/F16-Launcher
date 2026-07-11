@@ -17,6 +17,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -251,17 +252,64 @@ private fun BannerMediaContent(slide: BannerSlide) {
     val context = LocalContext.current
     when (slide.mediaType) {
         "video" -> {
+            // v7.9.78: Video with loading indicator + error fallback
+            var videoLoading by remember { mutableStateOf(true) }
+            var videoError by remember { mutableStateOf(false) }
+
+            // Loading indicator while video buffers
+            if (videoLoading && !videoError) {
+                Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        color = Color.White.copy(alpha = 0.6f),
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+
+            // Error fallback — show black bg with play icon
+            if (videoError) {
+                Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.PlayCircle,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.4f),
+                        modifier = Modifier.size(48.dp)
+                    )
+                }
+            }
+
             // ExoPlayer for MP4 video
-            val exoPlayer = remember {
+            val exoPlayer = remember(slide.mediaUrl) {
                 ExoPlayer.Builder(context).build().apply {
                     setMediaItem(MediaItem.fromUri(slide.mediaUrl))
                     repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
                     playWhenReady = true
                     volume = 0f  // muted
                     prepare()
+                    addListener(object : androidx.media3.common.Player.Listener {
+                        override fun onPlaybackStateChanged(state: Int) {
+                            when (state) {
+                                androidx.media3.common.Player.STATE_READY -> {
+                                    videoLoading = false
+                                    videoError = false
+                                }
+                                androidx.media3.common.Player.STATE_BUFFERING -> {
+                                    videoLoading = true
+                                }
+                                androidx.media3.common.Player.STATE_ENDED -> {
+                                    videoLoading = false
+                                }
+                                androidx.media3.common.Player.STATE_IDLE -> {
+                                    videoError = true
+                                    videoLoading = false
+                                }
+                            }
+                        }
+                    })
                 }
             }
-            DisposableEffect(Unit) {
+            DisposableEffect(slide.mediaUrl) {
                 onDispose { exoPlayer.release() }
             }
             AndroidView(
@@ -279,7 +327,31 @@ private fun BannerMediaContent(slide: BannerSlide) {
             )
         }
         else -> {
-            // Image + GIF via Coil
+            // Image + GIF via Coil with loading + error fallback
+            var imageLoading by remember(slide.mediaUrl) { mutableStateOf(true) }
+            var imageError by remember(slide.mediaUrl) { mutableStateOf(false) }
+
+            if (imageLoading) {
+                Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        color = Color.White.copy(alpha = 0.6f),
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+
+            if (imageError) {
+                Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.Image,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.3f),
+                        modifier = Modifier.size(48.dp)
+                    )
+                }
+            }
+
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(slide.mediaUrl)
@@ -287,7 +359,10 @@ private fun BannerMediaContent(slide: BannerSlide) {
                     .build(),
                 contentDescription = slide.title,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                onLoading = { imageLoading = true },
+                onSuccess = { imageLoading = false; imageError = false },
+                onError = { imageLoading = false; imageError = true }
             )
         }
     }
