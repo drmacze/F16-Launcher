@@ -133,7 +133,7 @@ fun BannerSlider(
         pagerState.animateScrollToPage(nextPage, animationSpec = tween(600))
     }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
