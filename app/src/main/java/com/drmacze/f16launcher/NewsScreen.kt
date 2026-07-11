@@ -70,6 +70,8 @@ fun NewsScreen(api: CommunityApi) {
     var officialNews by remember { mutableStateOf<List<NewsPost>>(emptyList()) }  // v7.9.78: new news_posts table
     var loading by remember { mutableStateOf(true) }
     var selectedNews by remember { mutableStateOf<NewsItem?>(null) }
+    var bannerError by remember { mutableStateOf("") }
+    var newsError by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         loading = true
@@ -78,13 +80,41 @@ fun NewsScreen(api: CommunityApi) {
         // v7.9.78: Auto-publish scheduled news yang sudah due (no pg_cron needed)
         // Call RPC sebelum fetch news_posts — fail-open, tidak block UI
         runCatching { api.publishDueScheduledNews() }
-        // v7.9.78: fetch new banner_slides + news_posts — LOG ERRORS (don't swallow)
-        runCatching { parseBannerSlides(api.fetchBannerSlides()) }
-            .onFailure { Log.e("NewsScreen", "fetchBannerSlides FAILED", it) }
-            .onSuccess { bannerSlides = it; Log.i("NewsScreen", "fetchBannerSlides OK: ${it.size} slides") }
-        runCatching { parseNewsPosts(api.fetchNewsPosts()) }
-            .onFailure { Log.e("NewsScreen", "fetchNewsPosts FAILED", it) }
-            .onSuccess { officialNews = it; Log.i("NewsScreen", "fetchNewsPosts OK: ${it.size} posts") }
+        // v7.9.78: fetch new banner_slides + news_posts — DIRECT HTTP (bypass CommunityApi.request)
+        // Debug: pakai HttpURLConnection langsung untuk isolate error
+        runCatching {
+            val url = java.net.URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/banner_slides?is_active=eq.true&select=id,sort_order,title,subtitle,media_type,media_url,link_url,duration_seconds,starts_at,ends_at&order=sort_order.asc&limit=10")
+            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                connectTimeout = 15000
+                readTimeout = 20000
+                setRequestProperty("apikey", com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY)
+                setRequestProperty("Authorization", "Bearer ${com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY}")
+                connect()
+            }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            Log.i("NewsScreen", "fetchBannerSlides DIRECT HTTP response: ${body.take(200)}")
+            val arr = org.json.JSONArray(body)
+            val parsed = parseBannerSlides(arr)
+            Log.i("NewsScreen", "fetchBannerSlides parsed: ${parsed.size} slides")
+            bannerSlides = parsed
+        }.onFailure { Log.e("NewsScreen", "fetchBannerSlides DIRECT FAILED", it); bannerError = it.message ?: it.javaClass.simpleName }
+
+        runCatching {
+            val url = java.net.URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/news_posts?is_active=eq.true&published_at=not.is.null&select=id,title,body,footer_text,image_url,label_type,official,scheduled_at,published_at,created_at&order=published_at.desc&limit=20")
+            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                connectTimeout = 15000
+                readTimeout = 20000
+                setRequestProperty("apikey", com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY)
+                setRequestProperty("Authorization", "Bearer ${com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY}")
+                connect()
+            }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            Log.i("NewsScreen", "fetchNewsPosts DIRECT HTTP response: ${body.take(200)}")
+            val arr = org.json.JSONArray(body)
+            val parsed = parseNewsPosts(arr)
+            Log.i("NewsScreen", "fetchNewsPosts parsed: ${parsed.size} posts")
+            officialNews = parsed
+        }.onFailure { Log.e("NewsScreen", "fetchNewsPosts DIRECT FAILED", it); newsError = it.message ?: it.javaClass.simpleName }
         loading = false
     }
 
@@ -104,20 +134,27 @@ fun NewsScreen(api: CommunityApi) {
     }
 
     Column(Modifier.fillMaxWidth()) {
-        // ══ v7.9.78 DEBUG OVERLAY — tampilkan counts supaya bisa diagnose ══
+        // ══ v7.9.78 DEBUG OVERLAY — tampilkan counts + errors supaya bisa diagnose ══
         Surface(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             color = Color(0xFFFFAA00).copy(alpha = 0.15f),
             shape = RoundedCornerShape(8.dp),
             border = BorderStroke(1.dp, Color(0xFFFFAA00).copy(alpha = 0.4f))
         ) {
-            Text(
-                "DEBUG: bannerSlides=${bannerSlides.size} | sliderPosts=${sliderPosts.size} | officialNews=${officialNews.size} | news=${news.size} | loading=$loading",
-                color = Color(0xFFFFAA00),
-                fontSize = 10.sp,
-                fontFamily = InterFontFamily,
-                modifier = Modifier.padding(8.dp)
-            )
+            Column(Modifier.padding(8.dp)) {
+                Text(
+                    "DEBUG: bannerSlides=${bannerSlides.size} | sliderPosts=${sliderPosts.size} | officialNews=${officialNews.size} | news=${news.size} | loading=$loading",
+                    color = Color(0xFFFFAA00),
+                    fontSize = 10.sp,
+                    fontFamily = InterFontFamily
+                )
+                if (bannerError.isNotEmpty()) {
+                    Text("BANNER ERR: $bannerError", color = Color(0xFFFF5252), fontSize = 9.sp, fontFamily = InterFontFamily)
+                }
+                if (newsError.isNotEmpty()) {
+                    Text("NEWS ERR: $newsError", color = Color(0xFFFF5252), fontSize = 9.sp, fontFamily = InterFontFamily)
+                }
+            }
         }
 
         // ── v7.9.78: NEW Banner Slider (banner_slides table) — PRIORITAS ──
