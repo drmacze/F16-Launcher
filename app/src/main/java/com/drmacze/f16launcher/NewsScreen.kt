@@ -81,39 +81,45 @@ fun NewsScreen(api: CommunityApi) {
         // Call RPC sebelum fetch news_posts — fail-open, tidak block UI
         runCatching { api.publishDueScheduledNews() }
         // v7.9.78: fetch new banner_slides + news_posts — DIRECT HTTP (bypass CommunityApi.request)
-        // Debug: pakai HttpURLConnection langsung untuk isolate error
+        // v7.9.78 FIX: wrap in withContext(Dispatchers.IO) — NetworkOnMainThreadException
         runCatching {
-            val url = java.net.URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/banner_slides?is_active=eq.true&select=id,sort_order,title,subtitle,media_type,media_url,link_url,duration_seconds,starts_at,ends_at&order=sort_order.asc&limit=10")
-            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                connectTimeout = 15000
-                readTimeout = 20000
-                setRequestProperty("apikey", com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY)
-                setRequestProperty("Authorization", "Bearer ${com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY}")
-                connect()
+            withContext(Dispatchers.IO) {
+                val url = java.net.URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/banner_slides?is_active=eq.true&select=id,sort_order,title,subtitle,media_type,media_url,link_url,duration_seconds,starts_at,ends_at&order=sort_order.asc&limit=10")
+                val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 15000
+                    readTimeout = 20000
+                    setRequestProperty("apikey", com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY)
+                    setRequestProperty("Authorization", "Bearer ${com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY}")
+                    connect()
+                }
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                Log.i("NewsScreen", "fetchBannerSlides DIRECT HTTP response: ${body.take(200)}")
+                val arr = org.json.JSONArray(body)
+                parseBannerSlides(arr)
             }
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            Log.i("NewsScreen", "fetchBannerSlides DIRECT HTTP response: ${body.take(200)}")
-            val arr = org.json.JSONArray(body)
-            val parsed = parseBannerSlides(arr)
-            Log.i("NewsScreen", "fetchBannerSlides parsed: ${parsed.size} slides")
+        }.onSuccess { parsed ->
             bannerSlides = parsed
+            Log.i("NewsScreen", "fetchBannerSlides OK: ${parsed.size} slides")
         }.onFailure { Log.e("NewsScreen", "fetchBannerSlides DIRECT FAILED", it); bannerError = it.message ?: it.javaClass.simpleName }
 
         runCatching {
-            val url = java.net.URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/news_posts?is_active=eq.true&published_at=not.is.null&select=id,title,body,footer_text,image_url,label_type,official,scheduled_at,published_at,created_at&order=published_at.desc&limit=20")
-            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                connectTimeout = 15000
-                readTimeout = 20000
-                setRequestProperty("apikey", com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY)
-                setRequestProperty("Authorization", "Bearer ${com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY}")
-                connect()
+            withContext(Dispatchers.IO) {
+                val url = java.net.URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/news_posts?is_active=eq.true&published_at=not.is.null&select=id,title,body,footer_text,image_url,label_type,official,scheduled_at,published_at,created_at&order=published_at.desc&limit=20")
+                val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 15000
+                    readTimeout = 20000
+                    setRequestProperty("apikey", com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY)
+                    setRequestProperty("Authorization", "Bearer ${com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY}")
+                    connect()
+                }
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                Log.i("NewsScreen", "fetchNewsPosts DIRECT HTTP response: ${body.take(200)}")
+                val arr = org.json.JSONArray(body)
+                parseNewsPosts(arr)
             }
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            Log.i("NewsScreen", "fetchNewsPosts DIRECT HTTP response: ${body.take(200)}")
-            val arr = org.json.JSONArray(body)
-            val parsed = parseNewsPosts(arr)
-            Log.i("NewsScreen", "fetchNewsPosts parsed: ${parsed.size} posts")
+        }.onSuccess { parsed ->
             officialNews = parsed
+            Log.i("NewsScreen", "fetchNewsPosts OK: ${parsed.size} posts")
         }.onFailure { Log.e("NewsScreen", "fetchNewsPosts DIRECT FAILED", it); newsError = it.message ?: it.javaClass.simpleName }
         loading = false
     }
