@@ -79,12 +79,12 @@ fun NewsScreen(api: CommunityApi) {
         // Call RPC sebelum fetch news_posts — fail-open, tidak block UI
         runCatching { api.publishDueScheduledNews() }
         // v7.9.78: fetch new banner_slides + news_posts — LOG ERRORS (don't swallow)
-        runCatching { bannerSlides = parseBannerSlides(api.fetchBannerSlides()) }
+        runCatching { parseBannerSlides(api.fetchBannerSlides()) }
             .onFailure { Log.e("NewsScreen", "fetchBannerSlides FAILED", it) }
-            .onSuccess { Log.i("NewsScreen", "fetchBannerSlides OK: ${it.size} slides") }
-        runCatching { officialNews = parseNewsPosts(api.fetchNewsPosts()) }
+            .onSuccess { bannerSlides = it; Log.i("NewsScreen", "fetchBannerSlides OK: ${it.size} slides") }
+        runCatching { parseNewsPosts(api.fetchNewsPosts()) }
             .onFailure { Log.e("NewsScreen", "fetchNewsPosts FAILED", it) }
-            .onSuccess { Log.i("NewsScreen", "fetchNewsPosts OK: ${it.size} posts") }
+            .onSuccess { officialNews = it; Log.i("NewsScreen", "fetchNewsPosts OK: ${it.size} posts") }
         loading = false
     }
 
