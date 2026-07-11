@@ -70,8 +70,6 @@ fun NewsScreen(api: CommunityApi) {
     var officialNews by remember { mutableStateOf<List<NewsPost>>(emptyList()) }  // v7.9.78: new news_posts table
     var loading by remember { mutableStateOf(true) }
     var selectedNews by remember { mutableStateOf<NewsItem?>(null) }
-    var bannerError by remember { mutableStateOf("") }
-    var newsError by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         loading = true
@@ -100,7 +98,7 @@ fun NewsScreen(api: CommunityApi) {
         }.onSuccess { parsed ->
             bannerSlides = parsed
             Log.i("NewsScreen", "fetchBannerSlides OK: ${parsed.size} slides")
-        }.onFailure { Log.e("NewsScreen", "fetchBannerSlides DIRECT FAILED", it); bannerError = it.message ?: it.javaClass.simpleName }
+        }.onFailure { Log.e("NewsScreen", "fetchBannerSlides FAILED", it) }
 
         runCatching {
             withContext(Dispatchers.IO) {
@@ -120,7 +118,7 @@ fun NewsScreen(api: CommunityApi) {
         }.onSuccess { parsed ->
             officialNews = parsed
             Log.i("NewsScreen", "fetchNewsPosts OK: ${parsed.size} posts")
-        }.onFailure { Log.e("NewsScreen", "fetchNewsPosts DIRECT FAILED", it); newsError = it.message ?: it.javaClass.simpleName }
+        }.onFailure { Log.e("NewsScreen", "fetchNewsPosts FAILED", it) }
         loading = false
     }
 
@@ -140,29 +138,6 @@ fun NewsScreen(api: CommunityApi) {
     }
 
     Column(Modifier.fillMaxWidth()) {
-        // ══ v7.9.78 DEBUG OVERLAY — tampilkan counts + errors supaya bisa diagnose ══
-        Surface(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-            color = Color(0xFFFFAA00).copy(alpha = 0.15f),
-            shape = RoundedCornerShape(8.dp),
-            border = BorderStroke(1.dp, Color(0xFFFFAA00).copy(alpha = 0.4f))
-        ) {
-            Column(Modifier.padding(8.dp)) {
-                Text(
-                    "DEBUG: bannerSlides=${bannerSlides.size} | sliderPosts=${sliderPosts.size} | officialNews=${officialNews.size} | news=${news.size} | loading=$loading",
-                    color = Color(0xFFFFAA00),
-                    fontSize = 10.sp,
-                    fontFamily = InterFontFamily
-                )
-                if (bannerError.isNotEmpty()) {
-                    Text("BANNER ERR: $bannerError", color = Color(0xFFFF5252), fontSize = 9.sp, fontFamily = InterFontFamily)
-                }
-                if (newsError.isNotEmpty()) {
-                    Text("NEWS ERR: $newsError", color = Color(0xFFFF5252), fontSize = 9.sp, fontFamily = InterFontFamily)
-                }
-            }
-        }
-
         // ── v7.9.78: NEW Banner Slider (banner_slides table) — PRIORITAS ──
         // Pakai banner_slides kalau ada (managed via Dev Hub → Berita & Banner).
         // Support image, GIF, dan MP4 video. Auto-slide per-slide duration.
