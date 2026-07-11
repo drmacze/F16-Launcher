@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -121,17 +122,19 @@ fun BannerSlider(
 ) {
     if (slides.isEmpty()) return
 
-    val pagerState = rememberPagerState(pageCount = { slides.size })
-    val scope = rememberCoroutineScope()
+    // v7.9.78: Pakai Crossfade (bukan HorizontalPager) — hanya 1 banner visible.
+    // Tidak ada "setengah setengah" saat transisi. Fade transition yang clean.
+    var currentIndex by remember { mutableStateOf(0) }
 
     // Auto-advance — duration per-slide
-    LaunchedEffect(pagerState.currentPage, slides.size) {
+    LaunchedEffect(currentIndex, slides.size) {
         if (slides.size <= 1) return@LaunchedEffect
-        val currentSlide = slides.getOrNull(pagerState.currentPage) ?: return@LaunchedEffect
+        val currentSlide = slides.getOrNull(currentIndex) ?: return@LaunchedEffect
         delay(currentSlide.durationSeconds * 1000L)
-        val nextPage = (pagerState.currentPage + 1) % slides.size
-        pagerState.animateScrollToPage(nextPage, animationSpec = tween(600))
+        currentIndex = (currentIndex + 1) % slides.size
     }
+
+    val currentSlide = slides.getOrNull(currentIndex) ?: return
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Box(
@@ -140,18 +143,20 @@ fun BannerSlider(
                 .aspectRatio(16f / 9f)  // Pinterest-style 16:9
                 .clip(RoundedCornerShape(20.dp))
                 .background(Color.Black)
+                .clickable { onClick(currentSlide) }
         ) {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
-                val slide = slides[page]
+            // Crossfade transition — only 1 banner visible at a time (no split screen)
+            androidx.compose.animation.Crossfade(
+                targetState = currentIndex,
+                animationSpec = tween(800, easing = FastOutSlowInEasing),
+                label = "banner_crossfade"
+            ) { index ->
+                val slide = slides.getOrNull(index) ?: return@Crossfade
                 BannerMediaContent(slide = slide)
             }
 
             // Overlay: title + subtitle (current slide)
-            val currentSlide = slides.getOrNull(pagerState.currentPage)
-            if (currentSlide?.title != null || currentSlide?.subtitle != null) {
+            if (currentSlide.title != null || currentSlide.subtitle != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -164,7 +169,6 @@ fun BannerSlider(
                                 )
                             )
                         )
-                        .clickable { currentSlide.let(onClick) }
                 ) {
                     Column(
                         modifier = Modifier
@@ -194,17 +198,11 @@ fun BannerSlider(
                     }
                 }
             } else {
-                // No overlay — make whole banner clickable
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable { currentSlide?.let(onClick) }
-                )
+                // No overlay — clickable handled by parent Box
             }
 
             // Play icon indicator for video banners (top-right)
-            val isVideo = currentSlide?.mediaType == "video"
-            if (isVideo) {
+            if (currentSlide.mediaType == "video") {
                 Icon(
                     imageVector = Icons.Rounded.PlayCircle,
                     contentDescription = "Video",
@@ -226,7 +224,7 @@ fun BannerSlider(
                 horizontalArrangement = Arrangement.Center
             ) {
                 slides.forEachIndexed { index, _ ->
-                    val isSelected = pagerState.currentPage == index
+                    val isSelected = currentIndex == index
                     Box(
                         modifier = Modifier
                             .padding(horizontal = 3.dp)
