@@ -78,9 +78,13 @@ fun NewsScreen(api: CommunityApi) {
         // v7.9.78: Auto-publish scheduled news yang sudah due (no pg_cron needed)
         // Call RPC sebelum fetch news_posts — fail-open, tidak block UI
         runCatching { api.publishDueScheduledNews() }
-        // v7.9.78: fetch new banner_slides + news_posts (fail-open, tidak block UI)
+        // v7.9.78: fetch new banner_slides + news_posts — LOG ERRORS (don't swallow)
         runCatching { bannerSlides = parseBannerSlides(api.fetchBannerSlides()) }
+            .onFailure { Log.e("NewsScreen", "fetchBannerSlides FAILED", it) }
+            .onSuccess { Log.i("NewsScreen", "fetchBannerSlides OK: ${it.size} slides") }
         runCatching { officialNews = parseNewsPosts(api.fetchNewsPosts()) }
+            .onFailure { Log.e("NewsScreen", "fetchNewsPosts FAILED", it) }
+            .onSuccess { Log.i("NewsScreen", "fetchNewsPosts OK: ${it.size} posts") }
         loading = false
     }
 
@@ -100,6 +104,22 @@ fun NewsScreen(api: CommunityApi) {
     }
 
     Column(Modifier.fillMaxWidth()) {
+        // ══ v7.9.78 DEBUG OVERLAY — tampilkan counts supaya bisa diagnose ══
+        Surface(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            color = Color(0xFFFFAA00).copy(alpha = 0.15f),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, Color(0xFFFFAA00).copy(alpha = 0.4f))
+        ) {
+            Text(
+                "DEBUG: bannerSlides=${bannerSlides.size} | sliderPosts=${sliderPosts.size} | officialNews=${officialNews.size} | news=${news.size} | loading=$loading",
+                color = Color(0xFFFFAA00),
+                fontSize = 10.sp,
+                fontFamily = InterFontFamily,
+                modifier = Modifier.padding(8.dp)
+            )
+        }
+
         // ── v7.9.78: NEW Banner Slider (banner_slides table) — PRIORITAS ──
         // Pakai banner_slides kalau ada (managed via Dev Hub → Berita & Banner).
         // Support image, GIF, dan MP4 video. Auto-slide per-slide duration.
