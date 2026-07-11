@@ -15,8 +15,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -69,6 +72,7 @@ private data class BaseInstallState(
     val canInstall: Boolean = false,
     val canRepair: Boolean = false,
     val canClearCache: Boolean = false,
+    val canRetry: Boolean = false,
     val progress: Float = 0f,
     val progressText: String = "",
     val sizeText: String = "-",
@@ -129,6 +133,31 @@ fun DLavieBaseInstallCard(isGameInstalled: Boolean) {
                     colors = ButtonDefaults.buttonColors(containerColor = BaseGreen, contentColor = Color(0xFF001407)),
                     enabled = !state.working
                 ) { Text("Install Full Data", fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = BaseFont) }
+            }
+
+            // v7.9.78: Retry Download button — visible when download failed
+            if (state.canRetry) {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            state = state.copy(working = true, message = "Retrying download...", progressText = "Retrying", canRetry = false)
+                            state = withContext(Dispatchers.IO) {
+                                baseInstallAll(context) { progress -> withContext(Dispatchers.Main) { state = progress } }
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BaseCyan,
+                        contentColor = Color(0xFF001018)
+                    ),
+                    enabled = !state.working
+                ) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Retry Download", fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = BaseFont)
+                }
             }
 
             if (state.canRepair) {
@@ -222,11 +251,11 @@ private suspend fun baseInstallAll(context: Context, onProgress: suspend (BaseIn
         val file = File(root, asset.fileName)
         if (!file.exists() || file.length() != asset.size || baseSha256(file) != asset.sha256) {
             val ok = baseDownloadWithRetry(asset, file, index, assets.size, onProgress)
-            if (!ok) return baseInitialState(context, true).copy(status = "FAILED", message = "Download ${asset.label} gagal setelah 3 percobaan.", canInstall = true)
+            if (!ok) return baseInitialState(context, true).copy(status = "FAILED", message = "Download ${asset.label} failed after 5 attempts. Check your connection and tap Retry.", canInstall = true, canRetry = true)
         }
         if (baseSha256(file) != asset.sha256) {
             file.delete()
-            return baseInitialState(context, true).copy(status = "FAILED", message = "SHA ${asset.label} tidak valid.", canInstall = true)
+            return baseInitialState(context, true).copy(status = "FAILED", message = "SHA ${asset.label} invalid. File may be corrupted. Tap Retry to re-download.", canInstall = true, canRetry = true)
         }
     }
 
@@ -241,7 +270,7 @@ private suspend fun baseInstallAll(context: Context, onProgress: suspend (BaseIn
         append("ls -l ${baseShellQuote(BASE_TARGET_OBB + patchObb.name)} >/dev/null || exit 22\n")
     }
     val obbResult = baseRunShizuku(obbCmd)
-    if (obbResult.first != 0) return baseInitialState(context, true).copy(status = "FAILED", message = "Gagal memasang OBB.", canInstall = true)
+    if (obbResult.first != 0) return baseInitialState(context, true).copy(status = "FAILED", message = "Failed to install OBB. Check Shizuku and tap Retry.", canInstall = true, canRetry = true)
 
     onProgress(BaseInstallState(status = "WAIT", message = "Extract full data...", marker = baseReadMarkerSmart(), shizuku = "Ready", working = true, progress = 0.72f, progressText = "Extracting data", sizeText = "1.35 GB", speedText = "-", etaText = "-"))
     val extractDir = File(root, "extract_full_v26")
@@ -250,7 +279,7 @@ private suspend fun baseInstallAll(context: Context, onProgress: suspend (BaseIn
     try {
         baseExtractDataZip(File(root, "dlavie26-data.zip"), extractDir)
     } catch (_: Throwable) {
-        return baseInitialState(context, true).copy(status = "FAILED", message = "Extract full data gagal.", canInstall = true)
+        return baseInitialState(context, true).copy(status = "FAILED", message = "Extract full data failed. Tap Retry to try again.", canInstall = true, canRetry = true)
     }
 
     onProgress(BaseInstallState(status = "WAIT", message = "Memasang full data...", marker = baseReadMarkerSmart(), shizuku = "Ready", working = true, progress = 0.86f, progressText = "Applying data", sizeText = "Verified", speedText = "-", etaText = "-"))
