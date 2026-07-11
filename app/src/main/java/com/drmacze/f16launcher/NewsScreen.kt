@@ -130,16 +130,10 @@ fun NewsScreen(api: CommunityApi) {
             Spacer(Modifier.height(16.dp))
         }
 
-        // ── v7.9.7: News Hero Carousel (top 3 news) — fallback if no slider ──
-        // Kalau slider kosong, tetap tampilkan hero carousel dari news posts
-        if (bannerSlides.isEmpty() && sliderPosts.isEmpty() && news.isNotEmpty()) {
-            val heroNews = news.take(3)
-            NewsHeroCarousel(
-                news = heroNews,
-                onClick = { selectedNews = it }
-            )
-            Spacer(Modifier.height(16.dp))
-        }
+        // v7.9.78: HAPUS NewsHeroCarousel — terlalu membingungkan user.
+        // Kalau bannerSlides dan sliderPosts kosong, langsung ke Berita Resmi + news list.
+        // (Sebelumnya: NewsHeroCarousel tampil sebagai fallback, tapi user klik
+        //  area kosong → news detail terbuka. Sekarang: tidak ada area kosong.)
 
         // ── v7.9.78: Official News Posts (news_posts table) ──
         // Tampilkan di atas news feed list (separate dari composite news lama).
