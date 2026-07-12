@@ -15,8 +15,8 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 36
-        versionCode 260
-        versionName "7.9.78-banner-crossfade"
+        versionCode 261
+        versionName "7.9.78-gif-support-duration-fix"
         buildConfigField "String", "SUPABASE_URL", '"https://lvmucsxbmadtsgrxuwmo.supabase.co"'
         buildConfigField "String", "SUPABASE_ANON_KEY", '"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2bXVjc3hibWFkdHNncnh1d21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODUyODksImV4cCI6MjA5ODU2MTI4OX0.y-1sE6uYTn4Wbter6g6NozY6uojzD5x9YVeYif-5nJs"'
         buildConfigField "String", "SUPABASE_PUB_KEY", '"sb_publishable_aYFlbWVJMErOHwPsli33QQ_INJD9mhx"'
@@ -64,6 +64,7 @@ dependencies {
     // 1.3+) compiled with Kotlin 2.x → incompatible.
     // Coil — image loading (replaces manual image loading)
     implementation 'io.coil-kt:coil-compose:2.5.0'
+    implementation 'io.coil-kt:coil-gif:2.5.0'
     // Lottie — micro-animations (ready for Phase 2)
     implementation 'com.airbnb.android:lottie-compose:6.3.0'
     // Shimmer — skeleton loading

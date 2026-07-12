@@ -355,6 +355,11 @@ private fun BannerMediaContent(slide: BannerSlide) {
                     .data(slide.mediaUrl)
                     .crossfade(true)
                     .build(),
+                imageLoader = remember {
+                    coil.ImageLoader.Builder(context)
+                        .components { add(coil.gif.GifDecoder.Factory()) }
+                        .build()
+                },
                 contentDescription = slide.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
