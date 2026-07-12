@@ -357,7 +357,7 @@ private fun BannerMediaContent(slide: BannerSlide) {
                     .build(),
                 imageLoader = remember {
                     coil.ImageLoader.Builder(context)
-                        .components { add(coil.gif.GifDecoder.Factory()) }
+                        .components { add(coil.decode.GifDecoder.Factory()) }
                         .build()
                 },
                 contentDescription = slide.title,
