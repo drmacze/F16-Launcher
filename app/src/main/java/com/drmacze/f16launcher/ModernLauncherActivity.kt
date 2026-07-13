@@ -1210,6 +1210,20 @@ fun MainShell(
     // v7.9.79: GameHub sebagai STANDALONE OVERLAY (bukan bagian dari pager)
     // User tidak bisa swipe keluar — harus tekan tombol exit di GameHub
     var showGameHub by remember { mutableStateOf(false) }
+
+    // v7.9.79: Orientation control — ONLY GameHub rotates to landscape
+    // Pakai LaunchedEffect (bukan DisposableEffect di DLavieGameHub) supaya
+    // orientation selalu sync dengan showGameHub state.
+    // Saat showGameHub=false → UNSPECIFIED (portrait, mengikuti device)
+    // Saat showGameHub=true → LANDSCAPE (hanya GameHub)
+    LaunchedEffect(showGameHub) {
+        val activity = context as? android.app.Activity
+        if (showGameHub) {
+            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        } else {
+            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
     var detailGameInstalled     by remember { mutableStateOf(false) }
     var detailAvgRating         by remember { mutableStateOf(0.0) }
     var detailRatingCount       by remember { mutableStateOf(0) }

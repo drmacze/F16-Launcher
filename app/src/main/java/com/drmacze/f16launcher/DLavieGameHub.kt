@@ -81,9 +81,9 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.graphicsLayer { scaleX = s; scaleY = s; this.alpha = a }) {
                 Box(Modifier.size(72.dp * g).clip(RoundedCornerShape(18.dp)).background(GHTextWhite), contentAlignment = Alignment.Center) { Text("DL", color = Color.Black, fontSize = 28.sp, fontWeight = FontWeight.Black) }
                 Spacer(Modifier.height(14.dp))
-                Text("DLAVIE", color = GHTextWhite, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp)
+                Text("DLAVIE", color = GHTextWhite, fontSize = 28.sp, fontWeight = FontWeight.Black, letterSpacing = 8.sp)
                 Spacer(Modifier.height(2.dp))
-                Text("GAMEHUB", color = GHTextDim, fontSize = 10.sp, fontWeight = FontWeight.Medium, letterSpacing = 3.sp)
+                Text("Cloud Gaming Platform", color = GHTextDim, fontSize = 10.sp, fontWeight = FontWeight.Medium, letterSpacing = 2.sp)
             }
         }
     }
@@ -105,10 +105,10 @@ fun DLavieGameHub(onNav: (Page) -> Unit, onGameClick: (String) -> Unit) {
     var showTransition by remember { mutableStateOf(true) }
 
     // ── Immersive mode (hide Android system status bar + nav bar, keep GameHub bar) ──
+    // v7.9.79: Orientation control DIPINDAH ke MainShell (LaunchedEffect(showGameHub))
+    // Disini hanya handle immersive mode (hide system bars)
     DisposableEffect(Unit) {
         val activity = context as? Activity
-        val origOrientation = activity?.requestedOrientation
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         // Hide Android system bars (clock, battery, wifi, notifications, nav buttons)
         activity?.window?.let { window ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -127,7 +127,6 @@ fun DLavieGameHub(onNav: (Page) -> Unit, onGameClick: (String) -> Unit) {
             }
         }
         onDispose {
-            activity?.requestedOrientation = origOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             // Restore system UI
             activity?.window?.let { window ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
