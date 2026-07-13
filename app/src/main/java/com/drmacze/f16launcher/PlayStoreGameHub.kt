@@ -38,6 +38,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.io.File
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PLAY STORE STYLE GAME HUB — Landscape, horizontal scroll, 2 categories
