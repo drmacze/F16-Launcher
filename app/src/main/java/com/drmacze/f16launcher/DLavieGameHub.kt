@@ -69,21 +69,56 @@ private val GHRed = Color(0xFFFF5252)
 // ─── Transition ──────────────────────────────────────────────────────────────
 @Composable
 fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
+    // Phase: 0=black screen (waiting for rotation), 1=logo in, 2=hold, 3=fade out
     var phase by remember { mutableStateOf(0) }
     LaunchedEffect(visible) {
-        if (visible) { phase = 1; delay(100); phase = 2; delay(600); phase = 3; delay(400); onComplete(); phase = 0 }
+        if (visible) {
+            // Phase 0: black screen — wait for landscape rotation to complete
+            delay(400)
+            // Phase 1: logo scale up
+            phase = 1
+            delay(500)
+            // Phase 2: hold with glow
+            phase = 2
+            delay(800)
+            // Phase 3: scale out + fade
+            phase = 3
+            delay(500)
+            // Done
+            onComplete()
+            phase = 4
+        }
     }
-    if (visible && phase > 0) {
+    // Render IMMEDIATELY when visible (even phase 0 = black screen)
+    if (visible && phase < 4) {
         Box(Modifier.fillMaxSize().background(GHBg), contentAlignment = Alignment.Center) {
-            val s by animateFloatAsState(when (phase) { 1 -> 1f; 2 -> 1f; 3 -> 1.5f; else -> 0f }, tween(if (phase == 1 || phase == 3) 400 else 0, easing = FastOutSlowInEasing), label = "s")
-            val a by animateFloatAsState(when (phase) { 1 -> 1f; 2 -> 1f; 3 -> 0f; else -> 0f }, tween(if (phase == 1 || phase == 3) 400 else 0, easing = FastOutSlowInEasing), label = "a")
-            val g by animateFloatAsState(if (phase == 2) 1.15f else 1f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "g")
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.graphicsLayer { scaleX = s; scaleY = s; this.alpha = a }) {
-                Box(Modifier.size(72.dp * g).clip(RoundedCornerShape(18.dp)).background(GHTextWhite), contentAlignment = Alignment.Center) { Text("DL", color = Color.Black, fontSize = 28.sp, fontWeight = FontWeight.Black) }
-                Spacer(Modifier.height(14.dp))
-                Text("DLAVIE", color = GHTextWhite, fontSize = 28.sp, fontWeight = FontWeight.Black, letterSpacing = 8.sp)
-                Spacer(Modifier.height(2.dp))
-                Text("Cloud Gaming Platform", color = GHTextDim, fontSize = 10.sp, fontWeight = FontWeight.Medium, letterSpacing = 2.sp)
+            // Phase 0: just black screen (no logo yet)
+            if (phase >= 1) {
+                val s by animateFloatAsState(
+                    when (phase) { 1 -> 1f; 2 -> 1f; 3 -> 1.5f; else -> 0f },
+                    tween(if (phase == 1 || phase == 3) 500 else 0, easing = FastOutSlowInEasing), label = "s"
+                )
+                val a by animateFloatAsState(
+                    when (phase) { 1 -> 1f; 2 -> 1f; 3 -> 0f; else -> 0f },
+                    tween(if (phase == 1 || phase == 3) 500 else 0, easing = FastOutSlowInEasing), label = "a"
+                )
+                val g by animateFloatAsState(
+                    if (phase == 2) 1.15f else 1f,
+                    infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "g"
+                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.graphicsLayer { scaleX = s; scaleY = s; this.alpha = a }
+                ) {
+                    Box(
+                        Modifier.size(72.dp * g).clip(RoundedCornerShape(18.dp)).background(GHTextWhite),
+                        contentAlignment = Alignment.Center
+                    ) { Text("DL", color = Color.Black, fontSize = 28.sp, fontWeight = FontWeight.Black) }
+                    Spacer(Modifier.height(14.dp))
+                    Text("DLAVIE", color = GHTextWhite, fontSize = 28.sp, fontWeight = FontWeight.Black, letterSpacing = 8.sp)
+                    Spacer(Modifier.height(2.dp))
+                    Text("Cloud Gaming Platform", color = GHTextDim, fontSize = 10.sp, fontWeight = FontWeight.Medium, letterSpacing = 2.sp)
+                }
             }
         }
     }
@@ -252,8 +287,14 @@ private fun GHHomeScreen(
             Spacer(Modifier.width(10.dp))
             Icon(Icons.Rounded.Search, contentDescription = "Search", tint = GHTextSoft, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
+            // Battery icon with percentage
+            Icon(Icons.Rounded.BatteryFull, contentDescription = "Battery", tint = GHTextSoft, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(3.dp))
             Text("$batteryLevel%", color = GHTextSoft, fontSize = 11.sp, fontFamily = InterFontFamily)
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(8.dp))
+            // Clock icon + time
+            Icon(Icons.Rounded.Schedule, contentDescription = "Time", tint = GHTextSoft, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(3.dp))
             Text(currentTime, color = GHTextSoft, fontSize = 11.sp, fontFamily = InterFontFamily)
             Spacer(Modifier.width(8.dp))
             Icon(Icons.Rounded.ArrowBack, contentDescription = "Exit", tint = GHTextSoft, modifier = Modifier.size(18.dp).clickable { onExit() })
