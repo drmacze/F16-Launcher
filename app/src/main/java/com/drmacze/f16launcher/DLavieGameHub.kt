@@ -90,7 +90,7 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
 private fun getBatteryLevel(context: Context): Int = try { (context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) } catch (_: Exception) { 100 }
 private fun getCurrentTime(context: Context): String = try { val is24 = DateFormat.is24HourFormat(context); SimpleDateFormat(if (is24) "HH:mm" else "h:mm a", Locale.getDefault()).format(Date()) } catch (_: Exception) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()) }
 private fun getStorageInfo(): Pair<Long, Long> { return try { val stat = StatFs("/sdcard"); val total = stat.totalBytes; val avail = stat.availableBytes; Pair(avail, total) } catch (_: Exception) { Pair(0L, 0L) } }
-private fun formatBytes(bytes: Long): String = when { bytes >= 1_000_000_000 -> "%.1fGB" format (bytes / 1_000_000_000.0); bytes >= 1_000_000 -> "%.1fMB" format (bytes / 1_000_000.0); bytes >= 1_000 -> "%.1fKB" format (bytes / 1_000.0); else -> "${bytes}B" }
+private fun formatBytes(bytes: Long): String = when { bytes >= 1_000_000_000 -> "%.1fGB".format (bytes / 1_000_000_000.0); bytes >= 1_000_000 -> "%.1fMB".format (bytes / 1_000_000.0); bytes >= 1_000 -> "%.1fKB".format (bytes / 1_000.0); else -> "${bytes}B" }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN
