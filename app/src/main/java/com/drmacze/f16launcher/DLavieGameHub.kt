@@ -219,7 +219,6 @@ fun DLavieGameHub(onNav: (Page) -> Unit, onGameClick: (String) -> Unit) {
     }
 
     var contextMenuGame by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
-    GameHubTransition(visible = showTransition) { showTransition = false }
 
     // ── User profile info ──
     val api = remember { CommunityApi(context) }
@@ -227,21 +226,23 @@ fun DLavieGameHub(onNav: (Page) -> Unit, onGameClick: (String) -> Unit) {
     val username = remember { api.username() }
 
     Box(Modifier.fillMaxSize().background(GHBg)) {
-        Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF0A0A14), GHBg), radius = 800f)))
+        // Content ONLY renders after transition completes
+        if (!showTransition) {
+            Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF0A0A14), GHBg), radius = 800f)))
 
-        when (currentScreen) {
-            0 -> GHHomeScreen(context, scope, dlavieGames, userGames, selectedTab, { selectedTab = it }, { onGameClick(it) }, { contextMenuGame = it }, apkPickerLauncher, currentTime, batteryLevel, { showDrawer = true }, { onNav(Page.Home) })
-            1 -> GHDownloadScreen(context, { currentScreen = 0 })
-            2 -> GHSettingsScreen(context, { currentScreen = 0 })
-        }
+            when (currentScreen) {
+                0 -> GHHomeScreen(context, scope, dlavieGames, userGames, selectedTab, { selectedTab = it }, { onGameClick(it) }, { contextMenuGame = it }, apkPickerLauncher, currentTime, batteryLevel, { showDrawer = true }, { onNav(Page.Home) })
+                1 -> GHDownloadScreen(context, { currentScreen = 0 })
+                2 -> GHSettingsScreen(context, { currentScreen = 0 })
+            }
 
-        // ── Side Menu Drawer ──
-        if (showDrawer) {
-            GHDrawer(
-                displayName = displayName,
-                username = username,
-                currentScreen = currentScreen,
-                onSelect = { screen -> currentScreen = screen; showDrawer = false },
+            // ── Side Menu Drawer ──
+            if (showDrawer) {
+                GHDrawer(
+                    displayName = displayName,
+                    username = username,
+                    currentScreen = currentScreen,
+                    onSelect = { screen -> currentScreen = screen; showDrawer = false },
                 onDismiss = { showDrawer = false },
                 onExit = { showDrawer = false; onNav(Page.Home) }
             )
@@ -251,6 +252,10 @@ fun DLavieGameHub(onNav: (Page) -> Unit, onGameClick: (String) -> Unit) {
         contextMenuGame?.let { (pkg, isUser) ->
             GHContextMenu(pkg, isUser, isPackageInstalled(context, pkg), { contextMenuGame = null }, { contextMenuGame = null; launchGame(context, pkg) }, { contextMenuGame = null; onGameClick(pkg) }, { contextMenuGame = null; try { context.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkg")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { } }, { contextMenuGame = null; val u = userGames.filter { it.packageName != pkg }; saveUserGames(context, u); userGames = u }, { contextMenuGame = null; try { File("/sdcard/Android/data/$pkg").deleteRecursively() } catch (_: Exception) { } })
         }
+        } // end if (!showTransition)
+
+        // Transition overlay — rendered ON TOP of content (last = top z-index in Box)
+        GameHubTransition(visible = showTransition) { showTransition = false }
     }
 }
 
