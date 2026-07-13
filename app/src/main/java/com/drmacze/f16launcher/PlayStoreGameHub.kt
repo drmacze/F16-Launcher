@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -35,21 +36,16 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PLAY STORE STYLE GAME HUB — Landscape, horizontal scroll, 2 categories
 // ═══════════════════════════════════════════════════════════════════════════
 
-private val PureBlack = Color(0xFF000000)
-private val Surface1 = Color(0xFF0E0E0E)
-private val Surface2 = Color(0xFF141414)
-private val TextWhite = Color(0xFFFFFFFF)
-private val SoftText = Color(0xFFCCCCCC)
-private val SubText = Color(0xFF888888)
-private val GlassStroke = Color(0x1AFFFFFF)
+// Color constants dari TapTapDesignSystem.kt (PureBlack, Surface1, Surface2, TextWhite,
+// SoftText, SubText, GlassStroke, AccentGreen sudah ada di package)
 private val AccentCyan = Color(0xFF00D4FF)
-private val AccentGreen = Color(0xFF00D26A)
 private val AccentAmber = Color(0xFFFFAA00)
 private val AccentRed = Color(0xFFFF5252)
 
@@ -103,7 +99,7 @@ private fun isPackageInstalled(context: Context, packageName: String): Boolean {
 private fun getAppLabel(context: Context, packageName: String): String {
     return try {
         val pi = context.packageManager.getPackageInfo(packageName, 0)
-        context.packageManager.getApplicationLabel(pi.applicationInfo).toString()
+        context.packageManager.getApplicationLabel(pi.applicationInfo!!).toString()
     } catch (_: Exception) { packageName }
 }
 
@@ -480,6 +476,7 @@ private fun CategoryTab(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PlayStoreGameCard(
     game: GameItem,
@@ -492,7 +489,6 @@ private fun PlayStoreGameCard(
     Card(
         modifier = Modifier
             .width(200.dp)
-            .clickable { onClick() }
             .combinedClickable(
                 onClick = { onClick() },
                 onLongClick = { onLongClick() }
@@ -608,6 +604,7 @@ private fun PlayStoreGameCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PlayStoreUserGameCard(
     userGame: UserGame,
