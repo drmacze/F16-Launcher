@@ -1817,7 +1817,7 @@ fun MainShell(
                                         maintenanceInfo = maintenanceInfo,
                                         onNav  = { page = it }
                                     )
-                                    Page.GameHub -> GameHubScreen(
+                                    Page.GameHub -> PlayStoreGameHub(
                                             onNav = { page = it },
                                             onGameClick = { gamePackage ->
                                                 // v7.9.13: Find GameItem by packageName, set as detail target.
