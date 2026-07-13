@@ -2181,7 +2181,11 @@ fun MainShell(
         // ── v7.9.79: GameHub STANDALONE OVERLAY ──
         // Full-screen overlay, separate from pager. User can't swipe out.
         // Only GameHub rotates to landscape. Exit via back button in GameHub.
+        // v7.9.79 FIX: Wrap in solid Box to block touch events from pager behind it.
         if (showGameHub) {
+            Box(
+                Modifier.fillMaxSize().background(Color.Black)
+            ) {
             DLavieGameHub(
                 onNav = { showGameHub = false },
                 onGameClick = { gamePackage ->
@@ -2225,9 +2229,8 @@ fun MainShell(
                     }
                 }
             )
+            } // end Box wrapper (block touch)
         }
-
-        // ── v7.9.78: Old APK signature popup (SEBELUM popup maintenance/update) ──
         // Tampil kalau APK ini pakai signature lama (CN=DLavie, OU=Development, O=drmacze)
         // User harus uninstall + reinstall APK baru dari website DLavie.
         if (showOldSignaturePopup) {
