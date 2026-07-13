@@ -92,6 +92,7 @@
             android:exported="true"
             android:label="DLavie 26"
             android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:theme="@style/AppTheme.Splash">
             <!-- Deep link for DLavie Portal Connect (dlavie://connect) -->
             <!-- Triggered from web FAQ page when user clicks "Connect to DLavie" -->
