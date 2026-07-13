@@ -12,6 +12,8 @@ import android.text.format.DateFormat
 import android.view.InputDevice
 import android.view.View
 import android.view.WindowManager
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -102,21 +104,26 @@ fun DLavieGameHub(onNav: (Page) -> Unit, onGameClick: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     var showTransition by remember { mutableStateOf(true) }
 
-    // ── Immersive mode (hide status bar + nav bar) ──
+    // ── Immersive mode (hide Android system status bar + nav bar, keep GameHub bar) ──
     DisposableEffect(Unit) {
         val activity = context as? Activity
         val origOrientation = activity?.requestedOrientation
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        // Hide system UI
+        // Hide Android system bars (clock, battery, wifi, notifications, nav buttons)
         activity?.window?.let { window ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 window.setDecorFitsSystemWindows(false)
                 val controller = window.insetsController
-                controller?.hide(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-                controller?.systemBarsBehavior = 1
+                controller?.hide(WindowInsets.Type.systemBars())
+                controller?.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             } else {
                 @Suppress("DEPRECATION")
-                window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+                window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    or View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
             }
         }
         onDispose {
@@ -125,6 +132,8 @@ fun DLavieGameHub(onNav: (Page) -> Unit, onGameClick: (String) -> Unit) {
             activity?.window?.let { window ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     window.setDecorFitsSystemWindows(true)
+                    val controller = window.insetsController
+                    controller?.show(WindowInsets.Type.systemBars())
                 } else {
                     @Suppress("DEPRECATION")
                     window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
