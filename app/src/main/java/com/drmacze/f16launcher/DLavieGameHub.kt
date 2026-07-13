@@ -141,7 +141,7 @@ fun GameHubTransition(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(GHBlack)
+                .background(GHBlack),
             contentAlignment = Alignment.Center
         ) {
             // Logo scale animation
