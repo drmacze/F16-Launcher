@@ -1207,6 +1207,9 @@ fun MainShell(
     // Saat user tap TTGameCard di Beranda, set showGameDetail=true + capture state.
     // GameDetailScreen rendered sebagai overlay (menggantikan AnimatedContent).
     var showGameDetail by remember { mutableStateOf(false) }
+    // v7.9.79: GameHub sebagai STANDALONE OVERLAY (bukan bagian dari pager)
+    // User tidak bisa swipe keluar — harus tekan tombol exit di GameHub
+    var showGameHub by remember { mutableStateOf(false) }
     var detailGameInstalled     by remember { mutableStateOf(false) }
     var detailAvgRating         by remember { mutableStateOf(0.0) }
     var detailRatingCount       by remember { mutableStateOf(0) }
@@ -1988,7 +1991,7 @@ fun MainShell(
         // Sebelumnya di-hidden di Chat karena menutupi FAB, tapi FAB sudah dihapus.
         // User butuh navbar untuk navigasi dari Komunitas ke page lain.
         // Tambah bottom padding di CommunityScreen supaya content tidak tertutup navbar.
-        if (!showGameDetail && !showSettings && visitingUserId == null && page != Page.GameHub) {
+        if (!showGameDetail && !showSettings && !showGameHub && visitingUserId == null) {
             FloatingNav(
                 page     = page,
                 onPage   = { page = it },
@@ -2130,7 +2133,7 @@ fun MainShell(
 
         // ── Notification banner overlay (slides down from the top) ──
         // Sembunyikan saat GameDetail / Settings / Visit aktif supaya tidak menumpuk header.
-        if (!showGameDetail && !showSettings && visitingUserId == null && page != Page.GameHub) {
+        if (!showGameDetail && !showSettings && !showGameHub && visitingUserId == null) {
             activeBanner?.let { banner ->
                 Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
                     NotificationBanner(
@@ -2153,6 +2156,55 @@ fun MainShell(
                     )
                 }
             }
+        }
+
+        // ── v7.9.79: GameHub STANDALONE OVERLAY ──
+        // Full-screen overlay, separate from pager. User can't swipe out.
+        // Only GameHub rotates to landscape. Exit via back button in GameHub.
+        if (showGameHub) {
+            DLavieGameHub(
+                onNav = { showGameHub = false },
+                onGameClick = { gamePackage ->
+                    showGameHub = false
+                    // Trigger game detail after closing GameHub
+                    scope.launch {
+                        delay(300)
+                        // Find game item and show detail
+                        val baseGame = when (gamePackage) {
+                            GAME_PKG_16 -> GameItem(
+                                title = "FIFA 16 Mobile",
+                                subtitle = "DLavie 26 Mod · Sports",
+                                packageName = GAME_PKG_16,
+                                mainActivity = "com.byfen.downloadzipsdk.MainActivity",
+                                coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222)),
+                                coverText = "DL",
+                                coverImageRes = R.drawable.fifa16_cover,
+                                serverStatus = ServerStatus.ONLINE,
+                                description = "FIFA 16 Mobile dengan mod DLavie 26",
+                                version = "v26.0", sizeMb = "34 MB",
+                                apkUrl = FIFA16_APK_URL
+                            )
+                            GAME_PKG_15 -> GameItem(
+                                title = "FIFA 15 Mobile",
+                                subtitle = "DLavie 15 Mod · Sports",
+                                packageName = GAME_PKG_15,
+                                mainActivity = FIFA15_MAIN_ACTIVITY,
+                                coverGradient = listOf(Color(0xFF1A1A2E), Color(0xFF16213E)),
+                                coverText = "D15",
+                                coverImageRes = R.drawable.fifa15_cover,
+                                serverStatus = ServerStatus.MAINTENANCE,
+                                description = "FIFA 15 Mobile dengan mod DLavie 15",
+                                version = "v15.0", sizeMb = "22 MB",
+                                apkUrl = FIFA15_APK_URL
+                            )
+                            else -> return@launch
+                        }
+                        detailGameItem = baseGame
+                        detailGameInstalled = isGameInstalled(context)
+                        showGameDetail = true
+                    }
+                }
+            )
         }
 
         // ── v7.9.78: Old APK signature popup (SEBELUM popup maintenance/update) ──
@@ -2427,7 +2479,7 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
                 .border(3.dp, Color.White, CircleShape)  // white ring separator
                 .clickable {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onPage(centerPage)
+                    showGameHub = true
                 },
             contentAlignment = Alignment.Center
         ) {
