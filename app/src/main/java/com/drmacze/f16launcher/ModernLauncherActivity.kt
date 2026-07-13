@@ -1817,7 +1817,7 @@ fun MainShell(
                                         maintenanceInfo = maintenanceInfo,
                                         onNav  = { page = it }
                                     )
-                                    Page.GameHub -> PlayStoreGameHub(
+                                    Page.GameHub -> DLavieGameHub(
                                             onNav = { page = it },
                                             onGameClick = { gamePackage ->
                                                 // v7.9.13: Find GameItem by packageName, set as detail target.
@@ -1988,7 +1988,7 @@ fun MainShell(
         // Sebelumnya di-hidden di Chat karena menutupi FAB, tapi FAB sudah dihapus.
         // User butuh navbar untuk navigasi dari Komunitas ke page lain.
         // Tambah bottom padding di CommunityScreen supaya content tidak tertutup navbar.
-        if (!showGameDetail && !showSettings && visitingUserId == null) {
+        if (!showGameDetail && !showSettings && visitingUserId == null && page != Page.GameHub) {
             FloatingNav(
                 page     = page,
                 onPage   = { page = it },
@@ -2130,7 +2130,7 @@ fun MainShell(
 
         // ── Notification banner overlay (slides down from the top) ──
         // Sembunyikan saat GameDetail / Settings / Visit aktif supaya tidak menumpuk header.
-        if (!showGameDetail && !showSettings && visitingUserId == null) {
+        if (!showGameDetail && !showSettings && visitingUserId == null && page != Page.GameHub) {
             activeBanner?.let { banner ->
                 Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
                     NotificationBanner(
