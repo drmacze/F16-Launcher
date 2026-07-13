@@ -1994,7 +1994,13 @@ fun MainShell(
         if (!showGameDetail && !showSettings && !showGameHub && visitingUserId == null) {
             FloatingNav(
                 page     = page,
-                onPage   = { page = it },
+                onPage   = { newPage ->
+                    if (newPage == Page.GameHub) {
+                        showGameHub = true
+                    } else {
+                        page = newPage
+                    }
+                },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -2479,7 +2485,7 @@ fun FloatingNav(page: Page, onPage: (Page) -> Unit, modifier: Modifier = Modifie
                 .border(3.dp, Color.White, CircleShape)  // white ring separator
                 .clickable {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    showGameHub = true
+                    onPage(centerPage)
                 },
             contentAlignment = Alignment.Center
         ) {
