@@ -33,6 +33,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -378,7 +379,7 @@ fun DLavieGameHub(
                     }
                 }
                 // Right: Menu with hamburger
-                Row(verticalAlignment = Alignment.CenterVertically, clickable = { showSettings = true }) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { showSettings = true }) {
                     Icon(Icons.Rounded.Menu, contentDescription = "Menu", tint = GHTextSoft, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Menu", color = GHTextSoft, fontSize = 13.sp, fontFamily = InterFontFamily)
