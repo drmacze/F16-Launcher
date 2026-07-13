@@ -59,7 +59,7 @@ data class UserGame(
 )
 
 // ─── User Game storage (SharedPreferences) ───────────────────────────────────
-private fun loadUserGames(context: Context): List<UserGame> {
+fun loadUserGames(context: Context): List<UserGame> {
     val prefs = context.getSharedPreferences("dlavie_user_games", Context.MODE_PRIVATE)
     val json = prefs.getString("games", "[]") ?: "[]"
     val arr = JSONArray(json)
@@ -76,7 +76,7 @@ private fun loadUserGames(context: Context): List<UserGame> {
     return result
 }
 
-private fun saveUserGames(context: Context, games: List<UserGame>) {
+fun saveUserGames(context: Context, games: List<UserGame>) {
     val arr = JSONArray()
     games.forEach { g ->
         arr.put(JSONObject().apply {
@@ -90,14 +90,14 @@ private fun saveUserGames(context: Context, games: List<UserGame>) {
         .edit().putString("games", arr.toString()).apply()
 }
 
-private fun isPackageInstalled(context: Context, packageName: String): Boolean {
+fun isPackageInstalled(context: Context, packageName: String): Boolean {
     return try {
         context.packageManager.getPackageInfo(packageName, 0)
         true
     } catch (_: Exception) { false }
 }
 
-private fun getAppLabel(context: Context, packageName: String): String {
+fun getAppLabel(context: Context, packageName: String): String {
     return try {
         val pi = context.packageManager.getPackageInfo(packageName, 0)
         context.packageManager.getApplicationLabel(pi.applicationInfo!!).toString()
