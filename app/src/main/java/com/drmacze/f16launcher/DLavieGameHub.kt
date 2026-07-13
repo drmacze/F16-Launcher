@@ -102,10 +102,10 @@ private fun formatBytes(bytes: Long): String = when { bytes >= 1_000_000_000 -> 
 fun DLavieGameHub(onNav: (Page) -> Unit, onGameClick: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // v7.9.79: showTransition selalu true saat GameHub dibuka (fresh composition)
+    // v7.9.79: showTransition SELALU true saat composable di-create.
+    // Karena GameHub di-render inside `if (showGameHub) { ... }`, setiap kali
+    // showGameHub berubah true → composable di-create fresh → showTransition = true.
     var showTransition by remember { mutableStateOf(true) }
-    // Force transition setiap kali GameHub overlay muncul
-    LaunchedEffect(Unit) { showTransition = true }
 
     // ── Immersive mode (hide Android system status bar + nav bar, keep GameHub bar) ──
     // v7.9.79: Orientation control DIPINDAH ke MainShell (LaunchedEffect(showGameHub))
