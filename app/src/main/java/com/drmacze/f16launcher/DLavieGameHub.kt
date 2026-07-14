@@ -217,7 +217,11 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-fun DLavieGameHub(onExit: () -> Unit) {
+fun DLavieGameHub(
+    onExit: () -> Unit = {},
+    onNav: (Page) -> Unit = {},
+    onGameClick: (String) -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showTransition by remember { mutableStateOf(true) }
@@ -752,7 +756,7 @@ private fun GHPillTab(label: String, count: Int, selected: Boolean, onClick: () 
             .clickable { onClick() }.padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = if (selected) GHTextWhite else GHTextDim, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Regular)
+        Text(label, color = if (selected) GHTextWhite else GHTextDim, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
         if (count > 0) {
             Spacer(Modifier.width(6.dp))
             Box(Modifier.size(20.dp).clip(CircleShape).background(if (selected) GHAccent else GHDivider), contentAlignment = Alignment.Center) {
