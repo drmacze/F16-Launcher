@@ -754,6 +754,36 @@ fun HomeScreen(api: CommunityApi, onNav: (Page) -> Unit) {
                         }
                     }
 
+                    // GameHub button — opens standalone GameHub overlay (v279 design)
+                    var showGameHub by remember { mutableStateOf(false) }
+                    Button(
+                        onClick = { showGameHub = true },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF1A1F3A),
+                            contentColor = Color(0xFF8BA3FF)
+                        )
+                    ) {
+                        Icon(Icons.Rounded.SportsEsports, null, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text("Buka GameHub", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    }
+                    if (showGameHub) {
+                        androidx.compose.ui.window.Dialog(
+                            onDismissRequest = { showGameHub = false },
+                            properties = androidx.compose.ui.window.DialogProperties(
+                                usePlatformDefaultWidth = false,
+                                dismissOnBackPress = true,
+                                dismissOnClickOutside = false
+                            )
+                        ) {
+                            Box(Modifier.fillMaxSize()) {
+                                DLavieGameHub(onExit = { showGameHub = false })
+                            }
+                        }
+                    }
+
                     // Update available banner
                     val ui = updateInfo
                     AnimatedVisibility(
