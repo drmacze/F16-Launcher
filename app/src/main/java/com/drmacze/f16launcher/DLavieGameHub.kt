@@ -66,87 +66,72 @@ private val GHGreen = Color(0xFF00D26A)
 private val GHAmber = Color(0xFFFF9900)
 private val GHRed = Color(0xFFFF5252)
 
-// ─── Transition — Match GameHub PlayStore loading animation ──────────────────
+// ─── Transition — Match GameHub PlayStore loading + loading messages ─────────
 @Composable
 fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
-    // Phases: 0=black, 1=logo fade in, 2=text fade in, 3=hold, 4=fade out
     var phase by remember { mutableStateOf(0) }
+    var typedText by remember { mutableStateOf("") }
+    var loadingMsg by remember { mutableStateOf("") }
+
+    val fullText = "DLAVIE"
+    val loadingMessages = listOf(
+        "Memuat aset game...",
+        "Menata antarmuka...",
+        "Memindai data pengguna...",
+        "Menghubungkan ke server...",
+        "Menyiapkan GameHub..."
+    )
+
     LaunchedEffect(visible) {
         if (visible) {
             phase = 0
-            delay(500)   // Black screen — wait for rotation
-            phase = 1     // Logo fade in
+            delay(800)
+            phase = 1
+            delay(800)
+            phase = 2
+            for (i in fullText.indices) { typedText = fullText.substring(0, i + 1); delay(120) }
+            delay(400)
+            phase = 3
+            for (msg in loadingMessages) { loadingMsg = msg; delay(700) }
+            loadingMsg = ""
+            delay(300)
+            phase = 4
             delay(600)
-            phase = 2     // Text fade in
-            delay(400)
-            phase = 3     // Hold
-            delay(500)
-            phase = 4     // Fade out
-            delay(400)
             onComplete()
             phase = 5
         }
     }
+
     if (visible && phase < 5) {
         Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-            // Logo alpha: 0→1 in phase 1+, 1 in phase 2-3, 0 in phase 4
-            val logoAlpha by animateFloatAsState(
-                when (phase) { 0 -> 0f; 1 -> 1f; 2 -> 1f; 3 -> 1f; 4 -> 0f; else -> 0f },
-                tween(600, easing = FastOutSlowInEasing), label = "logo_a"
-            )
-            // Logo scale: 0.8→1.0 in phase 1
-            val logoScale by animateFloatAsState(
-                when (phase) { 0 -> 0.8f; 1 -> 1f; 2 -> 1f; 3 -> 1f; 4 -> 1.1f; else -> 1f },
-                tween(600, easing = FastOutSlowInEasing), label = "logo_s"
-            )
-            // Text alpha: 0 until phase 2, then 1, then 0 in phase 4
-            val textAlpha by animateFloatAsState(
-                when (phase) { 0 -> 0f; 1 -> 0f; 2 -> 1f; 3 -> 1f; 4 -> 0f; else -> 0f },
-                tween(400, easing = FastOutSlowInEasing), label = "text_a"
-            )
-            // Overall alpha for fade out
-            val fadeOut by animateFloatAsState(
-                if (phase == 4) 0f else 1f,
-                tween(400, easing = FastOutSlowInEasing), label = "fade"
-            )
+            val logoAlpha by animateFloatAsState(when (phase) { 0 -> 0f; 1 -> 1f; 2 -> 1f; 3 -> 1f; 4 -> 0f; else -> 0f }, tween(800, easing = FastOutSlowInEasing), label = "la")
+            val logoScale by animateFloatAsState(when (phase) { 0 -> 0.7f; 1 -> 1f; 2 -> 1f; 3 -> 1f; 4 -> 1.15f; else -> 1f }, tween(800, easing = FastOutSlowInEasing), label = "ls")
+            val textAlpha by animateFloatAsState(when (phase) { 0 -> 0f; 1 -> 0f; 2 -> 1f; 3 -> 1f; 4 -> 0f; else -> 0f }, tween(400, easing = FastOutSlowInEasing), label = "ta")
+            val fadeOut by animateFloatAsState(if (phase == 4) 0f else 1f, tween(600, easing = FastOutSlowInEasing), label = "fo")
+            val msgAlpha by animateFloatAsState(when (phase) { 3 -> 1f; 4 -> 0f; else -> 0f }, tween(300, easing = FastOutSlowInEasing), label = "ma")
 
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.graphicsLayer { this.alpha = fadeOut }
-            ) {
-                // Hexagonal-style logo (DL badge with hexagon shape)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.graphicsLayer { this.alpha = fadeOut }) {
                 Box(
-                    Modifier
-                        .size(64.dp)
+                    Modifier.size(72.dp)
                         .graphicsLayer { scaleX = logoScale; scaleY = logoScale; this.alpha = logoAlpha }
                         .clip(androidx.compose.foundation.shape.GenericShape { _, _ ->
-                            // Draw hexagon
-                            val r = 60f
-                            moveTo(0f, -r)
-                            lineTo(r * 0.866f, -r * 0.5f)
-                            lineTo(r * 0.866f, r * 0.5f)
-                            lineTo(0f, r)
-                            lineTo(-r * 0.866f, r * 0.5f)
-                            lineTo(-r * 0.866f, -r * 0.5f)
-                            close()
+                            val r = 70f
+                            moveTo(0f, -r); lineTo(r * 0.866f, -r * 0.5f); lineTo(r * 0.866f, r * 0.5f)
+                            lineTo(0f, r); lineTo(-r * 0.866f, r * 0.5f); lineTo(-r * 0.866f, -r * 0.5f); close()
                         })
                         .background(GHTextWhite),
                     contentAlignment = Alignment.Center
-                ) {
-                    Text("DL", color = Color.Black, fontSize = 22.sp, fontWeight = FontWeight.Black)
-                }
+                ) { Text("DL", color = Color.Black, fontSize = 26.sp, fontWeight = FontWeight.Black) }
+
+                Spacer(Modifier.height(20.dp))
+
+                Text(typedText, color = GHTextWhite, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp, modifier = Modifier.graphicsLayer { this.alpha = textAlpha })
 
                 Spacer(Modifier.height(16.dp))
 
-                // Text "DLAVIE" — fade in after logo
-                Text(
-                    "DLAVIE",
-                    color = GHTextWhite,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 6.sp,
-                    modifier = Modifier.graphicsLayer { this.alpha = textAlpha }
-                )
+                if (loadingMsg.isNotEmpty()) {
+                    Text(loadingMsg, color = GHTextDim, fontSize = 12.sp, fontWeight = FontWeight.Medium, fontFamily = InterFontFamily, modifier = Modifier.graphicsLayer { this.alpha = msgAlpha })
+                }
             }
         }
     }
