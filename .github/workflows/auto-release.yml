@@ -1,0 +1,307 @@
+name: Auto Release
+
+# ════════════════════════════════════════════════════════════════════════════
+# Auto-release workflow — triggers on push to main OR manual dispatch.
+#
+# Flow:
+#   1. Read versionCode + versionName from app/build.gradle
+#   2. Build + sign APK (fixed keystore)
+#   3. Upload APK to F16-Launcher releases (tag v{versionCode})
+#   4. Upload APK to DLavie-Launcher-Data repo's v26 release (cross-repo via DLAVIE_DATA_TOKEN)
+#   5. Insert row to Supabase app_releases table (is_published=true)
+#   6. Update manifest.json in DLavie-Launcher-Data repo
+#
+# After this completes:
+#   - Launcher users will see update popup (AppUpdateChecker queries Supabase)
+#   - DLavie website will show latest version (fetches from Supabase)
+# ════════════════════════════════════════════════════════════════════════════
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - '.github/workflows/auto-release.yml'
+  workflow_dispatch:
+    inputs:
+      force_version_code:
+        description: 'Force specific versionCode (optional, else read from build.gradle)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout F16-Launcher
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.DLAVIE_DATA_TOKEN }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" || \
+            "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Read version from build.gradle
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.force_version_code }}" ]; then
+            VERSION_CODE="${{ inputs.force_version_code }}"
+          else
+            VERSION_CODE=$(grep -E "^\s*versionCode\s+" app/build.gradle | head -1 | sed -E 's/.*versionCode\s+([0-9]+).*/\1/')
+          fi
+          VERSION_NAME=$(grep -E '^\s*versionName\s+' app/build.gradle | head -1 | sed -E "s/.*versionName\s+\"([^\"]+)\".*/\1/")
+          TAG_NAME="v${VERSION_CODE}"
+          APK_NAME="DLavie26-Launcher-v${VERSION_CODE}.apk"
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
+          echo "=== Release Info ==="
+          echo "versionCode: $VERSION_CODE"
+          echo "versionName: $VERSION_NAME"
+          echo "tagName: $TAG_NAME"
+          echo "apkName: $APK_NAME"
+
+      - name: Check if release already exists
+        id: check_existing
+        shell: bash
+        run: |
+          set +e
+          TAG="${{ steps.version.outputs.tag_name }}"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG")
+          if [ "$STATUS" = "200" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release $TAG already exists — will skip Supabase insert"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Release $TAG does not exist — will create new"
+          fi
+
+      - name: Patch guided UX
+        run: python .github/scripts/patch_guided_ux.py || true
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set +e
+          gradle assembleDebug --stacktrace --console=plain > build.log 2>&1
+          code=$?
+          echo "$code" > build.exitcode
+          if [ "$code" -ne 0 ]; then
+            grep -nE "e: file:|error:|FAILURE:|What went wrong|Execution failed|Unresolved reference" build.log | head -160 || tail -220 build.log
+          fi
+          exit 0
+
+      - name: Fail if build failed
+        run: |
+          code=$(cat build.exitcode)
+          exit "$code"
+
+      - name: Sign APK with fixed keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > /tmp/dlavie.keystore
+          APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+          ${ANDROID_HOME}/build-tools/36.0.0/zipalign -v -p 4 "$APK_FILE" /tmp/aligned.apk || \
+            ${ANDROID_HOME}/build-tools/35.0.0/zipalign -v -p 4 "$APK_FILE" /tmp/aligned.apk || \
+            cp "$APK_FILE" /tmp/aligned.apk
+          ${ANDROID_HOME}/build-tools/36.0.0/apksigner sign \
+            --ks /tmp/dlavie.keystore \
+            --ks-key-alias ${{ secrets.SIGNING_KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.SIGNING_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.SIGNING_KEY_PASSWORD }} \
+            --out /tmp/dlavie-signed.apk \
+            /tmp/aligned.apk || \
+          ${ANDROID_HOME}/build-tools/35.0.0/apksigner sign \
+            --ks /tmp/dlavie.keystore \
+            --ks-key-alias ${{ secrets.SIGNING_KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.SIGNING_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.SIGNING_KEY_PASSWORD }} \
+            --out /tmp/dlavie-signed.apk \
+            /tmp/aligned.apk
+          mkdir -p release
+          cp /tmp/dlavie-signed.apk "release/${{ steps.version.outputs.apk_name }}"
+          cp /tmp/dlavie-signed.apk app/build/outputs/apk/debug/app-debug.apk
+          rm -f /tmp/dlavie.keystore /tmp/aligned.apk /tmp/dlavie-signed.apk
+          echo "✅ APK signed: ${{ steps.version.outputs.apk_name }}"
+          ls -lh release/
+
+      - name: Create GitHub Release in F16-Launcher
+        if: steps.check_existing.outputs.exists != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: DLavie 26 Launcher ${{ steps.version.outputs.version_name }}
+          body: |
+            # DLavie 26 Launcher ${{ steps.version.outputs.version_name }}
+
+            **versionCode:** ${{ steps.version.outputs.version_code }}
+            **versionName:** ${{ steps.version.outputs.version_name }}
+
+            ## Auto-release
+            Built and published automatically by GitHub Actions on push to main.
+
+            ## Download
+            - APK: `${{ steps.version.outputs.apk_name }}`
+            - Direct URL: https://github.com/drmacze/F16-Launcher/releases/download/${{ steps.version.outputs.tag_name }}/${{ steps.version.outputs.apk_name }}
+
+            ---
+            *All launcher users will receive update popup on next launch.*
+          prerelease: false
+          files: release/${{ steps.version.outputs.apk_name }}
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DLavie26-Launcher-v${{ steps.version.outputs.version_code }}
+          path: release/*.apk
+          if-no-files-found: error
+
+      - name: Upload APK to DLavie-Launcher-Data repo (v26 release)
+        if: steps.check_existing.outputs.exists != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Get upload_url for v26 release in DLavie-Launcher-Data
+          UPLOAD_URL=$(curl -s \
+            -H "Authorization: token ${{ secrets.DLAVIE_DATA_TOKEN }}" \
+            "https://api.github.com/repos/drmacze/DLavie-Launcher-Data/releases/tags/v26" \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['upload_url'].split('{')[0])")
+          echo "Upload URL: $UPLOAD_URL"
+          # Upload APK
+          curl -s -X POST \
+            -H "Authorization: token ${{ secrets.DLAVIE_DATA_TOKEN }}" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            --data-binary @"release/${{ steps.version.outputs.apk_name }}" \
+            "${UPLOAD_URL}?name=${{ steps.version.outputs.apk_name }}" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print('Asset uploaded:', d.get('name'), '-', d.get('browser_download_url', d.get('message')))"
+          echo "✅ APK uploaded to DLavie-Launcher-Data"
+
+      - name: Insert release to Supabase app_releases
+        if: steps.check_existing.outputs.exists != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_URL="https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/${{ steps.version.outputs.apk_name }}"
+          GH_RELEASE_URL="https://github.com/drmacze/F16-Launcher/releases/tag/${{ steps.version.outputs.tag_name }}"
+          CHANGELOG="v${{ steps.version.outputs.version_name }} — Auto-built from F16-Launcher CI on push to main. Design system update v278: dark blue gradient, solid cards, soft blue accent, square LB/RB, wider drawer."
+
+          RESPONSE=$(curl -s -X POST \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=representation" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/app_releases" \
+            -d "$(python3 -c "
+          import json
+          print(json.dumps({
+              'version_code': ${{ steps.version.outputs.version_code }},
+              'version_name': '${{ steps.version.outputs.version_name }}',
+              'tag_name': '${{ steps.version.outputs.tag_name }}',
+              'github_release_url': '$GH_RELEASE_URL',
+              'apk_download_url': '$APK_URL',
+              'changelog': '''$CHANGELOG''',
+              'is_published': True
+          }))
+          ")")
+          echo "Supabase response: $RESPONSE"
+          # Verify insert
+          ROW_COUNT=$(echo "$RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d) if isinstance(d, list) else 0)")
+          if [ "$ROW_COUNT" -gt 0 ]; then
+            echo "✅ Supabase row inserted (version_code=${{ steps.version.outputs.version_code }})"
+          else
+            echo "❌ Supabase insert failed"
+            exit 1
+          fi
+
+      - name: Update manifest.json in DLavie-Launcher-Data
+        if: steps.check_existing.outputs.exists != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fetch current manifest
+          curl -s -o /tmp/manifest.json \
+            "https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/manifest.json?t=$(date +%s)"
+          # Update launcher section
+          python3 << EOF > /tmp/manifest_new.json
+          import json
+          with open('/tmp/manifest.json') as f:
+              m = json.load(f)
+          m['updated_at'] = "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          m['launcher']['latest_version_code'] = ${{ steps.version.outputs.version_code }}
+          m['launcher']['latest_version_name'] = "${{ steps.version.outputs.version_name }}"
+          m['launcher']['apk_url'] = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/${{ steps.version.outputs.apk_name }}"
+          notes = m['launcher'].get('release_notes', [])
+          new_note = "v${{ steps.version.outputs.version_name }}: Auto-released via GitHub Actions"
+          if new_note not in notes:
+              notes.insert(0, new_note)
+              m['launcher']['release_notes'] = notes[:5]
+          print(json.dumps(m, indent=2, ensure_ascii=False))
+          EOF
+          cat /tmp/manifest_new.json | head -20
+          # Get current SHA for update
+          SHA=$(curl -s \
+            -H "Authorization: token ${{ secrets.DLAVIE_DATA_TOKEN }}" \
+            "https://api.github.com/repos/drmacze/DLavie-Launcher-Data/contents/manifest.json" \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['sha'])")
+          # Commit update
+          CONTENT=$(base64 -w 0 /tmp/manifest_new.json)
+          curl -s -X PUT \
+            -H "Authorization: token ${{ secrets.DLAVIE_DATA_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/drmacze/DLavie-Launcher-Data/contents/manifest.json" \
+            -d "$(python3 -c "
+          import json
+          print(json.dumps({
+              'message': 'chore(manifest): bump launcher to v${{ steps.version.outputs.version_code }}',
+              'content': '$CONTENT',
+              'sha': '$SHA'
+          }))
+          ")" | python3 -c "import json,sys; d=json.load(sys.stdin); print('Manifest updated:', d.get('commit', {}).get('sha', d.get('message')))"
+          echo "✅ manifest.json updated"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## 🚀 Auto-Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **versionCode:** ${{ steps.version.outputs.version_code }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **versionName:** ${{ steps.version.outputs.version_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **APK:** ${{ steps.version.outputs.apk_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **GitHub Release:** https://github.com/drmacze/F16-Launcher/releases/tag/${{ steps.version.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **APK Download:** https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/${{ steps.version.outputs.apk_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Supabase:** app_releases table updated" >> $GITHUB_STEP_SUMMARY
+          echo "- **manifest.json:** updated in DLavie-Launcher-Data" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Launcher users will receive update popup on next app launch." >> $GITHUB_STEP_SUMMARY
