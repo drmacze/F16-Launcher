@@ -1,0 +1,132 @@
+name: Fix FIFA 16 APK Compatibility
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix-apk:
+    name: Fix requiredAccountType + V1 signature
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK build-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "build-tools;34.0.0" "platforms;android-34" || true
+
+      - name: Install apktool + zipalign
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq apktool zipalign
+
+      - name: Set up apksigner
+        shell: bash
+        run: |
+          APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f 2>/dev/null | head -1)
+          echo "$(dirname "$APKSIGNER")" >> $GITHUB_PATH
+          echo "Found: $APKSIGNER"
+
+      - name: Download current APK from Supabase Storage
+        shell: bash
+        run: |
+          curl -L -s -o fifa16-current.apk \
+            "https://lvmucsxbmadtsgrxuwmo.supabase.co/storage/v1/object/public/apk-dist/fifa16/DLavie26-LauncherOnly.apk"
+          ls -lh fifa16-current.apk
+          file fifa16-current.apk
+
+      - name: Decode APK
+        shell: bash
+        run: apktool d -f -o fifa16-decoded fifa16-current.apk
+
+      - name: Remove requiredAccountType (ROOT CAUSE of "not compatible")
+        shell: python
+        run: |
+          import re
+          from pathlib import Path
+
+          manifest = Path("fifa16-decoded/AndroidManifest.xml")
+          content = manifest.read_text()
+
+          # Remove requiredAccountType — APK requires Google account
+          # → devices without Google account (like Appetize emulator) reject install
+          before = "requiredAccountType" in content
+          content = re.sub(r'\s*android:requiredAccountType="[^"]*"', '', content)
+          after = "requiredAccountType" in content
+
+          print(f"Before: requiredAccountType present = {before}")
+          print(f"After: requiredAccountType present = {after}")
+
+          manifest.write_text(content)
+          print("✅ requiredAccountType removed")
+
+      - name: Rebuild APK
+        shell: bash
+        run: apktool b -f -o fifa16-rebuilt.apk fifa16-decoded
+
+      - name: Zip-align
+        shell: bash
+        run: zipalign -v -p 4 fifa16-rebuilt.apk fifa16-aligned.apk 2>&1 | tail -3
+
+      - name: Sign with V1+V2+V3 (DLavie keystore)
+        shell: bash
+        run: |
+          echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > /tmp/dlavie.keystore
+          apksigner sign \
+            --ks /tmp/dlavie.keystore \
+            --ks-key-alias ${{ secrets.SIGNING_KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.SIGNING_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.SIGNING_KEY_PASSWORD }} \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out fifa16-final.apk \
+            fifa16-aligned.apk
+          ls -lh fifa16-final.apk
+
+      - name: Verify signature
+        shell: bash
+        run: |
+          apksigner verify --verbose fifa16-final.apk 2>&1 | head -10
+          echo "---"
+          python3 -c "
+          with open('fifa16-final.apk', 'rb') as f:
+              data = f.read()
+              has_v1 = b'CERT.RSA' in data or b'CERT.DSA' in data
+              has_v2 = b'APK Sig Block 42' in data
+              print(f'V1: {\"✅\" if has_v1 else \"❌\"}')
+              print(f'V2: {\"✅\" if has_v2 else \"❌\"}')
+          "
+
+      - name: Upload to Supabase Storage (overwrite)
+        shell: bash
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl -s -X POST \
+            "https://lvmucsxbmadtsgrxuwmo.supabase.co/storage/v1/object/apk-dist/fifa16/DLavie26-LauncherOnly.apk" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            -H "x-upsert: true" \
+            --data-binary @fifa16-final.apk \
+            --max-time 300
+          echo ""
+          curl -sI "https://lvmucsxbmadtsgrxuwmo.supabase.co/storage/v1/object/public/apk-dist/fifa16/DLavie26-LauncherOnly.apk" | head -3
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/dlavie.keystore

@@ -32,7 +32,7 @@ object AuthManager {
      * Requires a valid access token.
      */
     fun updatePassword(accessToken: String, newPassword: String): String {
-        if (newPassword.length < 6) throw IllegalStateException("Password baru minimal 6 karakter.")
+        if (newPassword.length < 6) throw IllegalStateException("Password must be at least 6 characters.")
         val body = JSONObject().put("password", newPassword)
         val (_, _) = http("PUT", "/auth/v1/user", body, token = accessToken)
         return "OK: Password berhasil diubah. Sesi lain akan otomatis logout."
@@ -77,6 +77,21 @@ object AuthManager {
             prefer = "return=minimal"
         )
         return "OK: Profile diperbarui."
+    }
+
+    fun updateBio(accessToken: String, userId: String, newBio: String): String {
+        val b = newBio.take(200)
+        val body = JSONObject()
+            .put("id", userId)
+            .put("bio", b)
+        val (_, _) = http(
+            "PATCH",
+            "/rest/v1/profiles?id=eq.$userId",
+            body,
+            token = accessToken,
+            prefer = "return=minimal"
+        )
+        return "OK: Bio diperbarui."
     }
 
     // ─── HTTP helper ───────────────────────────────────────────────────────────

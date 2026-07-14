@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "179769130664",
+    "project_id": "dlavie-f16",
+    "storage_bucket": "dlavie-f16.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:179769130664:android:6bb5c1ea5f28ac21ea8c9d",
+        "android_client_info": {
+          "package_name": "com.drmacze.f16launcher"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAY3uPACn14epcbJzjsd6zPiN5bwYIFblo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

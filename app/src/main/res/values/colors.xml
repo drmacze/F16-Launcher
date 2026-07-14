@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- DLavie brand accent color (cyan) — used by FCM notification metadata -->
+    <color name="dlavie_accent_cyan">#FF00E5FF</color>
+    <color name="dlavie_accent_mint">#FF00E676</color>
+    <color name="dlavie_accent_violet">#FFB388FF</color>
+    <color name="dlavie_accent_amber">#FFFFAB00</color>
+</resources>

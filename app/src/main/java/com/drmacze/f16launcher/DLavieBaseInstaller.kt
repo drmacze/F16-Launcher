@@ -13,10 +13,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -69,6 +73,7 @@ private data class BaseInstallState(
     val canInstall: Boolean = false,
     val canRepair: Boolean = false,
     val canClearCache: Boolean = false,
+    val canRetry: Boolean = false,
     val progress: Float = 0f,
     val progressText: String = "",
     val sizeText: String = "-",
@@ -129,6 +134,31 @@ fun DLavieBaseInstallCard(isGameInstalled: Boolean) {
                     colors = ButtonDefaults.buttonColors(containerColor = BaseGreen, contentColor = Color(0xFF001407)),
                     enabled = !state.working
                 ) { Text("Install Full Data", fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = BaseFont) }
+            }
+
+            // v7.9.78: Retry Download button — visible when download failed
+            if (state.canRetry) {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            state = state.copy(working = true, message = "Retrying download...", progressText = "Retrying", canRetry = false)
+                            state = withContext(Dispatchers.IO) {
+                                baseInstallAll(context) { progress -> withContext(Dispatchers.Main) { state = progress } }
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BaseCyan,
+                        contentColor = Color(0xFF001018)
+                    ),
+                    enabled = !state.working
+                ) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Retry Download", fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = BaseFont)
+                }
             }
 
             if (state.canRepair) {
@@ -222,11 +252,11 @@ private suspend fun baseInstallAll(context: Context, onProgress: suspend (BaseIn
         val file = File(root, asset.fileName)
         if (!file.exists() || file.length() != asset.size || baseSha256(file) != asset.sha256) {
             val ok = baseDownloadWithRetry(asset, file, index, assets.size, onProgress)
-            if (!ok) return baseInitialState(context, true).copy(status = "FAILED", message = "Download ${asset.label} gagal setelah 3 percobaan.", canInstall = true)
+            if (!ok) return baseInitialState(context, true).copy(status = "FAILED", message = "Download ${asset.label} failed after 5 attempts. Check your connection and tap Retry.", canInstall = true, canRetry = true)
         }
         if (baseSha256(file) != asset.sha256) {
             file.delete()
-            return baseInitialState(context, true).copy(status = "FAILED", message = "SHA ${asset.label} tidak valid.", canInstall = true)
+            return baseInitialState(context, true).copy(status = "FAILED", message = "SHA ${asset.label} invalid. File may be corrupted. Tap Retry to re-download.", canInstall = true, canRetry = true)
         }
     }
 
@@ -241,7 +271,7 @@ private suspend fun baseInstallAll(context: Context, onProgress: suspend (BaseIn
         append("ls -l ${baseShellQuote(BASE_TARGET_OBB + patchObb.name)} >/dev/null || exit 22\n")
     }
     val obbResult = baseRunShizuku(obbCmd)
-    if (obbResult.first != 0) return baseInitialState(context, true).copy(status = "FAILED", message = "Gagal memasang OBB.", canInstall = true)
+    if (obbResult.first != 0) return baseInitialState(context, true).copy(status = "FAILED", message = "Failed to install OBB. Check Shizuku and tap Retry.", canInstall = true, canRetry = true)
 
     onProgress(BaseInstallState(status = "WAIT", message = "Extract full data...", marker = baseReadMarkerSmart(), shizuku = "Ready", working = true, progress = 0.72f, progressText = "Extracting data", sizeText = "1.35 GB", speedText = "-", etaText = "-"))
     val extractDir = File(root, "extract_full_v26")
@@ -250,7 +280,7 @@ private suspend fun baseInstallAll(context: Context, onProgress: suspend (BaseIn
     try {
         baseExtractDataZip(File(root, "dlavie26-data.zip"), extractDir)
     } catch (_: Throwable) {
-        return baseInitialState(context, true).copy(status = "FAILED", message = "Extract full data gagal.", canInstall = true)
+        return baseInitialState(context, true).copy(status = "FAILED", message = "Extract full data failed. Tap Retry to try again.", canInstall = true, canRetry = true)
     }
 
     onProgress(BaseInstallState(status = "WAIT", message = "Memasang full data...", marker = baseReadMarkerSmart(), shizuku = "Ready", working = true, progress = 0.86f, progressText = "Applying data", sizeText = "Verified", speedText = "-", etaText = "-"))
@@ -277,53 +307,100 @@ private suspend fun baseInstallAll(context: Context, onProgress: suspend (BaseIn
 }
 
 private suspend fun baseDownloadWithRetry(asset: BaseInstallAsset, output: File, index: Int, totalAssets: Int, onProgress: suspend (BaseInstallState) -> Unit): Boolean {
-    for (attempt in 1..3) {
+    // v7.9.78: 5 retries (dari 3), DON'T delete partial file — resume from where it left off
+    for (attempt in 1..5) {
         try {
             baseDownload(asset, output, index, totalAssets, attempt, onProgress)
             return true
-        } catch (_: Throwable) {
-            output.delete()
-            if (attempt < 3) delay(900)
+        } catch (e: Throwable) {
+            // Keep partial file for resume on next attempt
+            val partialSize = if (output.exists()) output.length() else 0L
+            android.util.Log.w("BaseInstall", "Download attempt $attempt failed: ${e.message} (partial: ${baseFormatBytes(partialSize)})")
+            if (attempt < 5) delay(1500)
         }
     }
+    // All retries failed — delete partial file
+    output.delete()
     return false
 }
 
 private suspend fun baseDownload(asset: BaseInstallAsset, output: File, index: Int, totalAssets: Int, attempt: Int, onProgress: suspend (BaseInstallState) -> Unit) {
     output.parentFile?.mkdirs()
+
+    // v7.9.78: Resume support — check if partial file exists
+    val existingBytes = if (output.exists()) output.length() else 0L
+    var resumeFrom = 0L
+
     val connection = URL(asset.url).openConnection() as HttpURLConnection
-    connection.connectTimeout = 20000
-    connection.readTimeout = 45000
+    connection.connectTimeout = 30000   // 30s connect (dari 20s)
+    connection.readTimeout = 0          // 0 = infinite (dari 45000) — prevent SocketException on slow mobile
     connection.instanceFollowRedirects = true
-    val total = if (connection.contentLengthLong > 0) connection.contentLengthLong else asset.size
+
+    // If partial file exists and is smaller than expected, request Range resume
+    if (existingBytes > 0 && existingBytes < asset.size) {
+        connection.setRequestProperty("Range", "bytes=$existingBytes-")
+        resumeFrom = existingBytes
+        android.util.Log.i("BaseInstall", "Resuming ${asset.label} from ${baseFormatBytes(resumeFrom)}")
+    }
+
+    val responseCode = connection.responseCode
+    // 200 = full download, 206 = partial (resume OK)
+    if (responseCode != 200 && responseCode != 206) {
+        throw IllegalStateException("HTTP $responseCode")
+    }
+
+    val contentLength = connection.contentLengthLong
+    val total = if (responseCode == 206) resumeFrom + contentLength else if (contentLength > 0) contentLength else asset.size
     val started = System.currentTimeMillis()
-    var downloaded = 0L
+    var downloaded = resumeFrom
     var lastUi = 0L
     val digest = MessageDigest.getInstance("SHA-256")
-    FileOutputStream(output).use { out ->
+
+    // If resuming, we can't verify SHA mid-download (need full file)
+    // So we skip digest for resumed downloads — verify at end only
+    val skipDigest = resumeFrom > 0
+
+    // Append mode if resuming, otherwise overwrite
+    val fos = if (resumeFrom > 0) FileOutputStream(output, true) else FileOutputStream(output)
+    fos.use { out ->
         connection.inputStream.use { input ->
-            val buffer = ByteArray(128 * 1024)
+            val buffer = ByteArray(256 * 1024)  // 256KB buffer (dari 128KB) — better for large files
             while (true) {
                 val read = input.read(buffer)
                 if (read <= 0) break
                 out.write(buffer, 0, read)
-                digest.update(buffer, 0, read)
+                if (!skipDigest) digest.update(buffer, 0, read)
                 downloaded += read
                 val now = System.currentTimeMillis()
                 if (now - lastUi > 650L) {
                     lastUi = now
-                    val speed = downloaded * 1000L / max(1L, now - started)
+                    val elapsed = now - started
+                    val bytesThisSession = downloaded - resumeFrom
+                    val speed = if (elapsed > 0) bytesThisSession * 1000L / elapsed else 0L
                     val eta = if (speed > 0L) (total - downloaded) / speed else -1L
                     val assetProgress = downloaded.toFloat() / max(1L, total).toFloat()
                     val totalProgress = ((index.toFloat() + assetProgress) / totalAssets.toFloat()).coerceIn(0f, 1f) * 0.58f
-                    onProgress(BaseInstallState(status = "WAIT", message = "Downloading ${asset.label}...", marker = baseReadMarkerSmart(), shizuku = "Ready", working = true, progress = totalProgress, progressText = "${asset.label} attempt $attempt/3", sizeText = "${baseFormatBytes(downloaded)} / ${baseFormatBytes(total)}", speedText = "${baseFormatBytes(speed)}/s", etaText = baseFormatSeconds(eta)))
+                    val resumeText = if (resumeFrom > 0) " (resumed)" else ""
+                    onProgress(BaseInstallState(status = "WAIT", message = "Downloading ${asset.label}...", marker = baseReadMarkerSmart(), shizuku = "Ready", working = true, progress = totalProgress, progressText = "${asset.label} attempt $attempt/5${resumeText}", sizeText = "${baseFormatBytes(downloaded)} / ${baseFormatBytes(total)}", speedText = "${baseFormatBytes(speed)}/s", etaText = baseFormatSeconds(eta)))
                 }
             }
         }
     }
     connection.disconnect()
-    val actual = digest.digest().joinToString("") { "%02x".format(it) }
-    if (actual != asset.sha256) throw IllegalStateException("SHA mismatch")
+
+    // SHA verification — only for non-resumed (full) downloads
+    // For resumed downloads, verify file size instead
+    if (skipDigest) {
+        // Resumed download — verify file size matches expected
+        if (output.length() != asset.size) {
+            throw IllegalStateException("Size mismatch after resume: ${output.length()} vs ${asset.size}")
+        }
+        // Note: can't verify SHA without reading entire file again — skip for now
+        // (file size match is good enough for resume)
+    } else {
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        if (actual != asset.sha256) throw IllegalStateException("SHA mismatch")
+    }
 }
 
 private fun baseExtractDataZip(zipFile: File, outputDir: File) {
@@ -351,7 +428,8 @@ private fun baseAssets(): List<BaseInstallAsset> = listOf(
     BaseInstallAsset(
         "Main OBB",
         "main.13.com.ea.gp.fifaworld.obb",
-        "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/main.13.com.ea.gp.fifaworld.obb",
+        // PRIVACY: Use DLavie proxy instead of GitHub direct URL.
+        FIFA16_OBB_MAIN,
         "fe3e66c5e8c804656d8ee9ca62ace64a1fe968669f5c397b23ce174b0b8c720c",
         1376082760L,
         "obb"
@@ -359,7 +437,7 @@ private fun baseAssets(): List<BaseInstallAsset> = listOf(
     BaseInstallAsset(
         "Patch OBB",
         "patch.26.com.ea.gp.fifaworld.obb",
-        "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/patch.26.com.ea.gp.fifaworld.obb",
+        FIFA16_OBB_PATCH,
         "bdca1604e7fc8dc80d96d656ae0e21ff3bd1ccf75a62ecaab0109dd269ef38a",
         102869675L,
         "obb"
@@ -367,7 +445,7 @@ private fun baseAssets(): List<BaseInstallAsset> = listOf(
     BaseInstallAsset(
         "Full Data",
         "dlavie26-data.zip",
-        "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/dlavie26-data.zip",
+        "${DLAVIE_PROXY_URL}?f=fifa16-data",
         "7eb760ea663d019e3cb0e3ac70f9841d54255ac882b102b06eccb173212ac80a",
         1454191840L,
         "data"
