@@ -23,6 +23,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -417,27 +418,24 @@ private fun GHHomeScreen(
             }
         }
 
-        // ── GAME CAROUSEL (larger cards, scrollable) ──
+        // ── GAME CAROUSEL (larger cards, scrollable, fills width) ──
         Box(
-            Modifier.fillMaxWidth().weight(1f),
-            contentAlignment = Alignment.Center
+            Modifier.fillMaxWidth().weight(1f)
         ) {
             when (selectedTab) {
                 0 -> {
                     val listState = rememberLazyListState()
-                    LaunchedEffect(listState) {
-                        snapshotFlow { listState.firstVisibleItemIndex }
-                            .collect { idx ->
-                                if (idx < dlavieGames.size) onFocusedGame(dlavieGames[idx])
-                            }
+                    val focusedIdx by remember { derivedStateOf { listState.firstVisibleItemIndex } }
+                    LaunchedEffect(focusedIdx) {
+                        if (focusedIdx < dlavieGames.size) onFocusedGame(dlavieGames[focusedIdx])
                     }
                     LazyRow(
                         state = listState,
                         contentPadding = PaddingValues(horizontal = 48.dp),
                         horizontalArrangement = Arrangement.spacedBy(20.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxSize().align(Alignment.Center)
                     ) {
-                        items(dlavieGames) { game ->
+                        itemsIndexed(dlavieGames) { idx, game ->
                             GHGameCardLarge(
                                 game = game,
                                 isInstalled = isPackageInstalled(context, game.packageName),
@@ -447,18 +445,22 @@ private fun GHHomeScreen(
                                     val newFavs = ghToggleFavorite(context, game.packageName)
                                     onFavoritesChanged(newFavs)
                                 },
-                                onRemove = {}  // DLavie games can't be removed
+                                onRemove = {},
+                                isFocused = idx == focusedIdx
                             )
                         }
                     }
                 }
                 1 -> {
                     if (userGames.isEmpty()) {
-                        GHEmptyState("No games yet", "Tap + to import an APK")
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            GHEmptyState("No games yet", "Tap + to import an APK")
+                        }
                     } else {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 48.dp),
-                            horizontalArrangement = Arrangement.spacedBy(20.dp)
+                            horizontalArrangement = Arrangement.spacedBy(20.dp),
+                            modifier = Modifier.fillMaxSize().align(Alignment.Center)
                         ) {
                             items(userGames) { ug ->
                                 GHUserCardLarge(
@@ -473,7 +475,6 @@ private fun GHHomeScreen(
                                     onRemove = {
                                         val u = userGames.filter { it.packageName != ug.packageName }
                                         saveUserGames(context, u)
-                                        // Refresh by triggering recomposition
                                     }
                                 )
                             }
@@ -485,11 +486,14 @@ private fun GHHomeScreen(
                     val favGames = dlavieGames.filter { it.packageName in favorites }
                     val favUserGames = userGames.filter { it.packageName in favorites }
                     if (favGames.isEmpty() && favUserGames.isEmpty()) {
-                        GHEmptyState("No favorites yet", "Tap the heart icon on any game")
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            GHEmptyState("No favorites yet", "Tap the heart icon on any game")
+                        }
                     } else {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 48.dp),
-                            horizontalArrangement = Arrangement.spacedBy(20.dp)
+                            horizontalArrangement = Arrangement.spacedBy(20.dp),
+                            modifier = Modifier.fillMaxSize().align(Alignment.Center)
                         ) {
                             items(favGames) { game ->
                                 GHGameCardLarge(
@@ -526,13 +530,31 @@ private fun GHGameCardLarge(
     isFavorite: Boolean,
     onGameClick: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    isFocused: Boolean = false
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val platform = GHPlatform.fromUrl(game.apkUrl)
 
+    // Scale animation: focused card is bigger (1.0), others smaller (0.85)
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1f else 0.88f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 200f),
+        label = "card_scale"
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (isFocused) 1f else 0.6f,
+        animationSpec = tween(300),
+        label = "card_alpha"
+    )
+
     Column(
         Modifier.width(200.dp).padding(4.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                this.alpha = alpha
+            }
     ) {
         // ── CARD COVER (200x240dp, full-bleed, glassmorphic border) ──
         Box(
@@ -727,13 +749,25 @@ private fun GHUserCardLarge(
     isFavorite: Boolean,
     onGameClick: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    isFocused: Boolean = false
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
     val platform = GHPlatform.fromPackage(userGame.packageName)
 
-    Column(Modifier.width(200.dp).padding(4.dp)) {
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1f else 0.88f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 200f),
+        label = "user_card_scale"
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (isFocused) 1f else 0.6f,
+        animationSpec = tween(300),
+        label = "user_card_alpha"
+    )
+
+    Column(Modifier.width(200.dp).padding(4.dp).graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }) {
         Box(
             Modifier.width(200.dp).height(240.dp)
                 .clip(RoundedCornerShape(16.dp))
@@ -891,7 +925,6 @@ private fun GHEmptyState(title: String, subtitle: String) {
 private fun GHGlassTopBar(currentTime: String, batteryLevel: Int, onMenu: () -> Unit, onExit: () -> Unit, title: String = "Dashboard") {
     Row(
         Modifier.fillMaxWidth().height(64.dp)
-            .background(GHGlassBg.copy(alpha = 0.6f))
             .padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -929,7 +962,6 @@ private fun GHGlassTopBar(currentTime: String, batteryLevel: Int, onMenu: () -> 
 private fun GHGlassBottomBar(onMenu: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().height(64.dp)
-            .background(GHGlassBg.copy(alpha = 0.6f))
             .padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
