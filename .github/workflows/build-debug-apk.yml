@@ -13,7 +13,8 @@ on:
       - '.github/workflows/build-debug-apk.yml'
 
 permissions:
-  contents: write
+  contents: write   # required for `gh release create` to publish APK as a Release
+  actions: write    # required to read/run other workflow runs if needed
 
 jobs:
   build:
@@ -35,7 +36,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.9'
 
       - name: Install required Android SDK packages
         shell: bash
@@ -44,20 +45,26 @@ jobs:
           echo "ANDROID_HOME=${ANDROID_HOME}"
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+          # Install SDK 36 (Android 16) + build-tools 36.0.0 for Android 16 support
+          # Fall back to SDK 35 if 36 not available (for backward compat)
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" || "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Attach full base installer card
         shell: python
         run: |
           from pathlib import Path
+          # DLavieHubActivity.kt was removed in v6.1.1 cleanup — skip patch if file doesn't exist
           p = Path("app/src/main/java/com/drmacze/f16launcher/DLavieHubActivity.kt")
-          s = p.read_text()
-          hook = "        DLavieBaseInstallCard(isGameInstalled = installed)\n"
-          needle = '        HubDataRow("FIFA 16 Mobile", if (installed) "Installed" else "Not found", if (installed) "READY" else "MISSING", if (installed) HubGreen else HubRed, if (installed) HubMark.Check else HubMark.Alert)\n'
-          if hook not in s and needle in s:
-              s = s.replace(needle, hook + needle)
-              p.write_text(s)
-          print("DLavie full base installer card attached")
+          if not p.exists():
+              print("DLavieHubActivity.kt not found (removed in v6.1.1) — skipping base installer card patch")
+          else:
+              s = p.read_text()
+              hook = "        DLavieBaseInstallCard(isGameInstalled = installed)\n"
+              needle = '        HubDataRow("FIFA 16 Mobile", if (installed) "Installed" else "Not found", if (installed) "READY" else "MISSING", if (installed) HubGreen else HubRed, if (installed) HubMark.Check else HubMark.Alert)\n'
+              if hook not in s and needle in s:
+                  s = s.replace(needle, hook + needle)
+                  p.write_text(s)
+              print("DLavie full base installer card attached")
 
       - name: Patch guided launcher UX
         run: python .github/scripts/patch_guided_ux.py
@@ -78,6 +85,59 @@ jobs:
             tail -80 build.log
           fi
           exit 0
+
+      - name: Sign APK with fixed keystore
+        if: success()
+        shell: bash
+        run: |
+          # v7.9.39: Fallback to debug-signed APK jika keystore secret tidak tersedia
+          # Debug APK sudah auto-signed oleh Gradle dengan debug keystore, jadi
+          # tetap bisa di-install. Untuk production release, gunakan release workflow.
+          
+          APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+          if [ -z "$APK_FILE" ]; then
+            echo "No APK found to sign"
+            exit 1
+          fi
+          
+          # Cek apakah secret signing keystore tersedia
+          if [ -z "${{ secrets.SIGNING_KEYSTORE }}" ]; then
+            echo "⚠ SIGNING_KEYSTORE secret tidak tersedia, gunakan debug-signed APK"
+            echo "✅ Debug APK tetap bisa di-install (signed dengan debug keystore)"
+            exit 0
+          fi
+          
+          # Decode keystore from secret
+          echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > /tmp/dlavie.keystore
+          
+          echo "Signing $APK_FILE with fixed keystore..."
+          
+          # Zip-align
+          ${ANDROID_HOME}/build-tools/35.0.0/zipalign -v -p 4 "$APK_FILE" /tmp/aligned.apk || cp "$APK_FILE" /tmp/aligned.apk
+          
+          # Sign with apksigner (fixed keystore = same signature every build)
+          ${ANDROID_HOME}/build-tools/35.0.0/apksigner sign \
+            --ks /tmp/dlavie.keystore \
+            --ks-key-alias ${{ secrets.SIGNING_KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.SIGNING_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.SIGNING_KEY_PASSWORD }} \
+            --out /tmp/dlavie-signed.apk \
+            /tmp/aligned.apk || {
+              echo "⚠ apksigner failed, fallback to debug-signed APK"
+              rm -f /tmp/dlavie.keystore /tmp/aligned.apk
+              exit 0
+            }
+          
+          # Replace original APK with signed version
+          cp /tmp/dlavie-signed.apk "$APK_FILE"
+          
+          # Verify signature
+          ${ANDROID_HOME}/build-tools/35.0.0/apksigner verify --print-certs "$APK_FILE" | head -5
+          
+          echo "✅ APK signed with fixed keystore"
+          
+          # Cleanup
+          rm -f /tmp/dlavie.keystore /tmp/aligned.apk /tmp/dlavie-signed.apk
 
       - name: Upload build diagnostics
         if: always()
@@ -103,131 +163,132 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
-      - name: Sign APK with fixed keystore (same signature every build)
-        if: success()
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
-          if [ -z "$APK_FILE" ]; then
-            echo "⚠ No APK found to sign"
-            exit 0
-          fi
-          
-          # Check if signing secrets are available
-          if [ -z "${{ secrets.SIGNING_KEYSTORE }}" ]; then
-            echo "⚠ SIGNING_KEYSTORE secret not set — using debug-signed APK as-is"
-            exit 0
-          fi
-          
-          echo "Signing $APK_FILE with fixed keystore..."
-          
-          # Decode keystore
-          echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > /tmp/dlavie.keystore
-          
-          # Zipalign
-          ${ANDROID_HOME}/build-tools/35.0.0/zipalign -f -v 4 "$APK_FILE" /tmp/aligned.apk || cp "$APK_FILE" /tmp/aligned.apk
-          
-          # Sign with apksigner (v1+v2+v3)
-          ${ANDROID_HOME}/build-tools/35.0.0/apksigner sign \
-            --ks /tmp/dlavie.keystore \
-            --ks-key-alias ${{ secrets.SIGNING_KEY_ALIAS }} \
-            --ks-pass pass:${{ secrets.SIGNING_KEYSTORE_PASSWORD }} \
-            --key-pass pass:${{ secrets.SIGNING_KEY_PASSWORD }} \
-            --out /tmp/dlavie-signed.apk \
-            /tmp/aligned.apk || {
-              echo "⚠ apksigner failed — using debug-signed APK as-is"
-              rm -f /tmp/dlavie.keystore /tmp/aligned.apk
-              exit 0
-            }
-          
-          # Replace original with signed
-          cp /tmp/dlavie-signed.apk "$APK_FILE"
-          
-          # Verify
-          ${ANDROID_HOME}/build-tools/35.0.0/apksigner verify --print-certs "$APK_FILE" | head -5
-          
-          echo "✅ APK signed with fixed keystore (same signature every build)"
-          
-          # Cleanup
-          rm -f /tmp/dlavie.keystore /tmp/aligned.apk /tmp/dlavie-signed.apk
-
-      - name: Publish to GitHub Releases
+      - name: Publish to GitHub Releases (auto-update popup)
         if: success()
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
-          if [ -z "$APK_FILE" ]; then echo "No APK"; exit 0; fi
+          if [ -z "$APK_FILE" ]; then echo "No APK found"; exit 1; fi
           
-          # Read version from build.gradle so the manifest URL is always in sync
-          NEW_VERSION_CODE=$(grep '^        versionCode' "$GITHUB_WORKSPACE/app/build.gradle" | head -1 | sed 's/[^0-9]//g')
-          NEW_VERSION_NAME=$(grep '^        versionName' "$GITHUB_WORKSPACE/app/build.gradle" | head -1 | sed 's/.*versionName "//;s/".*//')
-          PREDICTABLE_NAME="DLavie26-Launcher-v${NEW_VERSION_CODE}.apk"
-          echo "Publishing APK: $PREDICTABLE_NAME (versionCode=$NEW_VERSION_CODE, versionName=$NEW_VERSION_NAME)"
+          # Rename to match existing release convention (DLavie26-Launcher-debug.apk)
+          # so the public asset URL stays consistent with previous releases.
+          RENAMED="app/build/outputs/apk/debug/DLavie26-Launcher-debug.apk"
+          cp "$APK_FILE" "$RENAMED"
+          APK_FILE="$RENAMED"
           
-          # Save version for next step
-          echo "$NEW_VERSION_CODE" > /tmp/version_code.txt
-          echo "$NEW_VERSION_NAME" > /tmp/version_name.txt
+          # Read version info from build.gradle
+          VERSION_CODE=$(grep -E "^\s*versionCode" app/build.gradle | head -1 | grep -oE '[0-9]+')
+          VERSION_NAME=$(grep -E "^\s*versionName" app/build.gradle | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          TAG="v${VERSION_CODE}"
           
-          TAG="v${{ github.run_number }}"
+          echo "Publishing APK as GitHub Release ${TAG} (${VERSION_NAME})"
+          
+          # Delete existing release (if any — for re-runs)
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          
+          # Create new release with the APK as an asset
           gh release create "$TAG" "$APK_FILE" \
-            --title "DLavie Launcher ${{ github.run_number }}" \
-            --notes "Auto-built from commit ${{ github.sha }} — version $NEW_VERSION_NAME (code $NEW_VERSION_CODE)" \
-            --repo drmacze/F16-Launcher || echo "Release create skipped (may already exist)"
-          
-          # Upload to DLavie-Launcher-Data release v26 with predictable name
-          cp "$APK_FILE" "/tmp/$PREDICTABLE_NAME"
-          gh release upload v26 "/tmp/$PREDICTABLE_NAME" --repo drmacze/DLavie-Launcher-Data --clobber || echo "Upload to v26 skipped"
+            --title "DLavie Launcher ${VERSION_NAME}" \
+            --notes "Auto-built from commit ${GITHUB_SHA::7}
 
-      - name: Update manifest.json on DLavie-Launcher-Data (launcher section only)
+          **What's new in v${VERSION_CODE} (${VERSION_NAME}):**
+          - Fixed: 'Edit Profile' button now opens dedicated EditProfileScreen (was opening Settings)
+          - Added: real edit form (avatar, full name, phone, email, username, bio)
+          - Added: AuthManager.updateBio() for bio persistence
+          - Added: 8 new i18n keys (EN + ID)
+
+          **Install:**
+          Download the APK below, then tap to install. Existing launcher data is preserved.
+
+          **Full Changelog:** https://github.com/drmacze/F16-Launcher/compare/v185...v${TAG}"
+          
+          echo "✓ Release ${TAG} published"
+          echo "  URL: https://github.com/drmacze/F16-Launcher/releases/tag/${TAG}"
+          
+          # Print asset URL for the Supabase app_releases insert step
+          ASSET_URL="https://github.com/drmacze/F16-Launcher/releases/download/${TAG}/DLavie26-Launcher-debug.apk"
+          echo "ASSET_URL=$ASSET_URL" >> $GITHUB_ENV
+          echo "::set-output name=asset_url::$ASSET_URL"
+          echo "::set-output name=version_code::$VERSION_CODE"
+          echo "::set-output name=version_name::$VERSION_NAME"
+          echo "::set-output name=tag::$TAG"
+
+      - name: Insert app_releases row in Supabase (for update popup)
         if: success()
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           set -euo pipefail
-          export NEW_VERSION_CODE=$(cat /tmp/version_code.txt)
-          export NEW_VERSION_NAME=$(cat /tmp/version_name.txt)
-          echo "→ Updating manifest.json launcher section to v$NEW_VERSION_NAME (code $NEW_VERSION_CODE)..."
-          
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/drmacze/DLavie-Launcher-Data.git" /tmp/data-repo
-          cd /tmp/data-repo
-          git config user.email "drma801@gmail.com"
-          git config user.name "Drmacze DEV"
-          
-          COMMIT_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-          export APK_URL="https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26-Launcher-v${NEW_VERSION_CODE}.apk"
-          export NEW_NOTE="v${NEW_VERSION_NAME}: Auto-built from commit ${COMMIT_SHORT}"
-          
-          python3 << 'PYEOF'
-          import json, os, datetime
-          with open('manifest.json', 'r') as f:
-              m = json.load(f)
-          if 'launcher' not in m:
-              m['launcher'] = {}
-          code = int(os.environ['NEW_VERSION_CODE'])
-          name = os.environ['NEW_VERSION_NAME']
-          url  = os.environ['APK_URL']
-          note = os.environ['NEW_NOTE']
-          m['launcher']['min_version_code']    = m['launcher'].get('min_version_code', 206)
-          m['launcher']['latest_version_code'] = code
-          m['launcher']['latest_version_name'] = name
-          m['launcher']['apk_url']             = url
-          notes = m['launcher'].get('release_notes', [])
-          if not notes or notes[0] != note:
-              notes.insert(0, note)
-              m['launcher']['release_notes'] = notes[:5]
-          m['updated_at'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
-          with open('manifest.json', 'w') as f:
-              json.dump(m, f, indent=2, ensure_ascii=False)
-          print('manifest.json launcher section updated →', code, name)
-          PYEOF
-          
-          git add manifest.json
-          git commit -m "chore: bump launcher version to $NEW_VERSION_NAME (code $NEW_VERSION_CODE)" || echo "No changes to commit"
-          git push origin main
-          echo "✓ manifest.json pushed to DLavie-Launcher-Data"
+          # v7.9.44: Dynamic insert — extract versionCode/versionName dari build.gradle
+          # Sebelumnya hardcoded ke v186, sekarang otomatis pakai versi yang baru di-build.
+          # User Launcher lama akan dapat popup update otomatis.
 
+          VC=$(grep "versionCode" app/build.gradle | head -1 | grep -oE '[0-9]+')
+          VN=$(grep "versionName" app/build.gradle | head -1 | sed 's/.*versionName\s*["\x27]//;s/["\x27].*//')
+          TAG="v$VC"
+          APK_URL="https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26-Launcher-v${VC}.apk"
+          GH_RELEASE_URL="https://github.com/drmacze/F16-Launcher/releases/tag/${TAG}"
+
+          echo "Inserting app_releases row: v$VN (code $VC)"
+
+          # Cek secret — pakai SUPABASE_SERVICE_ROLE_KEY (nama secret yang ada di repo)
+          if [ -z "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            echo "⚠ SUPABASE_SERVICE_ROLE_KEY secret not set — skipping app_releases INSERT."
+            echo "  Manual step: jalankan SQL di Supabase SQL Editor"
+            exit 0
+          fi
+
+          # Insert dengan service_role key (bypass RLS)
+          # Note: github_release_url dan apk_download_url NOT NULL di schema
+          RESPONSE=$(curl -s -X POST \
+            "https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/app_releases" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=representation" \
+            -d "{
+              \"version_code\": $VC,
+              \"version_name\": \"$VN\",
+              \"tag_name\": \"$TAG\",
+              \"github_release_url\": \"$GH_RELEASE_URL\",
+              \"apk_download_url\": \"$APK_URL\",
+              \"changelog\": \"v$VN — Auto-built from F16-Launcher CI. Fitur terbaru: integrity analyzer, manifest-based update, optional sceneassets.\",
+              \"is_published\": true,
+              \"published_at\": \"now()\"
+            }")
+
+          echo "Response: $RESPONSE"
+          echo "✓ Inserted app_releases row v$VC — popup update akan muncul di Launcher user lama"
+
+
+      - name: Auto-upload APK to public repo + update manifest
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+        shell: bash
+        run: |
+          # Find APK (location varies between Gradle versions)
+          APK_FILE=$(find app/build/outputs/apk -name "*.apk" | head -1)
+          if [ -z "$APK_FILE" ]; then
+            echo "⚠ No APK found, skip auto-upload"
+            exit 0
+          fi
+          
+          # Extract versionCode and versionName from build.gradle
+          VC=$(grep "versionCode" app/build.gradle | head -1 | grep -oE '[0-9]+')
+          VN=$(grep "versionName" app/build.gradle | head -1 | sed 's/.*versionName\s*["\x27]//;s/["\x27].*//')
+          
+          echo "Detected: versionCode=$VC, versionName=$VN"
+          
+          # Run upload script
+          GITHUB_TOKEN="${{ secrets.GH_PAT }}" \
+          APK_PATH="$APK_FILE" \
+          VERSION_CODE="$VC" \
+          VERSION_NAME="$VN" \
+          python3 scripts/auto_upload_to_public_repo.py || {
+            echo "⚠ Auto-upload failed (non-fatal), manual update required"
+            exit 0
+          }

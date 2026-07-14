@@ -4,7 +4,6 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -13,11 +12,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,9 +20,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -36,45 +33,153 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.sin
 
 /**
- * Premium splash screen — Grok-inspired minimal design.
+ * DLavie v3.0 Splash — Monochrome White-on-Black + Halftone Particles.
  *
- * Design philosophy:
- *  - Pure black background (no gradient noise)
- *  - Solid typography (no buggy blend modes)
- *  - Minimal motion: smooth fade + subtle scale only
- *  - Sound chime plays once during hold phase
- *  - Animated dots loader (3 pulsing dots) at bottom
+ * Design philosophy (match new DLavie logo):
+ *  - Background: HalftoneBackground (near-black + dot grid + corner glows)
+ *  - "DLavie" text: pure white, bold, modern sans-serif
+ *  - Star icon: small white star di kanan text, dengan pulse glow animation
+ *  - Loading dots: pure white (bukan silver)
+ *  - Tagline: subtle, near-invisible (1 line, very small)
  *
- * Flow (2.4s total):
- *  1. Fade in "DLavie" text (600ms)
- *  2. Hold + play chime (1000ms)
- *  3. Fade out (400ms)
- *  4. Navigate to next screen
+ * Flow (~4s total):
+ *  1. Fade in "DLavie" text + scale-up (600-800ms, overlapping)
+ *  2. Star glow pulse start (continuous) + play cinematic sound
+ *  3. Fade in tagline (400ms) — very subtle
+ *  4. Fade in dots loader (300ms) — white
+ *  5. Hold (500ms)
+ *  6. Fade out everything (400-500ms)
+ *  7. Navigate to next screen
  */
 class ShinySplashActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // ── DLavie Portal Connect: check for deep link ──
+        val portalData = intent?.data
+        if (portalData != null && portalData.scheme == "dlavie" && portalData.host == "connect") {
+            // v8.0: RECEIVE token FROM web portal (not send TO web)
+            // Web sends: dlavie://connect?token=JWT&uid=USER_ID&refresh=REFRESH_TOKEN
+            val webToken = portalData.getQueryParameter("token")
+            val webUid = portalData.getQueryParameter("uid")
+            val webRefresh = portalData.getQueryParameter("refresh") ?: ""
+
+            if (!webToken.isNullOrBlank() && !webUid.isNullOrBlank()) {
+                // v7.9.60 FIX: Proper account connection (sama dengan ModernLauncherActivity)
+                // Sebelumnya: loadMyProfile() gagal silently → profile kosong
+                // Sekarang: clear old data → save new token → decode JWT → load OR create profile
+                
+                // Step 1: Decode JWT untuk dapat email
+                var email = ""
+                try {
+                    val parts = webToken.split(".")
+                    if (parts.size >= 2) {
+                        val payload = parts[1]
+                        val padded = payload + "=".repeat((4 - payload.length % 4) % 4)
+                        val decoded = android.util.Base64.decode(padded, android.util.Base64.URL_SAFE)
+                        val jwt = org.json.JSONObject(String(decoded))
+                        email = jwt.optString("email", "")
+                    }
+                } catch (_: Exception) {}
+
+                // Step 2: Clear prefs lama (preserve accounts list untuk multi-account switcher)
+                val communityPrefs = getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
+                val authPrefs = getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
+                val savedAccounts = communityPrefs.getString("accounts", "[]")
+                val savedActiveId = communityPrefs.getString("active_user_id", "")
+                communityPrefs.edit().clear().apply()
+                authPrefs.edit().clear().apply()
+                communityPrefs.edit().putString("accounts", savedAccounts).putString("active_user_id", savedActiveId).apply()
+
+                // Step 3: Default display_name + username dari email
+                val defaultDisplayName = if (email.isNotEmpty()) {
+                    email.substringBefore("@").replace(".", " ").replaceFirstChar {
+                        if (it.isLowerCase()) it.titlecase() else it.toString()
+                    }
+                } else "DLavie Player"
+                val defaultUsername = if (email.isNotEmpty()) {
+                    email.substringBefore("@").lowercase().replace(Regex("[^a-z0-9_]"), "_").take(20)
+                } else "user_${webUid.take(6)}"
+
+                // Save token + uid + email + defaults
+                authPrefs.edit()
+                    .putString("access_token", webToken)
+                    .putString("refresh_token", webRefresh)
+                    .apply()
+                communityPrefs.edit()
+                    .putString("access_token", webToken)
+                    .putString("refresh_token", webRefresh)
+                    .putString("user_id", webUid)
+                    .putString("email", email)
+                    .putString("display_name", defaultDisplayName)
+                    .putString("username", defaultUsername)
+                    .putString("role", "member")
+                    .putBoolean("portal_connected", true)
+                    .putString("portal_connected_at", System.currentTimeMillis().toString())
+                    .putBoolean("is_guest", false)
+                    .apply()
+
+                // Step 4: Load profile dengan fallback ke ensureMyProfile
+                val api = CommunityApi(this)
+                var displayName = defaultDisplayName
+                try {
+                    api.loadMyProfile()
+                    displayName = api.displayName().ifEmpty { defaultDisplayName }
+                } catch (e: Exception) {
+                    android.util.Log.w("DLavieConnect", "loadMyProfile failed: ${e.message}")
+                    // Fallback: create profile kalau belum ada
+                    if (e.message?.contains("Profile community belum tersedia") == true ||
+                        e.message?.contains("belum ada") == true) {
+                        try {
+                            api.ensureMyProfile(defaultUsername, defaultDisplayName, null)
+                            api.loadMyProfile()
+                            displayName = api.displayName().ifEmpty { defaultDisplayName }
+                        } catch (e2: Exception) {
+                            android.util.Log.e("DLavieConnect", "ensureMyProfile failed: ${e2.message}")
+                        }
+                    }
+                }
+
+                android.widget.Toast.makeText(this,
+                    "✓ DLavie Portal Connected! Welcome, $displayName.",
+                    android.widget.Toast.LENGTH_LONG).show()
+
+                // Navigate to launcher main screen
+                val target = android.content.Intent(this, ModernLauncherActivity::class.java)
+                target.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                startActivity(target)
+                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+                finish()
+                return
+            } else {
+                // Missing token/uid — show error
+                android.widget.Toast.makeText(this,
+                    "Connect gagal: token tidak ditemukan. Coba lagi dari web portal.",
+                    android.widget.Toast.LENGTH_LONG).show()
+                val target = android.content.Intent(this, DLavieGuidedActivity::class.java)
+                target.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                startActivity(target)
+                finish()
+                return
+            }
+        }
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(
@@ -82,11 +187,14 @@ class ShinySplashActivity : ComponentActivity() {
                 onBackground = Color.White, onSurface = Color.White
             )) {
                 Surface(Modifier.fillMaxSize(), color = Color.Black) {
-                    GrokStyleSplash(
+                    DLavieHalftoneSplash(
                         onFinished = {
                             // Decide next destination based on auth state
                             val prefs = getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
                             val token = prefs.getString("access_token", null)
+                            // v6.8.3: Guest mode check — if is_guest=true in dlavie_community prefs, skip login
+                            val communityPrefs = getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
+                            val isGuest = communityPrefs.getBoolean("is_guest", false)
                             val target = if (!token.isNullOrBlank()) {
                                 // Sync to community prefs
                                 val refresh = prefs.getString("refresh_token", "") ?: ""
@@ -96,11 +204,14 @@ class ShinySplashActivity : ComponentActivity() {
                                     val decoded = android.util.Base64.decode(padded, android.util.Base64.URL_SAFE)
                                     org.json.JSONObject(String(decoded)).optString("sub", "")
                                 } catch (_: Exception) { "" }
-                                getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE).edit()
+                                communityPrefs.edit()
                                     .putString("access_token", token)
                                     .putString("refresh_token", refresh)
                                     .putString("user_id", userId)
                                     .apply()
+                                Intent(this, ModernLauncherActivity::class.java)
+                            } else if (isGuest) {
+                                // v6.8.3: Guest mode — bypass login, go straight to launcher
                                 Intent(this, ModernLauncherActivity::class.java)
                             } else {
                                 Intent(this, DLavieGuidedActivity::class.java)
@@ -117,38 +228,72 @@ class ShinySplashActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val data = intent.data
+        if (data != null && data.scheme == "dlavie" && data.host == "connect") {
+            recreate()
+        }
+    }
 }
 
 @Composable
-private fun GrokStyleSplash(onFinished: () -> Unit) {
+private fun DLavieHalftoneSplash(onFinished: () -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // Animation states
     val textAlpha = remember { Animatable(0f) }
     val textScale = remember { Animatable(0.92f) }
+    val starAlpha = remember { Animatable(0f) }
     val taglineAlpha = remember { Animatable(0f) }
     val dotsAlpha = remember { Animatable(0f) }
 
+    // Continuous star glow pulse (independent dari phase machine)
+    val infiniteTransition = rememberInfiniteTransition(label = "star_glow")
+    val starGlow by infiniteTransition.animateFloat(
+        initialValue = 0.3f, targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(
+            tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse
+        ),
+        label = "star_glow_val"
+    )
+    val starScale by infiniteTransition.animateFloat(
+        initialValue = 0.9f, targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse
+        ),
+        label = "star_scale"
+    )
+
     // Phase machine
     LaunchedEffect(Unit) {
-        // Phase 1: Fade in "DLavie" with slight scale-up (600ms)
+        // Phase 1: Fade in "DLavie" text + scale-up (600-800ms, overlapping)
         kotlinx.coroutines.coroutineScope {
             launch { textAlpha.animateTo(1f, tween(600, easing = FastOutSlowInEasing)) }
             launch { textScale.animateTo(1f, tween(800, easing = FastOutSlowInEasing)) }
         }
 
-        // Phase 2: Fade in tagline (300ms, slight delay)
-        taglineAlpha.animateTo(0.6f, tween(400, easing = FastOutSlowInEasing))
+        // Phase 2: Fade in star icon (300ms) + play cinematic sound at start.
+        scope.launch { SoundEffectHelper.playShinyChime(context) }
+        kotlinx.coroutines.coroutineScope {
+            launch { starAlpha.animateTo(1f, tween(300, easing = FastOutSlowInEasing)) }
+        }
 
-        // Phase 3: Fade in dots loader
+        // Phase 3: Fade in tagline (400ms) — very subtle
+        taglineAlpha.animateTo(0.5f, tween(400, easing = FastOutSlowInEasing))
+
+        // Phase 4: Fade in dots loader (300ms)
         dotsAlpha.animateTo(1f, tween(300))
 
-        // Phase 4: Play chime + hold (1000ms)
-        scope.launch { SoundEffectHelper.playShinyChime() }
-        delay(900)
+        // Phase 5: Hold (500ms) — biarkan user menikmati star glow + sound
+        delay(500)
 
-        // Phase 5: Fade out everything (400ms)
+        // Phase 6: Fade out everything (400-500ms)
         kotlinx.coroutines.coroutineScope {
             launch { textAlpha.animateTo(0f, tween(400, easing = FastOutSlowInEasing)) }
+            launch { starAlpha.animateTo(0f, tween(300)) }
             launch { taglineAlpha.animateTo(0f, tween(300)) }
             launch { dotsAlpha.animateTo(0f, tween(300)) }
         }
@@ -157,42 +302,86 @@ private fun GrokStyleSplash(onFinished: () -> Unit) {
     }
 
     Box(
-        Modifier.fillMaxSize().background(Color.Black),
+        Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
+        // ── Halftone particle background (match DLavie logo) ──
+        HalftoneBackground(
+            modifier = Modifier.fillMaxSize(),
+            dotSize = 3f,
+            spacing = 26f,
+            baseColor = HalftoneBright,
+            alpha = 1f
+        )
+
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxSize()
         ) {
-            // ── Main "DLavie" text — solid white, clean typography ──
-            Text(
-                text = "DLavie",
-                color = Color.White,
-                fontSize = 52.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-1).sp,  // tight tracking for premium feel
-                textAlign = TextAlign.Center,
+            // ── "DLavie" text + star icon (match logo layout) ──
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .alpha(textAlpha.value)
                     .scale(textScale.value)
-            )
+            ) {
+                Text(
+                    text = "DLavie",
+                    color = Color.White,   // pure white (match logo)
+                    fontSize = 52.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = (-1).sp,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.width(6.dp))
+                // Star icon dengan pulse glow (alpha animated by starGlow)
+                Box(
+                    modifier = Modifier
+                        .alpha(starAlpha.value)
+                        .size(28.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Glow layer (soft white circle behind star)
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .alpha(starGlow * 0.4f)
+                            .background(
+                                androidx.compose.ui.graphics.Brush.radialGradient(
+                                    listOf(Color.White, Color.Transparent)
+                                ),
+                                CircleShape
+                            )
+                    )
+                    Icon(
+                        Icons.Rounded.Star,
+                        contentDescription = null,
+                        tint = StarWhite.copy(alpha = starGlow),
+                        modifier = Modifier
+                            .size(24.dp)
+                            .scale(starScale)
+                    )
+                }
+            }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
 
-            // ── Tagline — subtle gray, small ──
+            // ── Tagline — very subtle, near-invisible ──
             Text(
                 text = "FIFA 16 Mobile · Mod Launcher",
-                color = Color(0xFF6B7280),  // subtle gray (Grok-style)
-                fontSize = 11.sp,
+                color = Color(0xFF555555),   // very subtle dark gray
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Medium,
-                letterSpacing = 3.sp,  // wide tracking for elegance
+                letterSpacing = 3.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.alpha(taglineAlpha.value)
             )
 
             Spacer(Modifier.height(60.dp))
 
-            // ── Loading dots (3 dots pulsing in sequence) ──
+            // ── Loading dots (3 dots pulsing — pure white) ──
             LoadingDots(
                 modifier = Modifier
                     .alpha(dotsAlpha.value)
@@ -203,30 +392,30 @@ private fun GrokStyleSplash(onFinished: () -> Unit) {
 }
 
 /**
- * Three pulsing dots — clean loading indicator.
+ * Three pulsing dots — pure white (v3.0 monochrome).
  * Each dot fades in/out with 200ms stagger.
  */
 @Composable
 private fun LoadingDots(modifier: Modifier = Modifier) {
-    val infiniteTransition = rememberInfiniteTransition(label = "dots")
-    val dot1 by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 1f,
+    val dotsTransition = rememberInfiniteTransition(label = "dots")
+    val dot1 by dotsTransition.animateFloat(
+        initialValue = 0.2f, targetValue = 1f,
         animationSpec = infiniteRepeatable(
             tween(600, delayMillis = 0, easing = LinearEasing),
             RepeatMode.Reverse
         ),
         label = "dot1"
     )
-    val dot2 by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 1f,
+    val dot2 by dotsTransition.animateFloat(
+        initialValue = 0.2f, targetValue = 1f,
         animationSpec = infiniteRepeatable(
             tween(600, delayMillis = 200, easing = LinearEasing),
             RepeatMode.Reverse
         ),
         label = "dot2"
     )
-    val dot3 by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 1f,
+    val dot3 by dotsTransition.animateFloat(
+        initialValue = 0.2f, targetValue = 1f,
         animationSpec = infiniteRepeatable(
             tween(600, delayMillis = 400, easing = LinearEasing),
             RepeatMode.Reverse
@@ -250,6 +439,6 @@ private fun Dot(alpha: Float) {
     Box(
         Modifier
             .size(6.dp)
-            .background(Color(0xFF9CA3AF).copy(alpha = alpha), androidx.compose.foundation.shape.CircleShape)
+            .background(Color.White.copy(alpha = alpha), CircleShape)   // pure white
     )
 }

@@ -7,7 +7,7 @@ if not source.exists():
 text = source.read_text()
 
 required = [
-    "fun DLavieGuidedApp()",
+    "fun DLavieGuidedApp(",  # v6.8.4: match both () and (deepLinkResult: String? = null)
     "fun GuidedHomeScreen",
     "fun GuidedDataScreen",
     "fun GuidedUpdateScreen",

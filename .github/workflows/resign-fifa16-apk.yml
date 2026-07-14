@@ -1,0 +1,122 @@
+name: Re-sign FIFA 16 APK (V2 Signature)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  resign-fifa16-apk:
+    name: Re-sign FIFA 16 APK with V1+V2+V3
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install required Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "build-tools;34.0.0" "platforms;android-34" || true
+
+      - name: Install zipalign
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zipalign
+
+      - name: Set up apksigner
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f 2>/dev/null | head -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "ERROR: apksigner not found"
+            exit 1
+          fi
+          echo "Found: $APKSIGNER"
+          echo "$(dirname "$APKSIGNER")" >> $GITHUB_PATH
+
+      - name: Download APK from F16 repo (already targetSdk=34 + LAUNCHER removed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Downloading from F16 repo..."
+          curl -L -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            -o fifa16-original.apk \
+            "https://api.github.com/repos/drmacze/F16/releases/assets/466641050"
+          ls -lh fifa16-original.apk
+          file fifa16-original.apk
+          if ! unzip -t fifa16-original.apk > /dev/null 2>&1; then
+            echo "ERROR: Not a valid APK"
+            exit 1
+          fi
+          echo "✅ APK valid"
+
+      - name: Zip-align APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          zipalign -v -p 4 fifa16-original.apk fifa16-aligned.apk 2>&1 | tail -3
+          ls -lh fifa16-aligned.apk
+
+      - name: Re-sign APK with V1+V2+V3 (apksigner)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > /tmp/dlavie.keystore
+          apksigner sign \
+            --ks /tmp/dlavie.keystore \
+            --ks-key-alias ${{ secrets.SIGNING_KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.SIGNING_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.SIGNING_KEY_PASSWORD }} \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out fifa16-resigned.apk \
+            fifa16-aligned.apk
+          ls -lh fifa16-resigned.apk
+
+      - name: Verify signature
+        shell: bash
+        run: |
+          apksigner verify --print-certs --verbose fifa16-resigned.apk 2>&1 | head -15
+          echo "---"
+          # Verify V2 signature
+          python3 -c "
+          with open('fifa16-resigned.apk', 'rb') as f:
+              data = f.read()
+              has_v2 = b'APK Sig Block 42' in data
+              print(f'V2/V3 signature: {\"✅ ADA\" if has_v2 else \"❌ TIDAK ADA\"}')
+          "
+
+      - name: Upload to Supabase Storage
+        shell: bash
+        env:
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: https://lvmucsxbmadtsgrxuwmo.supabase.co
+        run: |
+          set -euo pipefail
+          curl -s -X POST \
+            "$SUPABASE_URL/storage/v1/object/apk-dist/fifa16/DLavie26-LauncherOnly.apk" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            -H "x-upsert: true" \
+            --data-binary @fifa16-resigned.apk \
+            --max-time 300
+          echo ""
+          curl -sI "$SUPABASE_URL/storage/v1/object/public/apk-dist/fifa16/DLavie26-LauncherOnly.apk" | head -5
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/dlavie.keystore

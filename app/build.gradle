@@ -1,18 +1,22 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
+    // Firebase — processes google-services.json (auto-adds API key, app_id, etc)
+    id 'com.google.gms.google-services'
+    // Crashlytics — NDK symbol upload + auto-init
+    id 'com.google.firebase.crashlytics'
 }
 
 android {
     namespace 'com.drmacze.f16launcher'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
-        targetSdk 35
-        versionCode 279
-        versionName "7.9.81-gamehub-design-system"
+        targetSdk 36
+        versionCode 280
+        versionName "7.9.82-gamehub-design-merged"
         buildConfigField "String", "SUPABASE_URL", '"https://lvmucsxbmadtsgrxuwmo.supabase.co"'
         buildConfigField "String", "SUPABASE_ANON_KEY", '"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2bXVjc3hibWFkdHNncnh1d21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODUyODksImV4cCI6MjA5ODU2MTI4OX0.y-1sE6uYTn4Wbter6g6NozY6uojzD5x9YVeYif-5nJs"'
         buildConfigField "String", "SUPABASE_PUB_KEY", '"sb_publishable_aYFlbWVJMErOHwPsli33QQ_INJD9mhx"'
@@ -42,7 +46,7 @@ dependencies {
     implementation "dev.rikka.shizuku:provider:13.1.5"
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'androidx.core:core-splashscreen:1.0.1'
-    implementation platform('androidx.compose:compose-bom:2024.10.00')
+    implementation platform('androidx.compose:compose-bom:2024.12.01')
     implementation 'androidx.activity:activity-compose:1.9.3'
     implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.7'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7'
@@ -53,6 +57,41 @@ dependencies {
     implementation 'androidx.compose.animation:animation'
     implementation 'androidx.compose.material:material-icons-extended'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
-    implementation 'io.coil-kt:coil-compose:2.6.0'
+
+    // ─── TapTap-level UI/UX stack ────────────────────────────────────────────
+    // Catatan: versi dipilih yang compatible dengan Kotlin 1.9.24 (project's
+    // kotlin plugin version). Versi terbaru (Coil 2.7+, Lottie 6.4+, Shimmer
+    // 1.3+) compiled with Kotlin 2.x → incompatible.
+    // Coil — image loading (replaces manual image loading)
+    implementation 'io.coil-kt:coil-compose:2.5.0'
+    implementation 'io.coil-kt:coil-gif:2.5.0'
+    // Lottie — micro-animations (ready for Phase 2)
+    implementation 'com.airbnb.android:lottie-compose:6.3.0'
+    // Shimmer — skeleton loading
+    implementation 'com.valentinilk.shimmer:compose-shimmer:1.2.0'
+    // v6.8.3: AndroidX Custom Tabs — for Google OAuth in-app browser
+    implementation 'androidx.browser:browser:1.8.0'
+
+    // ─── v7.9.78: Banner Slider — video player (Media3/ExoPlayer) ───────────
+    // Coil (image + gif) already in deps above. Media3 needed for MP4 video banners.
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    implementation 'androidx.media3:media3-ui:1.4.1'
+    implementation 'androidx.media3:media3-common:1.4.1'
+
+    // ─── Firebase ────────────────────────────────────────────────────────────
+    // BOM (Bill of Materials) — auto-pins compatible versions of all Firebase libs
+    implementation platform('com.google.firebase:firebase-bom:33.5.1')
+    // FCM — push notifications (Dev Dashboard → user devices)
+    implementation 'com.google.firebase:firebase-messaging:24.0.3'
+    // Analytics — event tracking (optional, used by Dev Dashboard stats)
+    implementation 'com.google.firebase:firebase-analytics:22.1.2'
+    // Crashlytics — crash reporting (replaces manual GameCrashReporter)
+    implementation 'com.google.firebase:firebase-crashlytics:19.2.1'
+    // Play Services Coroutines — for Task.await() on Firebase APIs
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1'
+
     debugImplementation 'androidx.compose.ui:ui-tooling'
 }
+
+// Apply google-services plugin at the bottom (legacy style, required by plugin v4.4+)
+apply plugin: 'com.google.gms.google-services'
