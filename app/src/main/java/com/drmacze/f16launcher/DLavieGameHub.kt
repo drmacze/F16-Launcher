@@ -42,6 +42,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -436,7 +439,7 @@ private fun GHHomeScreen(
     userGames: List<GHUserGame>,
     selectedTab: Int,
     onTabSelect: (Int) -> Unit,
-    onContextMenu: (Pair<String, Boolean>) -> Unit,
+    onContextMenu: (String) -> Unit,
     apkPickerLauncher: androidx.activity.result.ActivityResultLauncher<String>,
     currentTime: String,
     batteryLevel: Int,
@@ -535,7 +538,7 @@ private fun GHHomeScreen(
                         GHGlassCard(
                             game,
                             ghIsPackageInstalled(context, game.packageName),
-                            { onContextMenu(Pair(game.packageName, false)) }
+                            { onContextMenu(game.packageName) }
                         )
                     }
                 }
@@ -586,7 +589,7 @@ private fun GHHomeScreen(
                                         }
                                     }
                                 },
-                                { onContextMenu(Pair(ug.packageName, true)) }
+                                { onContextMenu(ug.packageName) }
                             )
                         }
                     }
@@ -1094,6 +1097,7 @@ private fun GHPillTab(label: String, count: Int, selected: Boolean, onClick: () 
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GHGlassCard(
     game: GHGameItem,
@@ -1160,6 +1164,7 @@ private fun GHGlassCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GHGlassUserCard(
     userGame: GHUserGame,

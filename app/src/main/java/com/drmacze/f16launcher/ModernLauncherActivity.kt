@@ -67,6 +67,7 @@ import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.SportsSoccer
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.SystemUpdate
