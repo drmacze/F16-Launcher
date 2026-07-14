@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
@@ -21,6 +23,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,14 +35,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -49,73 +58,80 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DLAVIE GAMEHUB v281 — 100% Match GameHub Guangzhou (PlayStore reference)
+// DLAVIE GAMEHUB v282 — PlayStore-style with adaptive bg + glassmorphism
 // ═══════════════════════════════════════════════════════════════════════════
-// Pixel-perfect match to GameHub by Guangzhou Bat Network Technology:
-//   - Background: Pure black #000000
-//   - Game cards: 160x240dp (2:3 ratio), full-bleed artwork, 16dp radius
-//   - Card top bar: PS logo + platform + status badge (green/orange)
-//   - Card bottom: 48dp overlay with title + subtitle + action
-//   - Top bar: hamburger, LB, "Dashboard", RB, search, battery, time, back
-//   - Bottom bar: Y+Search (left), Menu+hamburger (right)
-//   - Drawer: 280dp wide, dark blue-gray #121826, teal #009688 accent
-//   - Tabs: 32dp pills with number badges
-//   - LB/RB: 40x40dp dark gray #1E1E1E rounded squares
+// Match GameHub PlayStore reference:
+//   - Adaptive blurred background from focused game cover
+//   - Glassmorphic cards (blur + semi-transparent)
+//   - Larger cards (200x280dp) with View Detail + 3-dot menu
+//   - Platform label dynamic: .apk→Android, .ipa→iPhone, .exe→Windows
+//   - Favorite system with persistence + sidebar tab
+//   - Uses REAL GameItem + GameDetailScreen (NOT dummy)
+//   - Click card → onGameClick → GameDetailScreen (preserved from v277)
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ── Design tokens (exact match to GameHub Guangzhou) ──
-private val GHBg = Color(0xFF000000)              // Pure black
-private val GHDrawerBg = Color(0xFF121826)        // Dark blue-gray
-private val GHButtonBg = Color(0xFF1E1E1E)        // Dark gray (LB/RB/buttons)
-private val GHDivider = Color(0xFF333333)         // Medium gray dividers
+// ── Design tokens ──
+private val GHBgBlack = Color(0xFF000000)
+private val GHOverlayDark = Color(0xCC000000)
+private val GHGlassBg = Color(0x801A1A1A)         // 50% opacity dark gray
+private val GHGlassBgHi = Color(0xA0222222)       // 63% opacity
+private val GHGlassBorder = Color(0x33FFFFFF)     // 20% white
+private val GHGlassBorderHi = Color(0x66FFFFFF)   // 40% white
 private val GHTextWhite = Color(0xFFFFFFFF)
-private val GHTextGray = Color(0xFFAAAAAA)        // Subtitle gray
-private val GHTextDim = Color(0xFF666666)         // Inactive text
-private val GHAccent = Color(0xFF009688)          // Teal accent
-private val GHAccentDim = Color(0xFF00796B)
-private val GHGreen = Color(0xFF4CAF50)           // ONLINE status
-private val GHAmber = Color(0xFFFF9800)           // MAINT status
-private val GHRed = Color(0xFFEF4444)
-private val GHBlue = Color(0xFF2196F3)            // Progress bar
+private val GHTextGray = Color(0xFFAAAAAA)
+private val GHTextDim = Color(0xFF666666)
+private val GHAccent = Color(0xFF00E5FF)          // Cyan (GameHub PlayStore accent)
+private val GHGreen = Color(0xFF4CAF50)
+private val GHAmber = Color(0xFFFFC107)
+private val GHRed = Color(0xFFFF5252)
+private val GHPillBg = Color(0x40FFFFFF)          // 25% white for pills
 
-// ── Self-contained data types ──
-private enum class GHServerStatus { ONLINE, MAINTENANCE, OFFLINE, BUSY }
+// ── Favorite persistence ──
+private const val GH_PREFS = "gh_favorites"
+private fun ghLoadFavorites(context: Context): Set<String> = try {
+    context.getSharedPreferences(GH_PREFS, Context.MODE_PRIVATE).getStringSet("fav_pkgs", emptySet()) ?: emptySet()
+} catch (_: Exception) { emptySet() }
 
-private data class GHGameItem(
-    val title: String,
-    val subtitle: String,
-    val packageName: String,
-    val coverGradient: List<Color>,
-    val coverText: String,
-    val platform: String = "PS4",  // PS-style platform label
-    val serverStatus: GHServerStatus = GHServerStatus.ONLINE,
-    val sizeMb: String = "",
-    val apkUrl: String = ""
-)
+private fun ghSaveFavorites(context: Context, favs: Set<String>) = try {
+    context.getSharedPreferences(GH_PREFS, Context.MODE_PRIVATE).edit().putStringSet("fav_pkgs", favs).apply()
+} catch (_: Exception) {}
 
-private data class GHUserGame(
-    val title: String,
-    val packageName: String,
-    val sourcePath: String
-)
+private fun ghToggleFavorite(context: Context, packageName: String): Set<String> {
+    val current = ghLoadFavorites(context).toMutableSet()
+    if (packageName in current) current.remove(packageName) else current.add(packageName)
+    ghSaveFavorites(context, current)
+    return current
+}
 
-// ── Constants ──
-private const val GH_GAME_PKG_16 = "com.ea.gp.fifaworld"
-private const val GH_GAME_PKG_15 = "com.ea.game.fifa15_row"
-private const val GH_FIFA16_APK_URL = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie26.apk"
-private const val GH_FIFA15_APK_URL = "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/DLavie15.apk"
-private const val GH_PREFS_USER_GAMES = "gh_user_games"
+// ── Platform detection from file extension ──
+private enum class GHPlatform(val label: String, val color: Color) {
+    ANDROID("Android", Color(0xFF3DDC84)),   // Android green
+    IOS("iPhone", Color(0xFF007AFF)),        // iOS blue
+    WINDOWS("Windows", Color(0xFF00A4EF)),   // Windows blue
+    MACOS("macOS", Color(0xFF999999)),
+    LINUX("Linux", Color(0xFFFCC624)),
+    UNKNOWN("Other", Color(0xFF888888));
 
-// ── Helpers ──
-private fun ghIsPackageInstalled(context: Context, pkg: String): Boolean = try {
-    context.packageManager.getPackageInfo(pkg, 0); true
-} catch (_: Throwable) { false }
+    companion object {
+        fun fromUrl(url: String): GHPlatform {
+            val lower = url.lowercase()
+            return when {
+                lower.endsWith(".apk") || "android" in lower -> ANDROID
+                lower.endsWith(".ipa") || "ios" in lower || "iphone" in lower -> IOS
+                lower.endsWith(".exe") || "windows" in lower -> WINDOWS
+                lower.endsWith(".dmg") || "macos" in lower || "darwin" in lower -> MACOS
+                lower.endsWith(".deb") || "linux" in lower -> LINUX
+                else -> UNKNOWN
+            }
+        }
+        fun fromPackage(packageName: String): GHPlatform {
+            // Android packages always have dots and look like com.xxx
+            return if (packageName.contains(".") && !packageName.contains(" ")) ANDROID else UNKNOWN
+        }
+    }
+}
 
-private fun ghLaunchGame(context: Context, pkg: String): Boolean = try {
-    val intent = context.packageManager.getLaunchIntentForPackage(pkg)
-    if (intent != null) { intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); context.startActivity(intent); true } else false
-} catch (_: Throwable) { false }
-
+// ── Helpers (use existing from PlayStoreGameHub.kt) ──
 private fun ghGetBatteryLevel(context: Context): Int = try {
     (context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
 } catch (_: Exception) { 100 }
@@ -135,21 +151,6 @@ private fun ghFormatBytes(bytes: Long): String = when {
     bytes >= 1_000 -> "%.1fKB".format(bytes / 1_000.0)
     else -> "${bytes}B"
 }
-
-private fun ghLoadUserGames(context: Context): List<GHUserGame> = try {
-    val prefs = context.getSharedPreferences(GH_PREFS_USER_GAMES, Context.MODE_PRIVATE)
-    val raw = prefs.getString("games", "") ?: ""
-    if (raw.isBlank()) emptyList()
-    else raw.split("\n").mapNotNull { line ->
-        val parts = line.split("|")
-        if (parts.size >= 3) GHUserGame(parts[0], parts[1], parts[2]) else null
-    }
-} catch (_: Exception) { emptyList() }
-
-private fun ghSaveUserGames(context: Context, games: List<GHUserGame>) = try {
-    val prefs = context.getSharedPreferences(GH_PREFS_USER_GAMES, Context.MODE_PRIVATE)
-    prefs.edit().putString("games", games.joinToString("\n") { "${it.title}|${it.packageName}|${it.sourcePath}" }).apply()
-} catch (_: Exception) {}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TRANSITION — hexagon logo + typing DLAVIE + loading messages
@@ -181,7 +182,7 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
     }
 
     if (visible && phase < 5) {
-        Box(Modifier.fillMaxSize().background(GHBg), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().background(GHBgBlack), contentAlignment = Alignment.Center) {
             val logoAlpha by animateFloatAsState(when (phase) { 0 -> 0f; 1 -> 1f; 2 -> 1f; 3 -> 1f; 4 -> 0f; else -> 0f }, tween(800, easing = FastOutSlowInEasing), label = "la")
             val logoScale by animateFloatAsState(when (phase) { 0 -> 0.7f; 1 -> 1f; 2 -> 1f; 3 -> 1f; 4 -> 1.15f; else -> 1f }, tween(800, easing = FastOutSlowInEasing), label = "ls")
             val textAlpha by animateFloatAsState(when (phase) { 0 -> 0f; 1 -> 0f; 2 -> 1f; 3 -> 1f; 4 -> 0f; else -> 0f }, tween(400, easing = FastOutSlowInEasing), label = "ta")
@@ -199,8 +200,7 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
                         })
                         .background(GHTextWhite),
                     contentAlignment = Alignment.Center
-                ) { Text("DL", color = Color.Black, fontSize = 26.sp, fontWeight = FontWeight.Black) }
-
+                ) { Text("DL", color = GHBgBlack, fontSize = 26.sp, fontWeight = FontWeight.Black) }
                 Spacer(Modifier.height(20.dp))
                 Text(typedText, color = GHTextWhite, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp, modifier = Modifier.graphicsLayer { this.alpha = textAlpha })
                 Spacer(Modifier.height(16.dp))
@@ -213,7 +213,7 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MAIN COMPOSABLE
+// MAIN COMPOSABLE — uses REAL GameItem + onGameClick → GameDetailScreen
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -261,294 +261,687 @@ fun DLavieGameHub(
     var batteryLevel by remember { mutableStateOf(ghGetBatteryLevel(context)) }
     LaunchedEffect(Unit) { while (true) { currentTime = ghGetCurrentTime(context); batteryLevel = ghGetBatteryLevel(context); delay(30_000) } }
 
-    var currentScreen by remember { mutableStateOf(0) }
+    var currentScreen by remember { mutableStateOf(0) }  // 0=Home, 1=Download, 2=Settings, 3=Favorite
     var showDrawer by remember { mutableStateOf(false) }
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableStateOf(0) }  // 0=DLavie, 1=My Library, 2=Favorite
+    var favorites by remember { mutableStateOf(ghLoadFavorites(context)) }
 
+    // ── Use REAL GameItem from GameItem.kt (NOT dummy) ──
     val dlavieGames = remember {
         listOf(
-            GHGameItem(
+            GameItem(
                 title = "FIFA 16 Mobile", subtitle = "DLavie 26 Mod",
-                packageName = GH_GAME_PKG_16,
+                packageName = GAME_PKG_16, mainActivity = "com.byfen.downloadzipsdk.MainActivity",
                 coverGradient = listOf(Color(0xFF0A0A0A), Color(0xFF222222)),
-                coverText = "DL", platform = "PS4",
-                serverStatus = GHServerStatus.ONLINE, sizeMb = "34 MB", apkUrl = GH_FIFA16_APK_URL
+                coverText = "DL", coverImageRes = R.drawable.fifa16_cover,
+                serverStatus = ServerStatus.ONLINE,
+                description = "FIFA 16 Mobile dengan mod DLavie 26",
+                version = "v26.0", sizeMb = "34 MB", apkUrl = FIFA16_APK_URL
             ),
-            GHGameItem(
+            GameItem(
                 title = "FIFA 15 Mobile", subtitle = "DLavie 15 Mod",
-                packageName = GH_GAME_PKG_15,
+                packageName = GAME_PKG_15, mainActivity = FIFA15_MAIN_ACTIVITY,
                 coverGradient = listOf(Color(0xFF1A1A2E), Color(0xFF16213E)),
-                coverText = "D15", platform = "PS4",
-                serverStatus = GHServerStatus.MAINTENANCE, sizeMb = "22 MB", apkUrl = GH_FIFA15_APK_URL
+                coverText = "D15", coverImageRes = R.drawable.fifa15_cover,
+                serverStatus = ServerStatus.MAINTENANCE,
+                description = "FIFA 15 Mobile dengan mod DLavie 15",
+                version = "v15.0", sizeMb = "22 MB", apkUrl = FIFA15_APK_URL
             )
         )
     }
 
-    var userGames by remember { mutableStateOf<List<GHUserGame>>(emptyList()) }
+    var userGames by remember { mutableStateOf<List<UserGame>>(emptyList()) }
     LaunchedEffect(selectedTab, currentScreen) {
-        if (selectedTab == 1) userGames = withContext(Dispatchers.IO) { ghLoadUserGames(context) }
+        if (selectedTab == 1) userGames = withContext(Dispatchers.IO) { loadUserGames(context) }
     }
 
     val apkPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) { try { context.startActivity(Intent(Intent.ACTION_VIEW).apply { setDataAndType(uri, "application/vnd.android.package-archive"); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION) }) } catch (_: Exception) {} }
     }
 
-    var contextMenuGame by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    // ── Adaptive background: track focused game cover ──
+    var focusedGame by remember { mutableStateOf<GameItem?>(dlavieGames.firstOrNull()) }
 
-    Box(Modifier.fillMaxSize().background(GHBg)) {
+    Box(
+        Modifier.fillMaxSize().background(GHBgBlack)
+    ) {
+        // ── ADAPTIVE BLURRED BACKGROUND (from focused game cover) ──
+        focusedGame?.let { game ->
+            AdaptiveGameBackground(game)
+        }
+
         if (!showTransition) {
             when (currentScreen) {
-                0 -> GHHomeScreen(context, scope, dlavieGames, userGames, selectedTab, { selectedTab = it }, { pkg -> contextMenuGame = Pair(pkg, false) }, apkPickerLauncher, currentTime, batteryLevel, { showDrawer = true }, { onExit() })
+                0 -> GHHomeScreen(
+                    context, scope, dlavieGames, userGames, favorites,
+                    selectedTab, { selectedTab = it },
+                    onGameClick,  // ← trigger GameDetailScreen
+                    apkPickerLauncher, currentTime, batteryLevel,
+                    { showDrawer = true }, { onExit() },
+                    { favs -> favorites = favs },  // favorite toggle callback
+                    { game -> focusedGame = game }  // focused game change
+                )
                 1 -> GHDownloadScreen(context) { currentScreen = 0 }
                 2 -> GHSettingsScreen(context) { currentScreen = 0 }
+                3 -> GHFavoriteScreen(
+                    context, dlavieGames, userGames, favorites,
+                    onGameClick, { currentScreen = 0 },
+                    { favs -> favorites = favs }
+                )
             }
+
             if (showDrawer) {
-                GHDrawer(currentScreen = currentScreen, onSelect = { screen -> currentScreen = screen; showDrawer = false }, onDismiss = { showDrawer = false }, onExit = { showDrawer = false; onExit() })
-            }
-            contextMenuGame?.let { (pkg, isUser) ->
-                GHContextMenu(pkg, isUser, ghIsPackageInstalled(context, pkg),
-                    { contextMenuGame = null }, { contextMenuGame = null; ghLaunchGame(context, pkg) },
-                    { contextMenuGame = null },
-                    { contextMenuGame = null; try { context.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkg")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {} },
-                    { contextMenuGame = null; val u = userGames.filter { it.packageName != pkg }; ghSaveUserGames(context, u); userGames = u },
-                    { contextMenuGame = null; try { File("/sdcard/Android/data/$pkg").deleteRecursively() } catch (_: Exception) {} }
+                GHDrawer(
+                    currentScreen = currentScreen,
+                    onSelect = { screen -> currentScreen = screen; showDrawer = false },
+                    onDismiss = { showDrawer = false },
+                    onExit = { showDrawer = false; onExit() }
                 )
             }
         }
+
         GameHubTransition(visible = showTransition) { showTransition = false }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HOME SCREEN — Exact GameHub Guangzhou layout
+// ADAPTIVE BACKGROUND — blurred game cover (PlayStore style)
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun AdaptiveGameBackground(game: GameItem) {
+    Box(Modifier.fillMaxSize()) {
+        // Blurred cover image
+        if (game.coverImageRes != null) {
+            Image(
+                painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().blur(50.dp),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            // Fallback: gradient from cover colors
+            Box(
+                Modifier.fillMaxSize().background(Brush.linearGradient(game.coverGradient))
+                    .blur(50.dp)
+            )
+        }
+        // Dark overlay for readability
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    listOf(Color(0xE6000000), Color(0xCC000000), Color(0xE6000000))
+                )
+            )
+        )
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HOME SCREEN — larger cards, glassmorphism, View Detail + 3-dot menu
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun GHHomeScreen(
     context: Context, scope: kotlinx.coroutines.CoroutineScope,
-    dlavieGames: List<GHGameItem>, userGames: List<GHUserGame>,
+    dlavieGames: List<GameItem>, userGames: List<UserGame>,
+    favorites: Set<String>,
     selectedTab: Int, onTabSelect: (Int) -> Unit,
-    onContextMenu: (String) -> Unit,
+    onGameClick: (String) -> Unit,
     apkPickerLauncher: androidx.activity.result.ActivityResultLauncher<String>,
     currentTime: String, batteryLevel: Int,
-    onMenu: () -> Unit, onExit: () -> Unit
+    onMenu: () -> Unit, onExit: () -> Unit,
+    onFavoritesChanged: (Set<String>) -> Unit,
+    onFocusedGame: (GameItem) -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
-        // ── TOP BAR (56dp, exact layout: hamburger, LB, title, RB, search, battery, time, back) ──
-        Row(
-            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Rounded.Menu, "Menu", tint = GHTextWhite, modifier = Modifier.size(24.dp).clickable { onMenu() })
-            Spacer(Modifier.width(16.dp))
-            GHCtrlBtn("LB")
-            Spacer(Modifier.width(12.dp))
-            Text("Dashboard", color = GHTextWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-            Spacer(Modifier.width(12.dp))
-            GHCtrlBtn("RB")
-            Spacer(Modifier.width(16.dp))
-            Icon(Icons.Rounded.Search, "Search", tint = GHTextWhite, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.width(8.dp))
-            Icon(Icons.Rounded.BatteryFull, "Battery", tint = GHTextWhite, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("$batteryLevel%", color = GHTextWhite, fontSize = 14.sp)
-            Spacer(Modifier.width(8.dp))
-            Icon(Icons.Rounded.Schedule, "Time", tint = GHTextWhite, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(4.dp))
-            Text(currentTime, color = GHTextWhite, fontSize = 14.sp)
-            Spacer(Modifier.width(8.dp))
-            Icon(Icons.Rounded.ArrowBack, "Exit", tint = GHTextWhite, modifier = Modifier.size(24.dp).clickable { onExit() })
-        }
+        // ── TOP BAR (glassmorphic) ──
+        GHGlassTopBar(currentTime, batteryLevel, onMenu, onExit)
 
-        // ── CATEGORY TABS (32dp pills with number badges) ──
+        // ── CATEGORY TABS (glassmorphic pills) ──
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            GHPillTab("DLavie", dlavieGames.size, selectedTab == 0) { onTabSelect(0) }
-            GHPillTab("My Library", userGames.size, selectedTab == 1) { onTabSelect(1) }
+            GHGlassPillTab("DLavie", dlavieGames.size, selectedTab == 0) { onTabSelect(0) }
+            GHGlassPillTab("My Library", userGames.size, selectedTab == 1) { onTabSelect(1) }
+            GHGlassPillTab("Favorite", favorites.size, selectedTab == 2) { onTabSelect(2) }
             if (selectedTab == 1) {
                 Spacer(Modifier.weight(1f))
                 Box(
-                    Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(GHButtonBg).clickable { apkPickerLauncher.launch("application/vnd.android.package-archive") },
+                    Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
+                        .background(GHGlassBg).border(1.dp, GHGlassBorder, RoundedCornerShape(12.dp))
+                        .clickable { apkPickerLauncher.launch("application/vnd.android.package-archive") },
                     contentAlignment = Alignment.Center
-                ) { Icon(Icons.Rounded.Add, "Add", tint = GHTextWhite, modifier = Modifier.size(20.dp)) }
+                ) { Icon(Icons.Rounded.Add, "Add", tint = GHTextWhite, modifier = Modifier.size(24.dp)) }
             }
         }
 
-        // ── GAME CAROUSEL (160x240 cards, 16dp gap, 16dp edge padding) ──
+        // ── GAME CAROUSEL (larger cards, scrollable) ──
         Box(
             Modifier.fillMaxWidth().weight(1f),
             contentAlignment = Alignment.Center
         ) {
-            if (selectedTab == 0) {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    items(dlavieGames) { game ->
-                        GHGameCard(game, ghIsPackageInstalled(context, game.packageName)) { onContextMenu(game.packageName) }
+            when (selectedTab) {
+                0 -> {
+                    val listState = rememberLazyListState()
+                    LaunchedEffect(listState) {
+                        snapshotFlow { listState.firstVisibleItemIndex }
+                            .collect { idx ->
+                                if (idx < dlavieGames.size) onFocusedGame(dlavieGames[idx])
+                            }
+                    }
+                    LazyRow(
+                        state = listState,
+                        contentPadding = PaddingValues(horizontal = 48.dp),
+                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(dlavieGames) { game ->
+                            GHGameCardLarge(
+                                game = game,
+                                isInstalled = isPackageInstalled(context, game.packageName),
+                                isFavorite = game.packageName in favorites,
+                                onGameClick = { onGameClick(game.packageName) },
+                                onToggleFavorite = {
+                                    val newFavs = ghToggleFavorite(context, game.packageName)
+                                    onFavoritesChanged(newFavs)
+                                },
+                                onRemove = {}  // DLavie games can't be removed
+                            )
+                        }
                     }
                 }
-            } else {
-                if (userGames.isEmpty()) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Rounded.SportsEsports, null, tint = GHTextDim, modifier = Modifier.size(48.dp))
-                        Spacer(Modifier.height(12.dp))
-                        Text("No games yet", color = GHTextGray, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(4.dp))
-                        Text("Tap + to import an APK", color = GHTextDim, fontSize = 11.sp)
-                    }
-                } else {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        items(userGames) { ug ->
-                            GHUserCard(ug, ghIsPackageInstalled(context, ug.packageName),
-                                onClick = {
-                                    if (ghIsPackageInstalled(context, ug.packageName)) ghLaunchGame(context, ug.packageName)
-                                    else {
-                                        val f = File(ug.sourcePath)
-                                        if (f.exists()) {
-                                            try {
-                                                val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", f)
-                                                context.startActivity(Intent(Intent.ACTION_VIEW).apply { setDataAndType(uri, "application/vnd.android.package-archive"); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION) })
-                                            } catch (_: Exception) {}
-                                        }
+                1 -> {
+                    if (userGames.isEmpty()) {
+                        GHEmptyState("No games yet", "Tap + to import an APK")
+                    } else {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 48.dp),
+                            horizontalArrangement = Arrangement.spacedBy(20.dp)
+                        ) {
+                            items(userGames) { ug ->
+                                GHUserCardLarge(
+                                    userGame = ug,
+                                    isInstalled = isPackageInstalled(context, ug.packageName),
+                                    isFavorite = ug.packageName in favorites,
+                                    onGameClick = { onGameClick(ug.packageName) },
+                                    onToggleFavorite = {
+                                        val newFavs = ghToggleFavorite(context, ug.packageName)
+                                        onFavoritesChanged(newFavs)
+                                    },
+                                    onRemove = {
+                                        val u = userGames.filter { it.packageName != ug.packageName }
+                                        saveUserGames(context, u)
+                                        // Refresh by triggering recomposition
                                     }
-                                },
-                                onLongClick = { onContextMenu(ug.packageName) }
-                            )
+                                )
+                            }
+                        }
+                    }
+                }
+                2 -> {
+                    // Favorite tab content
+                    val favGames = dlavieGames.filter { it.packageName in favorites }
+                    val favUserGames = userGames.filter { it.packageName in favorites }
+                    if (favGames.isEmpty() && favUserGames.isEmpty()) {
+                        GHEmptyState("No favorites yet", "Tap the heart icon on any game")
+                    } else {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 48.dp),
+                            horizontalArrangement = Arrangement.spacedBy(20.dp)
+                        ) {
+                            items(favGames) { game ->
+                                GHGameCardLarge(
+                                    game = game,
+                                    isInstalled = isPackageInstalled(context, game.packageName),
+                                    isFavorite = true,
+                                    onGameClick = { onGameClick(game.packageName) },
+                                    onToggleFavorite = {
+                                        val newFavs = ghToggleFavorite(context, game.packageName)
+                                        onFavoritesChanged(newFavs)
+                                    },
+                                    onRemove = {}
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        // ── BOTTOM BAR (56dp, Y+Search left, Menu+hamburger right) ──
-        Row(
-            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+        // ── BOTTOM BAR (glassmorphic) ──
+        GHGlassBottomBar(onMenu)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GAME CARD LARGE — 200x280dp, full-bleed cover, View Detail + 3-dot menu
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun GHGameCardLarge(
+    game: GameItem,
+    isInstalled: Boolean,
+    isFavorite: Boolean,
+    onGameClick: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onRemove: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    val platform = GHPlatform.fromUrl(game.apkUrl)
+
+    Column(
+        Modifier.width(200.dp).padding(4.dp)
+    ) {
+        // ── CARD COVER (200x240dp, full-bleed, glassmorphic border) ──
+        Box(
+            Modifier.width(200.dp).height(240.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Brush.linearGradient(game.coverGradient))
+                .border(1.dp, GHGlassBorderHi, RoundedCornerShape(16.dp))
+                .clickable { onGameClick() }
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                GHCtrlBtn("Y")
-                Spacer(Modifier.width(6.dp))
-                Text("Search", color = GHTextGray, fontSize = 14.sp)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { onMenu() }) {
-                Text("Menu", color = GHTextGray, fontSize = 14.sp)
-                Spacer(Modifier.width(6.dp))
-                Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(GHButtonBg), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Menu, null, tint = GHTextGray, modifier = Modifier.size(20.dp))
+            // Cover image (full bleed)
+            if (game.coverImageRes != null) {
+                Image(
+                    painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes),
+                    contentDescription = game.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(game.coverText, color = GHTextWhite, fontSize = 42.sp, fontWeight = FontWeight.Black)
                 }
             }
-        }
-    }
-}
 
-// ═══════════════════════════════════════════════════════════════════════════
-// GAME CARD — 160x240dp, full-bleed artwork, PS-style top bar + status badge
-// ═══════════════════════════════════════════════════════════════════════════
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun GHGameCard(game: GHGameItem, isInstalled: Boolean, onLongClick: () -> Unit) {
-    // 160dp × 240dp (2:3 aspect ratio), 16dp radius
-    Card(
-        Modifier.width(160.dp).height(240.dp).combinedClickable(onClick = {}, onLongClick = onLongClick),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = GHButtonBg),
-        border = null  // No border per reference
-    ) {
-        Box(Modifier.fillMaxSize()) {
-            // Full-bleed artwork (gradient + cover text)
+            // Top gradient overlay for label readability
             Box(
-                Modifier.fillMaxSize().background(Brush.linearGradient(game.coverGradient)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(game.coverText, color = GHTextWhite, fontSize = 36.sp, fontWeight = FontWeight.Black)
-            }
-
-            // Top gradient overlay for top bar readability
-            Box(
-                Modifier.fillMaxWidth().height(48.dp).align(Alignment.TopStart)
-                    .background(Brush.verticalGradient(listOf(Color.Black.copy(0.7f), Color.Transparent)))
+                Modifier.fillMaxWidth().height(56.dp).align(Alignment.TopStart)
+                    .background(Brush.verticalGradient(listOf(Color.Black.copy(0.8f), Color.Transparent)))
             )
 
-            // Bottom gradient overlay for info readability
-            Box(
-                Modifier.fillMaxWidth().height(96.dp).align(Alignment.BottomStart)
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.85f))))
-            )
-
-            // ── TOP BAR (32dp): PS platform label + status badge ──
+            // ── PLATFORM LABEL (top-left, dynamic: Android/iPhone/etc) ──
             Row(
-                Modifier.fillMaxWidth().align(Alignment.TopStart).padding(horizontal = 10.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                Modifier.align(Alignment.TopStart).padding(10.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(platform.color.copy(alpha = 0.85f))
+                    .border(1.dp, platform.color, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Platform label (PS4 style)
-                Text(game.platform, color = GHTextWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                // Status badge (green ONLINE / orange MAINT)
-                val (sc, st) = when (game.serverStatus) {
-                    GHServerStatus.ONLINE -> Pair(GHGreen, "ONLINE")
-                    GHServerStatus.MAINTENANCE -> Pair(GHAmber, "MAINT")
-                    GHServerStatus.OFFLINE -> Pair(GHRed, "OFFLINE")
-                    GHServerStatus.BUSY -> Pair(GHAmber, "BUSY")
-                }
-                Box(
-                    Modifier.clip(RoundedCornerShape(4.dp)).background(sc).padding(horizontal = 6.dp, vertical = 2.dp)
-                ) { Text(st, color = GHTextWhite, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
+                Icon(
+                    when (platform) {
+                        GHPlatform.ANDROID -> Icons.Rounded.Android
+                        GHPlatform.IOS -> Icons.Rounded.PhoneIphone
+                        GHPlatform.WINDOWS -> Icons.Rounded.DesktopWindows
+                        GHPlatform.MACOS -> Icons.Rounded.LaptopMac
+                        GHPlatform.LINUX -> Icons.Rounded.Terminal
+                        GHPlatform.UNKNOWN -> Icons.Rounded.Devices
+                    },
+                    contentDescription = platform.label,
+                    tint = GHTextWhite,
+                    modifier = Modifier.size(12.dp)
+                )
+                Text(platform.label, color = GHTextWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
 
-            // ── BOTTOM SECTION (48dp): title + subtitle + action ──
-            Column(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
-                Text(game.title, color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(2.dp))
-                Text(game.subtitle, color = GHTextGray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    GHCtrlBtn("A", size = 24)
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (isInstalled) "Launch" else "Install", color = GHTextWhite, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            // ── STATUS BADGE (top-right) ──
+            val (sc, st) = when (game.serverStatus) {
+                ServerStatus.ONLINE -> Pair(GHGreen, "ONLINE")
+                ServerStatus.MAINTENANCE -> Pair(GHAmber, "MAINT")
+                ServerStatus.OFFLINE -> Pair(GHRed, "OFFLINE")
+                ServerStatus.BUSY -> Pair(GHAmber, "BUSY")
+            }
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(10.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(sc.copy(alpha = 0.9f))
+                    .border(1.dp, sc, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(st, color = GHTextWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+
+            // ── FAVORITE ICON (bottom-right of card) ──
+            Icon(
+                if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                contentDescription = "Favorite",
+                tint = if (isFavorite) GHRed else GHTextWhite,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp).size(22.dp).clickable { onToggleFavorite() }
+            )
+
+            // Bottom gradient overlay
+            Box(
+                Modifier.fillMaxWidth().height(64.dp).align(Alignment.BottomStart)
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.9f))))
+            )
+
+            // Game title at bottom of card
+            Text(
+                game.title,
+                color = GHTextWhite,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.align(Alignment.BottomStart).padding(10.dp)
+            )
+        }
+
+        // ── VIEW DETAIL + 3-DOT MENU (below card) ──
+        Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // View Detail button (glassmorphic)
+            Box(
+                Modifier.weight(1f).height(36.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(GHGlassBg)
+                    .border(1.dp, GHGlassBorder, RoundedCornerShape(8.dp))
+                    .clickable { onGameClick() }
+                    .padding(horizontal = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Rounded.Info, null, tint = GHTextWhite, modifier = Modifier.size(14.dp))
+                    Text("View Detail", color = GHTextWhite, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+
+            // 3-dot menu button
+            Box(
+                Modifier.size(36.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(GHGlassBg)
+                    .border(1.dp, GHGlassBorder, RoundedCornerShape(8.dp))
+                    .clickable { showMenu = !showMenu }
+                    .padding(6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.MoreVert, "Menu", tint = GHTextWhite, modifier = Modifier.size(18.dp))
+            }
+        }
+
+        // ── DROPDOWN MENU (glassmorphic) ──
+        if (showMenu) {
+            Popup(
+                onDismissRequest = { showMenu = false },
+                properties = PopupProperties(focusable = true)
+            ) {
+                Column(
+                    Modifier.width(180.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(GHGlassBgHi)
+                        .border(1.dp, GHGlassBorderHi, RoundedCornerShape(12.dp))
+                        .padding(4.dp)
+                ) {
+                    // Favorite toggle
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                onToggleFavorite()
+                                showMenu = false
+                            }.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                            null,
+                            tint = if (isFavorite) GHRed else GHTextWhite,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            if (isFavorite) "Remove from Favorite" else "Add to Favorite",
+                            color = GHTextWhite, fontSize = 13.sp
+                        )
+                    }
+                    // Remove from Library
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                onRemove()
+                                showMenu = false
+                            }.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Rounded.DeleteOutline, null, tint = GHRed, modifier = Modifier.size(18.dp))
+                        Text("Remove Library", color = GHRed, fontSize = 13.sp)
+                    }
                 }
             }
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GHUserCard(userGame: GHUserGame, isInstalled: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun GHUserCardLarge(
+    userGame: UserGame,
+    isInstalled: Boolean,
+    isFavorite: Boolean,
+    onGameClick: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onRemove: () -> Unit
+) {
     val context = LocalContext.current
-    Card(
-        Modifier.width(160.dp).height(240.dp).combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = GHButtonBg),
-        border = null
-    ) {
-        Box(Modifier.fillMaxSize()) {
+    var showMenu by remember { mutableStateOf(false) }
+    val platform = GHPlatform.fromPackage(userGame.packageName)
+
+    Column(Modifier.width(200.dp).padding(4.dp)) {
+        Box(
+            Modifier.width(200.dp).height(240.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF1A1A2E), Color(0xFF16213E))))
+                .border(1.dp, GHGlassBorderHi, RoundedCornerShape(16.dp))
+                .clickable { onGameClick() }
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                val icon = remember(userGame.packageName) { try { context.packageManager.getApplicationIcon(userGame.packageName) } catch (_: Exception) { null } }
+                if (icon != null) AsyncImage(model = icon, contentDescription = userGame.title, modifier = Modifier.size(80.dp), contentScale = ContentScale.Fit)
+                else Icon(Icons.Rounded.SportsEsports, null, tint = GHTextDim, modifier = Modifier.size(56.dp))
+            }
+
+            // Platform label
+            Row(
+                Modifier.align(Alignment.TopStart).padding(10.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(platform.color.copy(alpha = 0.85f))
+                    .border(1.dp, platform.color, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(Icons.Rounded.Android, platform.label, tint = GHTextWhite, modifier = Modifier.size(12.dp))
+                Text(platform.label, color = GHTextWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+
+            // Favorite icon
+            Icon(
+                if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                "Favorite",
+                tint = if (isFavorite) GHRed else GHTextWhite,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp).size(22.dp).clickable { onToggleFavorite() }
+            )
+
+            Box(Modifier.fillMaxWidth().height(64.dp).align(Alignment.BottomStart).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.9f)))))
+            Text(userGame.title, color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.BottomStart).padding(10.dp))
+        }
+
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF1A1A2E), Color(0xFF16213E)))),
+                Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(8.dp)).background(GHGlassBg).border(1.dp, GHGlassBorder, RoundedCornerShape(8.dp)).clickable { onGameClick() }.padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
-                val icon = remember(userGame.packageName) { try { context.packageManager.getApplicationIcon(userGame.packageName) } catch (_: Exception) { null } }
-                if (icon != null) AsyncImage(model = icon, contentDescription = userGame.title, modifier = Modifier.size(56.dp), contentScale = ContentScale.Fit)
-                else Icon(Icons.Rounded.SportsEsports, null, tint = GHTextDim, modifier = Modifier.size(40.dp))
-            }
-            Box(Modifier.fillMaxWidth().height(96.dp).align(Alignment.BottomStart).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.85f)))))
-            Column(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
-                Text(userGame.title, color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(2.dp))
-                Text(userGame.packageName.take(20), color = GHTextGray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    GHCtrlBtn("A", size = 24)
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (isInstalled) "Launch" else "Install", color = GHTextWhite, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Rounded.Info, null, tint = GHTextWhite, modifier = Modifier.size(14.dp))
+                    Text("View Detail", color = GHTextWhite, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 }
+            }
+            Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(GHGlassBg).border(1.dp, GHGlassBorder, RoundedCornerShape(8.dp)).clickable { showMenu = !showMenu }.padding(6.dp), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.MoreVert, "Menu", tint = GHTextWhite, modifier = Modifier.size(18.dp))
+            }
+        }
+
+        if (showMenu) {
+            Popup(onDismissRequest = { showMenu = false }, properties = PopupProperties(focusable = true)) {
+                Column(Modifier.width(180.dp).clip(RoundedCornerShape(12.dp)).background(GHGlassBgHi).border(1.dp, GHGlassBorderHi, RoundedCornerShape(12.dp)).padding(4.dp)) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onToggleFavorite(); showMenu = false }.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if (isFavorite) GHRed else GHTextWhite, modifier = Modifier.size(18.dp))
+                        Text(if (isFavorite) "Remove from Favorite" else "Add to Favorite", color = GHTextWhite, fontSize = 13.sp)
+                    }
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onRemove(); showMenu = false }.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Rounded.DeleteOutline, null, tint = GHRed, modifier = Modifier.size(18.dp))
+                        Text("Remove Library", color = GHRed, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FAVORITE SCREEN
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun GHFavoriteScreen(
+    context: Context,
+    dlavieGames: List<GameItem>,
+    userGames: List<UserGame>,
+    favorites: Set<String>,
+    onGameClick: (String) -> Unit,
+    onBack: () -> Unit,
+    onFavoritesChanged: (Set<String>) -> Unit
+) {
+    val favGames = dlavieGames.filter { it.packageName in favorites }
+    val favUserGames = userGames.filter { it.packageName in favorites }
+
+    Column(Modifier.fillMaxSize()) {
+        GHGlassTopBar("", 0, onBack, onBack, title = "Favorite")
+        if (favGames.isEmpty() && favUserGames.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                GHEmptyState("No favorites yet", "Tap the heart icon on any game to add it here")
+            }
+        } else {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 48.dp),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 24.dp)
+            ) {
+                items(favGames) { game ->
+                    GHGameCardLarge(
+                        game = game,
+                        isInstalled = isPackageInstalled(context, game.packageName),
+                        isFavorite = true,
+                        onGameClick = { onGameClick(game.packageName) },
+                        onToggleFavorite = {
+                            val newFavs = ghToggleFavorite(context, game.packageName)
+                            onFavoritesChanged(newFavs)
+                        },
+                        onRemove = {}
+                    )
+                }
+                items(favUserGames) { ug ->
+                    GHUserCardLarge(
+                        userGame = ug,
+                        isInstalled = isPackageInstalled(context, ug.packageName),
+                        isFavorite = true,
+                        onGameClick = { onGameClick(ug.packageName) },
+                        onToggleFavorite = {
+                            val newFavs = ghToggleFavorite(context, ug.packageName)
+                            onFavoritesChanged(newFavs)
+                        },
+                        onRemove = {
+                            val u = userGames.filter { it.packageName != ug.packageName }
+                            saveUserGames(context, u)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EMPTY STATE
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun GHEmptyState(title: String, subtitle: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Rounded.SportsEsports, null, tint = GHTextDim, modifier = Modifier.size(64.dp))
+        Spacer(Modifier.height(16.dp))
+        Text(title, color = GHTextWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        Text(subtitle, color = GHTextGray, fontSize = 13.sp)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GLASSMORPHIC TOP BAR
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun GHGlassTopBar(currentTime: String, batteryLevel: Int, onMenu: () -> Unit, onExit: () -> Unit, title: String = "Dashboard") {
+    Row(
+        Modifier.fillMaxWidth().height(64.dp)
+            .background(GHGlassBg.copy(alpha = 0.6f))
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Rounded.Menu, "Menu", tint = GHTextWhite, modifier = Modifier.size(28.dp).clickable { onMenu() })
+        Spacer(Modifier.width(20.dp))
+        GHCtrlBtn("LB")
+        Spacer(Modifier.width(16.dp))
+        Text(title, color = GHTextWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+        Spacer(Modifier.width(16.dp))
+        GHCtrlBtn("RB")
+        Spacer(Modifier.width(20.dp))
+        Icon(Icons.Rounded.Search, "Search", tint = GHTextWhite, modifier = Modifier.size(24.dp))
+        if (batteryLevel > 0) {
+            Spacer(Modifier.width(12.dp))
+            Icon(Icons.Rounded.BatteryFull, "Battery", tint = GHTextWhite, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("$batteryLevel%", color = GHTextWhite, fontSize = 13.sp)
+        }
+        if (currentTime.isNotEmpty()) {
+            Spacer(Modifier.width(12.dp))
+            Icon(Icons.Rounded.Schedule, "Time", tint = GHTextWhite, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(currentTime, color = GHTextWhite, fontSize = 13.sp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Icon(Icons.Rounded.ArrowBack, "Exit", tint = GHTextWhite, modifier = Modifier.size(28.dp).clickable { onExit() })
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GLASSMORPHIC BOTTOM BAR
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun GHGlassBottomBar(onMenu: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().height(64.dp)
+            .background(GHGlassBg.copy(alpha = 0.6f))
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GHCtrlBtn("Y")
+            Text("Search", color = GHTextGray, fontSize = 14.sp)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.clickable { onMenu() }) {
+            Text("Menu", color = GHTextGray, fontSize = 14.sp)
+            Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(GHGlassBg).border(1.dp, GHGlassBorder, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Menu, null, tint = GHTextGray, modifier = Modifier.size(20.dp))
             }
         }
     }
@@ -562,77 +955,71 @@ private fun GHUserCard(userGame: GHUserGame, isInstalled: Boolean, onClick: () -
 private fun GHDownloadScreen(context: Context, onBack: () -> Unit) {
     var selectedTab by remember { mutableStateOf(0) }
     val (availStorage, totalStorage) = remember { ghGetStorageInfo() }
-    val gameStorage = remember {
-        try { val dir = File("/sdcard/Android/data/$GH_GAME_PKG_16"); if (dir.exists()) dir.walkTopDown().filter { it.isFile }.map { it.length() }.sum() else 0L } catch (_: Exception) { 0L }
-    }
+    val gameStorage = remember { try { val dir = File("/sdcard/Android/data/$GAME_PKG_16"); if (dir.exists()) dir.walkTopDown().filter { it.isFile }.map { it.length() }.sum() else 0L } catch (_: Exception) { 0L } }
 
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.ArrowBack, "Back", tint = GHTextWhite, modifier = Modifier.size(24.dp).clickable { onBack() })
-            Spacer(Modifier.width(16.dp))
-            Text("Download", color = GHTextWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        GHGlassTopBar("", 0, onBack, onBack, title = "Download")
+        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GHGlassPillTab("Download Task", 0, selectedTab == 0) { selectedTab = 0 }
+            GHGlassPillTab("Game Management", 0, selectedTab == 1) { selectedTab = 1 }
         }
-
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GHPillTab("Download Task", 0, selectedTab == 0) { selectedTab = 0 }
-            GHPillTab("Game Management", 0, selectedTab == 1) { selectedTab = 1 }
-        }
-
-        Column(Modifier.fillMaxWidth().weight(1f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            // Storage card
-            Surface(shape = RoundedCornerShape(12.dp), color = GHButtonBg) {
-                Column(Modifier.padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().weight(1f).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            // Storage card — glassmorphic
+            Surface(shape = RoundedCornerShape(16.dp), color = GHGlassBg, border = BorderStroke(1.dp, GHGlassBorder)) {
+                Column(Modifier.padding(20.dp)) {
                     Text("STORAGE", color = GHTextGray, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Game", color = GHTextDim, fontSize = 12.sp); Text(ghFormatBytes(gameStorage), color = GHTextWhite, fontSize = 12.sp) }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Other", color = GHTextDim, fontSize = 12.sp); Text(ghFormatBytes(totalStorage - availStorage - gameStorage), color = GHTextWhite, fontSize = 12.sp) }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Available", color = GHTextDim, fontSize = 12.sp); Text(ghFormatBytes(availStorage), color = GHGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Game", color = GHTextGray, fontSize = 13.sp); Text(ghFormatBytes(gameStorage), color = GHTextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Other", color = GHTextGray, fontSize = 13.sp); Text(ghFormatBytes(totalStorage - availStorage - gameStorage), color = GHTextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Available", color = GHTextGray, fontSize = 13.sp); Text(ghFormatBytes(availStorage), color = GHGreen, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                    Spacer(Modifier.height(12.dp))
                     val usedPct = if (totalStorage > 0) ((totalStorage - availStorage).toFloat() / totalStorage.toFloat()) else 0f
-                    LinearProgressIndicator(progress = { usedPct }, modifier = Modifier.fillMaxWidth().height(4.dp), color = GHBlue, trackColor = GHDivider)
+                    Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(GHGlassBorder)) {
+                        Box(Modifier.fillMaxWidth(usedPct).fillMaxHeight().background(Brush.linearGradient(listOf(GHAccent.copy(0.7f), GHAccent))))
+                    }
                 }
             }
-
             if (selectedTab == 0) {
-                Text("Download Soon (0)", color = GHTextGray, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                Surface(shape = RoundedCornerShape(12.dp), color = GHButtonBg, modifier = Modifier.fillMaxWidth()) {
-                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { Text("No Queued Tasks", color = GHTextDim, fontSize = 13.sp) }
+                Text("Download Soon (0)", color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Surface(shape = RoundedCornerShape(16.dp), color = GHGlassBg, border = BorderStroke(1.dp, GHGlassBorder), modifier = Modifier.fillMaxWidth()) {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { Text("No Queued Tasks", color = GHTextDim, fontSize = 13.sp) }
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Completed", color = GHTextGray, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Completed", color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     Text("Clear All", color = GHAccent, fontSize = 12.sp, modifier = Modifier.clickable { })
                 }
-                Surface(shape = RoundedCornerShape(12.dp), color = GHButtonBg, modifier = Modifier.fillMaxWidth()) {
-                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { Text("No completed tasks", color = GHTextDim, fontSize = 13.sp) }
+                Surface(shape = RoundedCornerShape(16.dp), color = GHGlassBg, border = BorderStroke(1.dp, GHGlassBorder), modifier = Modifier.fillMaxWidth()) {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { Text("No completed tasks", color = GHTextDim, fontSize = 13.sp) }
                 }
             } else {
-                val games = listOf(Triple("FIFA 16 Mobile", GH_GAME_PKG_16, "DLavie 26 Mod"), Triple("FIFA 15 Mobile", GH_GAME_PKG_15, "DLavie 15 Mod"))
+                val games = listOf(Triple("FIFA 16 Mobile", GAME_PKG_16, "DLavie 26 Mod"), Triple("FIFA 15 Mobile", GAME_PKG_15, "DLavie 15 Mod"))
                 games.forEach { (title, pkg, subtitle) ->
-                    val installed = ghIsPackageInstalled(context, pkg)
-                    Surface(shape = RoundedCornerShape(12.dp), color = GHButtonBg, modifier = Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(GHDrawerBg), contentAlignment = Alignment.Center) { Text(title.take(2), color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Black) }
-                            Spacer(Modifier.width(12.dp))
+                    val installed = isPackageInstalled(context, pkg)
+                    Surface(shape = RoundedCornerShape(16.dp), color = GHGlassBg, border = BorderStroke(1.dp, GHGlassBorder), modifier = Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(GHGlassBgHi).border(1.dp, GHGlassBorder, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) { Text(title.take(2), color = GHTextWhite, fontSize = 16.sp, fontWeight = FontWeight.Black) }
+                            Spacer(Modifier.width(14.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(title, color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                Text(subtitle, color = GHTextDim, fontSize = 11.sp)
-                                Text(if (installed) "Installed" else "Not installed", color = if (installed) GHGreen else GHTextDim, fontSize = 10.sp)
+                                Text(title, color = GHTextWhite, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.height(2.dp))
+                                Text(subtitle, color = GHTextGray, fontSize = 12.sp)
+                                Spacer(Modifier.height(2.dp))
+                                Text(if (installed) "Installed" else "Not installed", color = if (installed) GHGreen else GHTextDim, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                             }
                             if (installed) {
-                                IconButton(onClick = { try { context.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkg")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {} }) { Icon(Icons.Rounded.Delete, "Uninstall", tint = GHRed.copy(0.7f), modifier = Modifier.size(20.dp)) }
+                                IconButton(onClick = { try { context.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkg")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {} }) { Icon(Icons.Rounded.Delete, "Uninstall", tint = GHRed.copy(0.7f), modifier = Modifier.size(22.dp)) }
                             } else {
-                                IconButton(onClick = {}) { Icon(Icons.Rounded.Download, "Install", tint = GHAccent, modifier = Modifier.size(20.dp)) }
+                                IconButton(onClick = {}) { Icon(Icons.Rounded.Download, "Install", tint = GHAccent, modifier = Modifier.size(22.dp)) }
                             }
                         }
                     }
                 }
             }
         }
-
-        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.Center) {
-            Row(verticalAlignment = Alignment.CenterVertically) { GHCtrlBtn("B"); Spacer(Modifier.width(6.dp)); Text("Back", color = GHTextGray, fontSize = 12.sp, modifier = Modifier.clickable { onBack() }) }
-        }
+        GHGlassBottomBar(onBack)
     }
 }
 
@@ -653,65 +1040,69 @@ private fun GHSettingsScreen(context: Context, onBack: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.ArrowBack, "Back", tint = GHTextWhite, modifier = Modifier.size(24.dp).clickable { onBack() })
-            Spacer(Modifier.width(16.dp))
-            Text("Settings", color = GHTextWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-        }
-        Column(Modifier.fillMaxWidth().weight(1f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("GAMEPAD", color = GHTextDim, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-            Surface(shape = RoundedCornerShape(12.dp), color = GHButtonBg) {
-                Column(Modifier.padding(16.dp)) {
+        GHGlassTopBar("", 0, onBack, onBack, title = "Settings")
+        Column(Modifier.fillMaxWidth().weight(1f).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("GAMEPAD", color = GHTextGray, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            Surface(shape = RoundedCornerShape(16.dp), color = GHGlassBg, border = BorderStroke(1.dp, GHGlassBorder)) {
+                Column(Modifier.padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.SportsEsports, null, tint = if (gamepadCount > 0) GHGreen else GHTextDim, modifier = Modifier.size(24.dp)); Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) { Text("Gamepad Connection", color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold); Text(if (gamepadCount > 0) "$gamepadCount gamepad(s) connected" else "No gamepad detected", color = if (gamepadCount > 0) GHGreen else GHTextDim, fontSize = 12.sp) }
-                        Box(Modifier.size(10.dp).clip(CircleShape).background(if (gamepadCount > 0) GHGreen else GHTextDim))
+                        Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(if (gamepadCount > 0) GHAccent.copy(0.15f) else GHGlassBgHi).border(1.dp, if (gamepadCount > 0) GHAccent else GHGlassBorder, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.SportsEsports, null, tint = if (gamepadCount > 0) GHAccent else GHTextDim, modifier = Modifier.size(24.dp))
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) { Text("Gamepad Connection", color = GHTextWhite, fontSize = 15.sp, fontWeight = FontWeight.SemiBold); Text(if (gamepadCount > 0) "$gamepadCount gamepad(s) connected" else "No gamepad detected", color = if (gamepadCount > 0) GHGreen else GHTextGray, fontSize = 12.sp) }
+                        Box(Modifier.size(12.dp).clip(CircleShape).background(if (gamepadCount > 0) GHGreen else GHTextDim))
                     }
-                    if (gamepadNames.isNotEmpty()) { Spacer(Modifier.height(10.dp)); gamepadNames.forEach { n -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) { Box(Modifier.size(6.dp).clip(CircleShape).background(GHGreen)); Spacer(Modifier.width(8.dp)); Text(n, color = GHTextGray, fontSize = 12.sp) } } }
+                    if (gamepadNames.isNotEmpty()) { Spacer(Modifier.height(12.dp)); gamepadNames.forEach { n -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) { Box(Modifier.size(8.dp).clip(CircleShape).background(GHGreen)); Spacer(Modifier.width(10.dp)); Text(n, color = GHTextGray, fontSize = 12.sp) } } }
                 }
             }
-            Text("DISPLAY", color = GHTextDim, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-            Surface(shape = RoundedCornerShape(12.dp), color = GHButtonBg) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.ScreenRotation, null, tint = GHTextGray, modifier = Modifier.size(24.dp)); Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) { Text("Auto Rotate", color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold); Text("Landscape mode in GameHub", color = GHTextDim, fontSize = 12.sp) }
-                    Box(Modifier.size(24.dp).clip(CircleShape).background(GHGreen), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Check, null, tint = Color.Black, modifier = Modifier.size(16.dp)) }
+            Text("DISPLAY", color = GHTextGray, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            Surface(shape = RoundedCornerShape(16.dp), color = GHGlassBg, border = BorderStroke(1.dp, GHGlassBorder)) {
+                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(GHAccent.copy(0.15f)).border(1.dp, GHAccent, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.ScreenRotation, null, tint = GHAccent, modifier = Modifier.size(24.dp)) }
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) { Text("Auto Rotate", color = GHTextWhite, fontSize = 15.sp, fontWeight = FontWeight.SemiBold); Text("Landscape mode in GameHub", color = GHTextGray, fontSize = 12.sp) }
+                    Box(Modifier.size(28.dp).clip(CircleShape).background(GHGreen).border(1.dp, GHGreen.copy(0.5f), CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp)) }
                 }
             }
-            Text("ABOUT", color = GHTextDim, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-            Surface(shape = RoundedCornerShape(12.dp), color = GHButtonBg) {
-                Column(Modifier.padding(16.dp)) { Text("DLavie GameHub", color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold); Text("Cloud Gaming Platform v7.9.83", color = GHTextDim, fontSize = 12.sp) }
+            Text("ABOUT", color = GHTextGray, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            Surface(shape = RoundedCornerShape(16.dp), color = GHGlassBg, border = BorderStroke(1.dp, GHGlassBorder)) {
+                Column(Modifier.padding(20.dp)) { Text("DLavie GameHub", color = GHTextWhite, fontSize = 15.sp, fontWeight = FontWeight.SemiBold); Spacer(Modifier.height(4.dp)); Text("Cloud Gaming Platform v7.9.84", color = GHTextGray, fontSize = 12.sp) }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.Center) { Row(verticalAlignment = Alignment.CenterVertically) { GHCtrlBtn("B"); Spacer(Modifier.width(6.dp)); Text("Back", color = GHTextGray, fontSize = 12.sp, modifier = Modifier.clickable { onBack() }) } }
+        GHGlassBottomBar(onBack)
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SIDE DRAWER — 280dp wide, dark blue-gray #121826, teal avatar
+// SIDE DRAWER — with Favorite tab
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun GHDrawer(currentScreen: Int, onSelect: (Int) -> Unit, onDismiss: () -> Unit, onExit: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(0.5f)).clickable { onDismiss() }) {
-        Box(Modifier.fillMaxHeight().width(280.dp).background(GHDrawerBg).clickable {}) {
-            Column(Modifier.fillMaxSize().padding(20.dp)) {
-                // Profile section (56dp avatar, teal bg)
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(0.6f)).clickable { onDismiss() }) {
+        Box(Modifier.fillMaxHeight().width(320.dp).background(Color(0xFF121826)).clickable {}) {
+            Column(Modifier.fillMaxSize().padding(24.dp)) {
+                // Profile
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(56.dp).clip(CircleShape).background(GHAccent), contentAlignment = Alignment.Center) { Text("D", color = GHTextWhite, fontSize = 22.sp, fontWeight = FontWeight.Black) }
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text("DLavie Player", color = GHTextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        Text("@user", color = GHTextDim, fontSize = 12.sp)
-                    }
+                    Box(Modifier.size(64.dp).clip(CircleShape).background(Brush.linearGradient(listOf(GHAccent, Color(0xFF009688)))), contentAlignment = Alignment.Center) { Text("D", color = GHTextWhite, fontSize = 26.sp, fontWeight = FontWeight.Black) }
+                    Spacer(Modifier.width(16.dp))
+                    Column { Text("DLavie Player", color = GHTextWhite, fontSize = 17.sp, fontWeight = FontWeight.SemiBold); Text("@user", color = GHTextGray, fontSize = 12.sp) }
                 }
                 Spacer(Modifier.height(28.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(GHGlassBorder))
+                Spacer(Modifier.height(16.dp))
                 GHDrawerItem(Icons.Rounded.Home, "Home", currentScreen == 0) { onSelect(0) }
                 GHDrawerItem(Icons.Rounded.SportsEsports, "Game", currentScreen == 0) { onSelect(0) }
                 GHDrawerItem(Icons.Rounded.Download, "Download", currentScreen == 1) { onSelect(1) }
+                GHDrawerItem(Icons.Rounded.Favorite, "Favorite", currentScreen == 3) { onSelect(3) }
                 GHDrawerItem(Icons.Rounded.Settings, "Settings", currentScreen == 2) { onSelect(2) }
                 Spacer(Modifier.weight(1f))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(GHGlassBorder))
+                Spacer(Modifier.height(12.dp))
                 GHDrawerItem(Icons.Rounded.Close, "Exit GameHub", false) { onExit() }
+                Spacer(Modifier.height(8.dp))
+                Text("DLavie GameHub v282", color = GHTextDim, fontSize = 11.sp)
             }
         }
     }
@@ -720,75 +1111,43 @@ private fun GHDrawer(currentScreen: Int, onSelect: (Int) -> Unit, onDismiss: () 
 @Composable
 private fun GHDrawerItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (selected) GHButtonBg else Color.Transparent).clickable { onClick() }.padding(horizontal = 12.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (selected) GHAccent.copy(0.15f) else Color.Transparent).clickable { onClick() }.padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, tint = if (selected) GHAccent else GHTextGray, modifier = Modifier.size(24.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(label, color = if (selected) GHTextWhite else GHTextGray, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+        Icon(icon, null, tint = if (selected) GHAccent else GHTextGray, modifier = Modifier.size(28.dp))
+        Spacer(Modifier.width(16.dp))
+        Text(label, color = if (selected) GHTextWhite else GHTextGray, fontSize = 15.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SHARED COMPONENTS — exact GameHub style
+// SHARED COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * LB/RB/Y/B/A control button — 40x40dp dark gray #1E1E1E rounded square
- * (matches GameHub Guangzhou reference exactly)
- */
 @Composable
 private fun GHCtrlBtn(label: String, size: Int = 40) {
     Box(
-        Modifier.size(size.dp).clip(RoundedCornerShape(8.dp)).background(GHButtonBg),
+        Modifier.size(size.dp).clip(RoundedCornerShape(8.dp))
+            .background(GHGlassBg).border(1.dp, GHGlassBorder, RoundedCornerShape(8.dp)),
         contentAlignment = Alignment.Center
     ) { Text(label, color = GHTextWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
 }
 
-/**
- * Category pill tab — 32dp height, 16dp radius, number badge for count
- */
 @Composable
-private fun GHPillTab(label: String, count: Int, selected: Boolean, onClick: () -> Unit) {
+private fun GHGlassPillTab(label: String, count: Int, selected: Boolean, onClick: () -> Unit) {
     Row(
-        Modifier.height(32.dp).clip(RoundedCornerShape(16.dp))
-            .background(if (selected) GHButtonBg else Color.Transparent)
+        Modifier.height(36.dp).clip(RoundedCornerShape(18.dp))
+            .background(if (selected) GHAccent.copy(0.2f) else GHGlassBg)
+            .border(1.dp, if (selected) GHAccent else GHGlassBorder, RoundedCornerShape(18.dp))
             .clickable { onClick() }.padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(label, color = if (selected) GHTextWhite else GHTextDim, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+        Text(label, color = if (selected) GHTextWhite else GHTextGray, fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
         if (count > 0) {
-            Spacer(Modifier.width(6.dp))
-            Box(Modifier.size(20.dp).clip(CircleShape).background(if (selected) GHAccent else GHDivider), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(20.dp).clip(CircleShape).background(if (selected) GHAccent else GHGlassBgHi), contentAlignment = Alignment.Center) {
                 Text(count.toString(), color = GHTextWhite, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CONTEXT MENU
-// ═══════════════════════════════════════════════════════════════════════════
-
-@Composable
-private fun GHContextMenu(pkg: String, isUser: Boolean, installed: Boolean, onDismiss: () -> Unit, onLaunch: () -> Unit, onView: () -> Unit, onUninstall: () -> Unit, onRemove: () -> Unit, onClear: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Game Options", color = GHTextWhite, fontWeight = FontWeight.Black) },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (installed) { GHMenuItem(Icons.Rounded.PlayArrow, "Launch Game", onLaunch) }
-            GHMenuItem(Icons.Rounded.Info, "View Details", onView)
-            if (!isUser && installed) { GHMenuItem(Icons.Rounded.CleaningServices, "Clear Data Only", onClear) }
-            if (isUser) { if (installed) { GHMenuItem(Icons.Rounded.Delete, "Uninstall Game", onUninstall) }; GHMenuItem(Icons.Rounded.RemoveCircle, "Remove from Library", onRemove) }
-        } },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = GHTextGray) } },
-        containerColor = Color(0xFF111111)
-    )
-}
-
-@Composable
-private fun GHMenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = GHTextGray, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(14.dp)); Text(label, color = GHTextWhite, fontSize = 14.sp)
     }
 }
