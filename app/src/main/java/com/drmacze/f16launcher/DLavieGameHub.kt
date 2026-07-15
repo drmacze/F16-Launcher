@@ -60,16 +60,16 @@ import java.util.*
 // Glassmorphic top/bottom bars. Featured game card + horizontal grid.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ── Design tokens ──
-private val GHBg = Color(0xFF000000)
-private val GHGlassBar = Color(0x1A000000)       // 10% black for glass bars
-private val GHGlassCard = Color(0x26FFFFFF)       // 15% white for glass cards
-private val GHGlassCardHi = Color(0x40FFFFFF)     // 25% white for focused
-private val GHBorder = Color(0x1AFFFFFF)          // 10% white border
+// ── Design tokens (v7.9.97 — deeper black, stronger glass) ──
+private val GHBg = Color(0xFF000000)              // Pure black
+private val GHGlassBar = Color(0x33000000)        // 20% black for glass bars (stronger)
+private val GHGlassCard = Color(0x1FFFFFFF)       // 12% white for glass cards (subtler)
+private val GHGlassCardHi = Color(0x33FFFFFF)     // 20% white for focused
+private val GHBorder = Color(0x14FFFFFF)          // 8% white border (thinner)
 private val GHBorderHi = Color(0x40FFFFFF)        // 25% white border
 private val GHTextWhite = Color(0xFFFFFFFF)
-private val GHTextGray = Color(0xFFAAAAAA)
-private val GHTextDim = Color(0xFF666666)
+private val GHTextGray = Color(0xFFB0B0B0)        // Lighter gray for better contrast
+private val GHTextDim = Color(0xFF707070)
 private val GHAccent = Color(0xFF00E5FF)          // Cyan accent
 private val GHGreen = Color(0xFF00FF00)           // Progress/achievement
 private val GHGold = Color(0xFFFFD700)            // Badges/ratings
@@ -150,10 +150,16 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
 fun DLavieGameHub(
     onExit: () -> Unit = {},
     onNav: (Page) -> Unit = {},
-    onGameClick: (String) -> Unit = {}
+    onGameClick: (String) -> Unit = {},
+    api: CommunityApi? = null
 ) {
     val context = LocalContext.current
     var showTransition by remember { mutableStateOf(true) }
+
+    // v7.9.97: Real profile data dari CommunityApi
+    val displayName = remember { api?.displayName()?.ifEmpty { "DLavie Player" } ?: "DLavie Player" }
+    val avatarUrl = remember { api?.avatarUrl() ?: "" }
+    val role = remember { api?.role() ?: "member" }
 
     // Immersive mode
     DisposableEffect(Unit) {
@@ -216,7 +222,10 @@ fun DLavieGameHub(
                         batteryLevel = batteryLevel,
                         selectedTab = selectedTab,
                         onTabSelect = { selectedTab = it },
-                        onExit = onExit
+                        onExit = onExit,
+                        displayName = displayName,
+                        avatarUrl = avatarUrl,
+                        role = role
                     )
 
                     // CONTENT (fills remaining space)
@@ -274,25 +283,42 @@ private fun GlassTopBar(
     batteryLevel: Int,
     selectedTab: Int,
     onTabSelect: (Int) -> Unit,
-    onExit: () -> Unit
+    onExit: () -> Unit,
+    displayName: String = "DLavie Player",
+    avatarUrl: String = "",
+    role: String = "member"
 ) {
     Column(Modifier.fillMaxWidth()) {
         // Row 1: Profile + time
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            // Profile avatar
+            // Profile avatar — real avatar dari URL atau fallback initial
             Box(Modifier.size(32.dp).clip(CircleShape).background(GHAccent).border(2.dp, GHTextWhite, CircleShape), contentAlignment = Alignment.Center) {
-                Text("D", color = GHBg, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                if (avatarUrl.isNotEmpty()) {
+                    AsyncImage(model = avatarUrl, contentDescription = "Avatar", modifier = Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+                } else {
+                    Text(displayName.take(1).uppercase(), color = GHBg, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
             }
             Spacer(Modifier.width(8.dp))
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("DLavie Player", color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text(displayName, color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 120.dp))
                     Spacer(Modifier.width(6.dp))
-                    Box(Modifier.clip(RoundedCornerShape(4.dp)).background(GHBg).border(1.dp, GHGold, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) {
-                        Text("ULTIMATE", color = GHGold, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    // Role badge — dynamic dari database
+                    val badgeText = when (role.lowercase()) {
+                        "admin" -> "ADMIN"
+                        "developer" -> "DEV"
+                        "owner" -> "OWNER"
+                        "moderator" -> "MOD"
+                        else -> ""
+                    }
+                    if (badgeText.isNotEmpty()) {
+                        Box(Modifier.clip(RoundedCornerShape(4.dp)).background(GHBg).border(1.dp, GHGold, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) {
+                            Text(badgeText, color = GHGold, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
-                Text("18291 points", color = GHTextGray, fontSize = 11.sp)
+                Text("@${api?.username()?.ifBlank { "user" } ?: "user"}", color = GHTextGray, fontSize = 11.sp)
             }
             Spacer(Modifier.weight(1f))
             // Time + battery
