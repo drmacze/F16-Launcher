@@ -714,7 +714,7 @@ fun DLavieModernApp(initialPostId: String? = null) {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             runCatching {
-                val info = AppUpdateChecker.checkForUpdate(api)
+                val info = AppUpdateChecker.checkForUpdate(api, context)
                 if (info != null && info.isUpdateAvailable) {
                     // v7.9.42: Auto-reset dismissed kalau versi baru tersedia
                     // Jadi kalau user dismiss v208, popup v210 tetap muncul
@@ -2011,7 +2011,7 @@ fun MainShell(
             // Run auto-check update di MainShell scope
             withContext(Dispatchers.IO) {
                 runCatching {
-                    val info = AppUpdateChecker.checkForUpdate(api)
+                    val info = AppUpdateChecker.checkForUpdate(api, context)
                     if (info != null && info.isUpdateAvailable) {
                         val prefs = context.getSharedPreferences("dlavie_update_prefs", android.content.Context.MODE_PRIVATE)
                         val dismissedVersion = prefs.getInt("dismissed_version_code", -1)
@@ -8899,7 +8899,7 @@ fun AppUpdatePopup(
                     ) {
                         Icon(Icons.Rounded.Download, null, tint = CandyCyan, modifier = Modifier.size(16.dp))
                         Column {
-                            Text("Ukuran Update", color = SubText, fontSize = 10.sp)
+                            Text("Ukuran Perubahan", color = SubText, fontSize = 10.sp)
                             Text(info.apkSizeMb, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         }
                         Spacer(Modifier.weight(1f))

@@ -52,7 +52,7 @@ object AppUpdateChecker {
      * @param api CommunityApi instance (untuk auth + role check)
      * @return UpdateInfo atau null kalau tidak ada update
      */
-    suspend fun checkForUpdate(api: CommunityApi): UpdateInfo? {
+    suspend fun checkForUpdate(api: CommunityApi, context: Context? = null): UpdateInfo? {
         val currentCode = BuildConfig.VERSION_CODE
 
         // ── Strategy 1: Cek dari Supabase app_releases (primary) ──
@@ -71,8 +71,8 @@ object AppUpdateChecker {
                     val apkUrl = release.optString("apk_download_url", "")
                     if (apkUrl.isNotBlank()) {
                         android.util.Log.i("AppUpdate", "Update found via Supabase: v$versionCode")
-                        // v7.9.90: Fetch APK size dari GitHub release
-                        val sizeMb = fetchApkSizeMb(apkUrl)
+                        // v7.9.93: Fetch update DELTA size (installed vs new), bukan full APK size
+                        val sizeMb = if (context != null) fetchUpdateDeltaSize(context, apkUrl) else ""
                         return UpdateInfo(
                             versionName = release.optString("version_name", "unknown"),
                             versionCode = versionCode,
@@ -112,7 +112,7 @@ object AppUpdateChecker {
                         val apkUrl = launcher.optString("apk_url", "")
                         if (apkUrl.isNotBlank()) {
                             android.util.Log.i("AppUpdate", "Update found via manifest: v$latestCode")
-                            val sizeMb = fetchApkSizeMb(apkUrl)
+                            val sizeMb = if (context != null) fetchUpdateDeltaSize(context, apkUrl) else ""
                             return UpdateInfo(
                                 versionName = launcher.optString("latest_version_name", "unknown"),
                                 versionCode = latestCode,
@@ -258,11 +258,54 @@ object AppUpdateChecker {
     }
 
     /**
-     * v7.9.90: Fetch APK size dari GitHub release URL.
-     * Pakai HTTP HEAD request untuk dapat Content-Length header.
-     * Return formatted string seperti "28.3 MB" atau "" kalau gagal.
+     * v7.9.93: Fetch UPDATE DELTA size — perubahan size dari APK terinstall ke APK baru.
+     *
+     * Cara kerja:
+     * 1. Get size APK yang sedang terinstall (PackageInfo.sourceDir → File.length())
+     * 2. Get size APK baru via HTTP HEAD request (follow redirects)
+     * 3. Delta = new_size - installed_size
+     * 4. Format sebagai "+X.X MB" (naik) atau "-X.X MB" (turun) atau "0 MB" (sama)
+     *
+     * Ini menampilkan SIZE PERUBAHAN, bukan full APK download size.
+     * User tahu "oh cuma 4MB perubahan" bukan "28MB full download".
+     *
+     * Return formatted string atau "" kalau gagal.
      */
-    private fun fetchApkSizeMb(apkUrl: String): String {
+    private fun fetchUpdateDeltaSize(context: Context, apkUrl: String): String {
+        return try {
+            // Step 1: Get installed APK size
+            val installedSize = try {
+                val pkgInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+                java.io.File(pkgInfo.applicationInfo?.sourceDir ?: "").length()
+            } catch (e: Exception) {
+                android.util.Log.w("AppUpdate", "Cannot get installed APK size: ${e.message}")
+                0L
+            }
+
+            // Step 2: Get new APK size via HEAD request
+            val newSize = fetchRemoteApkSizeBytes(apkUrl)
+
+            if (newSize <= 0L) {
+                android.util.Log.w("AppUpdate", "Cannot fetch remote APK size")
+                return ""
+            }
+
+            // Step 3: Calculate delta
+            val deltaBytes = newSize - installedSize
+            android.util.Log.i("AppUpdate", "Delta: installed=${installedSize} bytes, new=${newSize} bytes, delta=${deltaBytes} bytes")
+
+            // Step 4: Format
+            formatDeltaSize(deltaBytes)
+        } catch (e: Throwable) {
+            android.util.Log.w("AppUpdate", "fetchUpdateDeltaSize failed: ${e.message}")
+            ""
+        }
+    }
+
+    /**
+     * Fetch raw byte size dari remote APK URL via HTTP HEAD (follow redirects).
+     */
+    private fun fetchRemoteApkSizeBytes(apkUrl: String): Long {
         return try {
             var currentUrl = apkUrl
             var redirectCount = 0
@@ -285,21 +328,38 @@ object AppUpdateChecker {
                     continue
                 }
                 if (responseCode in 200..299) {
-                    val sizeBytes = conn.contentLengthLong
+                    val size = conn.contentLengthLong
                     conn.disconnect()
-                    return if (sizeBytes > 0) {
-                        val sizeMb = sizeBytes / (1024.0 * 1024.0)
-                        if (sizeMb >= 1.0) "%.1f MB".format(sizeMb)
-                        else "%d KB".format(sizeBytes / 1024)
-                    } else ""
+                    return size
                 }
                 conn.disconnect()
                 break
             }
-            ""
+            0L
         } catch (e: Throwable) {
-            android.util.Log.w("AppUpdate", "fetchApkSizeMb failed: ${e.message}")
-            ""
+            android.util.Log.w("AppUpdate", "fetchRemoteApkSizeBytes failed: ${e.message}")
+            0L
+        }
+    }
+
+    /**
+     * Format delta bytes ke human-readable string.
+     * Positif (naik): "+4.2 MB"
+     * Negatif (turun): "-1.3 MB"
+     * Nol: "0 MB"
+     * Kecil (< 1MB): "+450 KB"
+     */
+    private fun formatDeltaSize(deltaBytes: Long): String {
+        val absBytes = kotlin.math.abs(deltaBytes)
+        val sign = if (deltaBytes > 0) "+" else if (deltaBytes < 0) "-" else ""
+        return when {
+            absBytes >= 1_000_000 -> {
+                val mb = absBytes / (1024.0 * 1024.0)
+                "${sign}%.1f MB".format(mb)
+            }
+            absBytes >= 1_000 -> "${sign}${absBytes / 1024} KB"
+            absBytes > 0 -> "${sign}${absBytes} B"
+            else -> "0 MB"
         }
     }
 }

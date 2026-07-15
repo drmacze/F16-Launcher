@@ -121,7 +121,7 @@ fun CheckUpdateScreen(
                 delay(400)
 
                 val info = withContext(Dispatchers.IO) {
-                    AppUpdateChecker.checkForUpdate(api)
+                    AppUpdateChecker.checkForUpdate(api, context)
                 }
 
                 streamMessage = stageMessages[CheckStage.SEARCHING]!![1]
