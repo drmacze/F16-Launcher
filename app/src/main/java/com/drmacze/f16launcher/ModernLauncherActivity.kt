@@ -670,10 +670,6 @@ fun DLavieModernApp(initialPostId: String? = null) {
     var manualCheckLoading by remember { mutableStateOf(false) }
     var manualCheckMessage by remember { mutableStateOf("") }
     val updateScope = rememberCoroutineScope()
-    // v7.9.92: Check Update screen + warning toast
-    var showCheckUpdateScreen by remember { mutableStateOf(false) }
-    var showUpdateWarningToast by remember { mutableStateOf(false) }
-    var warningToastDismissed by remember { mutableStateOf(false) }
 
     // ── Staff bypass (Bug 3): admin/developer/moderator/owner skip maintenance entirely ──
     val userRole = api.role()
@@ -1253,6 +1249,10 @@ fun MainShell(
     // v7.9.79: GameHub sebagai STANDALONE OVERLAY (bukan bagian dari pager)
     // User tidak bisa swipe keluar — harus tekan tombol exit di GameHub
     var showGameHub by remember { mutableStateOf(false) }
+    // v7.9.92: Check Update screen + warning toast (MainShell scope)
+    var showCheckUpdateScreen by remember { mutableStateOf(false) }
+    var showUpdateWarningToast by remember { mutableStateOf(false) }
+    var warningToastDismissed by remember { mutableStateOf(false) }
 
     // v7.9.79: Orientation control — ONLY GameHub rotates to landscape
     // Pakai LaunchedEffect (bukan DisposableEffect di DLavieGameHub) supaya
