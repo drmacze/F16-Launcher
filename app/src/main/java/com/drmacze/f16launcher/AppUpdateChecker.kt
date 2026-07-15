@@ -36,7 +36,8 @@ object AppUpdateChecker {
         val releaseNotes: String,
         val apkUrl: String,
         val isPublished: Boolean,
-        val isUpdateAvailable: Boolean
+        val isUpdateAvailable: Boolean,
+        val apkSizeMb: String = ""  // v7.9.90: APK size for update popup
     )
 
     /**
@@ -70,13 +71,16 @@ object AppUpdateChecker {
                     val apkUrl = release.optString("apk_download_url", "")
                     if (apkUrl.isNotBlank()) {
                         android.util.Log.i("AppUpdate", "Update found via Supabase: v$versionCode")
+                        // v7.9.90: Fetch APK size dari GitHub release
+                        val sizeMb = fetchApkSizeMb(apkUrl)
                         return UpdateInfo(
                             versionName = release.optString("version_name", "unknown"),
                             versionCode = versionCode,
                             releaseNotes = release.optString("changelog", ""),
                             apkUrl = apkUrl,
                             isPublished = release.optBoolean("is_published", false),
-                            isUpdateAvailable = true
+                            isUpdateAvailable = true,
+                            apkSizeMb = sizeMb
                         )
                     }
                 }
@@ -108,13 +112,15 @@ object AppUpdateChecker {
                         val apkUrl = launcher.optString("apk_url", "")
                         if (apkUrl.isNotBlank()) {
                             android.util.Log.i("AppUpdate", "Update found via manifest: v$latestCode")
+                            val sizeMb = fetchApkSizeMb(apkUrl)
                             return UpdateInfo(
                                 versionName = launcher.optString("latest_version_name", "unknown"),
                                 versionCode = latestCode,
                                 releaseNotes = launcher.optString("release_notes", "Update terbaru tersedia").toString(),
                                 apkUrl = apkUrl,
                                 isPublished = true,
-                                isUpdateAvailable = true
+                                isUpdateAvailable = true,
+                                apkSizeMb = sizeMb
                             )
                         }
                     }
@@ -248,6 +254,52 @@ object AppUpdateChecker {
         } catch (e: Throwable) {
             android.util.Log.e("DLavie", "installApk: FileProvider failed", e)
             false
+        }
+    }
+
+    /**
+     * v7.9.90: Fetch APK size dari GitHub release URL.
+     * Pakai HTTP HEAD request untuk dapat Content-Length header.
+     * Return formatted string seperti "28.3 MB" atau "" kalau gagal.
+     */
+    private fun fetchApkSizeMb(apkUrl: String): String {
+        return try {
+            var currentUrl = apkUrl
+            var redirectCount = 0
+            while (redirectCount < 5) {
+                val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = false
+                    requestMethod = "HEAD"
+                    connectTimeout = 8_000
+                    readTimeout = 10_000
+                    setRequestProperty("User-Agent", "DLavie-Launcher")
+                    connect()
+                }
+                val responseCode = conn.responseCode
+                if (responseCode in 300..399) {
+                    val location = conn.getHeaderField("Location")
+                    conn.disconnect()
+                    if (location.isNullOrBlank()) break
+                    currentUrl = location
+                    redirectCount++
+                    continue
+                }
+                if (responseCode in 200..299) {
+                    val sizeBytes = conn.contentLengthLong
+                    conn.disconnect()
+                    return if (sizeBytes > 0) {
+                        val sizeMb = sizeBytes / (1024.0 * 1024.0)
+                        if (sizeMb >= 1.0) "%.1f MB".format(sizeMb)
+                        else "%d KB".format(sizeBytes / 1024)
+                    } else ""
+                }
+                conn.disconnect()
+                break
+            }
+            ""
+        } catch (e: Throwable) {
+            android.util.Log.w("AppUpdate", "fetchApkSizeMb failed: ${e.message}")
+            ""
         }
     }
 }
