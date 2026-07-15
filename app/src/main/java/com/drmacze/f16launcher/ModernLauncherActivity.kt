@@ -2007,7 +2007,7 @@ fun MainShell(
         // User butuh navbar untuk navigasi dari Komunitas ke page lain.
         // Tambah bottom padding di CommunityScreen supaya content tidak tertutup navbar.
         if (!showGameDetail && !showSettings && !showGameHub && visitingUserId == null) {
-            FloatingNav(
+            PS5FloatingNav(
                 page     = page,
                 onPage   = { newPage ->
                     if (newPage == Page.GameHub) {
@@ -3983,6 +3983,34 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
                 text  = "Instal game FIFA 16 terlebih dahulu sebelum melakukan pembaruan. Kembali ke tab Beranda untuk mengunduh."
             )
         }
+
+        // ── PS5 GAME CAROUSEL (PlayStation 5 style) ──
+        Spacer(Modifier.height(20.dp))
+        Text("Game Library", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
+        PS5GameCarousel(
+            games = listOf(
+                GameItem(
+                    title = "FIFA 16 Mobile", subtitle = "DLavie 26 Mod",
+                    packageName = GAME_PKG_16, mainActivity = "com.byfen.downloadzipsdk.MainActivity",
+                    coverGradient = listOf(Color(0xFF0A1628), Color(0xFF1A3A6B)),
+                    coverText = "DL", coverImageRes = R.drawable.fifa16_cover,
+                    serverStatus = ServerStatus.ONLINE,
+                    apkUrl = FIFA16_APK_URL
+                ),
+                GameItem(
+                    title = "FIFA 15 Mobile", subtitle = "DLavie 15 Mod",
+                    packageName = GAME_PKG_15, mainActivity = FIFA15_MAIN_ACTIVITY,
+                    coverGradient = listOf(Color(0xFF1A1A2E), Color(0xFF16213E)),
+                    coverText = "D15", coverImageRes = R.drawable.fifa15_cover,
+                    serverStatus = ServerStatus.MAINTENANCE,
+                    apkUrl = FIFA15_APK_URL
+                )
+            ),
+            isInstalled = { pkg -> isGameInstalled(context) },
+            onGameClick = { pkg ->
+                onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked, myRating)
+            }
+        )
 
         Spacer(Modifier.height(8.dp))
     }
