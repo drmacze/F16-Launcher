@@ -27,6 +27,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
@@ -206,6 +208,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -667,6 +670,10 @@ fun DLavieModernApp(initialPostId: String? = null) {
     var manualCheckLoading by remember { mutableStateOf(false) }
     var manualCheckMessage by remember { mutableStateOf("") }
     val updateScope = rememberCoroutineScope()
+    // v7.9.92: Check Update screen + warning toast
+    var showCheckUpdateScreen by remember { mutableStateOf(false) }
+    var showUpdateWarningToast by remember { mutableStateOf(false) }
+    var warningToastDismissed by remember { mutableStateOf(false) }
 
     // ── Staff bypass (Bug 3): admin/developer/moderator/owner skip maintenance entirely ──
     val userRole = api.role()
@@ -721,6 +728,9 @@ fun DLavieModernApp(initialPostId: String? = null) {
                         showUpdatePopup = true
                     } else {
                         android.util.Log.i("AppUpdate", "Update v${info.versionCode} tersedia tapi user sudah dismiss. Manual check untuk force show.")
+                        // v7.9.92: Tampilkan warning toast kuning kalau user dismiss popup
+                        updateInfo = info
+                        showUpdateWarningToast = true
                     }
                 }
             }.onFailure { e ->
@@ -868,8 +878,41 @@ fun DLavieModernApp(initialPostId: String? = null) {
                                 updatePrefs.edit().putInt("dismissed_version_code", info.versionCode).apply()
                             }
                             showUpdatePopup = false
+                            // v7.9.92: Tampilkan warning toast kuning setelah dismiss
+                            showUpdateWarningToast = true
                         }
                     )
+                }
+
+                // v7.9.92: Check Update Screen (full-screen interactive)
+                if (showCheckUpdateScreen) {
+                    CheckUpdateScreen(
+                        api = api,
+                        onDismiss = { showCheckUpdateScreen = false },
+                        onUpdateAvailable = { info ->
+                            showCheckUpdateScreen = false
+                            updateInfo = info
+                            showUpdatePopup = true
+                        }
+                    )
+                }
+
+                // v7.9.92: Warning toast kuning untuk versi lama
+                if (showUpdateWarningToast && !warningToastDismissed && updateInfo != null) {
+                    Box(Modifier.align(Alignment.TopCenter).zIndex(1000f)) {
+                        UpdateWarningToast(
+                            versionName = updateInfo!!.versionName,
+                            onCheckUpdate = {
+                                showUpdateWarningToast = false
+                                warningToastDismissed = true
+                                showCheckUpdateScreen = true
+                            },
+                            onDismiss = {
+                                showUpdateWarningToast = false
+                                warningToastDismissed = true
+                            }
+                        )
+                    }
                 }
 
                 when {
@@ -1973,6 +2016,10 @@ fun MainShell(
                 onLogout      = {
                     showSettings = false
                     onLogout()
+                },
+                onCheckUpdate = {
+                    showSettings = false
+                    showCheckUpdateScreen = true
                 }
             )
         }
