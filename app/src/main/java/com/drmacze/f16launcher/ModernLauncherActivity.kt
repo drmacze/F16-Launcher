@@ -724,9 +724,8 @@ fun DLavieModernApp(initialPostId: String? = null) {
                         showUpdatePopup = true
                     } else {
                         android.util.Log.i("AppUpdate", "Update v${info.versionCode} tersedia tapi user sudah dismiss. Manual check untuk force show.")
-                        // v7.9.92: Tampilkan warning toast kuning kalau user dismiss popup
                         updateInfo = info
-                        showUpdateWarningToast = true
+                        // v7.9.92: Warning toast akan di-trigger di MainShell via updateInfo state
                     }
                 }
             }.onFailure { e ->
@@ -874,41 +873,8 @@ fun DLavieModernApp(initialPostId: String? = null) {
                                 updatePrefs.edit().putInt("dismissed_version_code", info.versionCode).apply()
                             }
                             showUpdatePopup = false
-                            // v7.9.92: Tampilkan warning toast kuning setelah dismiss
-                            showUpdateWarningToast = true
                         }
                     )
-                }
-
-                // v7.9.92: Check Update Screen (full-screen interactive)
-                if (showCheckUpdateScreen) {
-                    CheckUpdateScreen(
-                        api = api,
-                        onDismiss = { showCheckUpdateScreen = false },
-                        onUpdateAvailable = { info ->
-                            showCheckUpdateScreen = false
-                            updateInfo = info
-                            showUpdatePopup = true
-                        }
-                    )
-                }
-
-                // v7.9.92: Warning toast kuning untuk versi lama
-                if (showUpdateWarningToast && !warningToastDismissed && updateInfo != null) {
-                    Box(Modifier.align(Alignment.TopCenter).zIndex(1000f)) {
-                        UpdateWarningToast(
-                            versionName = updateInfo!!.versionName,
-                            onCheckUpdate = {
-                                showUpdateWarningToast = false
-                                warningToastDismissed = true
-                                showCheckUpdateScreen = true
-                            },
-                            onDismiss = {
-                                showUpdateWarningToast = false
-                                warningToastDismissed = true
-                            }
-                        )
-                    }
                 }
 
                 when {
@@ -1253,6 +1219,8 @@ fun MainShell(
     var showCheckUpdateScreen by remember { mutableStateOf(false) }
     var showUpdateWarningToast by remember { mutableStateOf(false) }
     var warningToastDismissed by remember { mutableStateOf(false) }
+    var shellUpdateInfo by remember { mutableStateOf<AppUpdateChecker.UpdateInfo?>(null) }
+    var shellShowUpdatePopup by remember { mutableStateOf(false) }
 
     // v7.9.79: Orientation control — ONLY GameHub rotates to landscape
     // Pakai LaunchedEffect (bukan DisposableEffect di DLavieGameHub) supaya
@@ -2022,6 +1990,55 @@ fun MainShell(
                     showCheckUpdateScreen = true
                 }
             )
+        }
+
+        // v7.9.92: Check Update Screen (full-screen interactive)
+        if (showCheckUpdateScreen) {
+            CheckUpdateScreen(
+                api = api,
+                onDismiss = { showCheckUpdateScreen = false },
+                onUpdateAvailable = { info ->
+                    showCheckUpdateScreen = false
+                    shellUpdateInfo = info
+                    shellShowUpdatePopup = true
+                }
+            )
+        }
+
+        // v7.9.92: Warning toast kuning untuk versi lama
+        // Auto-show jika ada updateInfo dari auto-check (pass via shellUpdateInfo)
+        LaunchedEffect(Unit) {
+            // Run auto-check update di MainShell scope
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val info = AppUpdateChecker.checkForUpdate(api)
+                    if (info != null && info.isUpdateAvailable) {
+                        val prefs = context.getSharedPreferences("dlavie_update_prefs", android.content.Context.MODE_PRIVATE)
+                        val dismissedVersion = prefs.getInt("dismissed_version_code", -1)
+                        if (dismissedVersion == info.versionCode) {
+                            // User sudah dismiss popup → show warning toast instead
+                            shellUpdateInfo = info
+                            showUpdateWarningToast = true
+                        }
+                    }
+                }
+            }
+        }
+        if (showUpdateWarningToast && !warningToastDismissed && shellUpdateInfo != null) {
+            Box(Modifier.fillMaxWidth().align(Alignment.TopCenter).zIndex(1000f)) {
+                UpdateWarningToast(
+                    versionName = shellUpdateInfo!!.versionName,
+                    onCheckUpdate = {
+                        showUpdateWarningToast = false
+                        warningToastDismissed = true
+                        showCheckUpdateScreen = true
+                    },
+                    onDismiss = {
+                        showUpdateWarningToast = false
+                        warningToastDismissed = true
+                    }
+                )
+            }
         }
 
         // ── v3.1: Edit Profile overlay (separate from Settings) ──
