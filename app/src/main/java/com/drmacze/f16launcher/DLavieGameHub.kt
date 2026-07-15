@@ -225,7 +225,8 @@ fun DLavieGameHub(
                         onExit = onExit,
                         displayName = displayName,
                         avatarUrl = avatarUrl,
-                        role = role
+                        role = role,
+                        username = api?.username()?.ifBlank { "user" } ?: "user"
                     )
 
                     // CONTENT (fills remaining space)
@@ -286,7 +287,8 @@ private fun GlassTopBar(
     onExit: () -> Unit,
     displayName: String = "DLavie Player",
     avatarUrl: String = "",
-    role: String = "member"
+    role: String = "member",
+    username: String = "user"
 ) {
     Column(Modifier.fillMaxWidth()) {
         // Row 1: Profile + time
@@ -318,7 +320,7 @@ private fun GlassTopBar(
                         }
                     }
                 }
-                Text("@${api?.username()?.ifBlank { "user" } ?: "user"}", color = GHTextGray, fontSize = 11.sp)
+                Text("@$username", color = GHTextGray, fontSize = 11.sp)
             }
             Spacer(Modifier.weight(1f))
             // Time + battery
