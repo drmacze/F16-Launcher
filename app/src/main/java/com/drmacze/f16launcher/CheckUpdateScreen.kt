@@ -5,6 +5,9 @@ import android.os.Build
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -154,8 +157,7 @@ fun CheckUpdateScreen(
                     streamMessage = "Pembaruan ditemukan: v${info.versionName}"
                     delay(800)
                     stage = CheckStage.DONE_UPDATE
-                    delay(1200)
-                    onUpdateAvailable(info)
+                    // v7.9.98: Jangan auto-dismiss. Tunggu user pilih tombol.
                 }
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Terjadi kesalahan"
@@ -284,6 +286,60 @@ fun CheckUpdateScreen(
                             fontSize = 13.sp
                         )
                     }
+                    Spacer(Modifier.height(24.dp))
+
+                    // v7.9.98: Tombol Update (langsung dari launcher)
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 32.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Update button — primary, in-app download
+                        Box(
+                            Modifier.weight(1f).height(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF00E5FF))
+                                .clickable {
+                                    onUpdateAvailable(updateInfo!!)
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Rounded.SystemUpdate, null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                                Text("Update", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Download APK button — secondary, buka website DLavie
+                        Box(
+                            Modifier.weight(1f).height(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0x33FFFFFF))
+                                .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(12.dp))
+                                .clickable {
+                                    try {
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://drmacze.github.io/dlavie-web/"))
+                                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {}
+                                    onDismiss()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Rounded.Download, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Text("Download APK", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+
+                    // Close button
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Tutup",
+                        color = Color.Gray,
+                        fontSize = 13.sp,
+                        modifier = Modifier.clickable { onDismiss() }
+                    )
                 }
 
                 // Latest version state
