@@ -8823,6 +8823,27 @@ fun AppUpdatePopup(
                 }
                 Spacer(Modifier.height(8.dp))
 
+                // v7.9.90: Update size info (glassmorphic info card)
+                if (info.apkSizeMb.isNotEmpty()) {
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .background(Surface2.copy(0.5f), RoundedCornerShape(10.dp))
+                            .border(1.dp, GlassStroke, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.Download, null, tint = CandyCyan, modifier = Modifier.size(16.dp))
+                        Column {
+                            Text("Ukuran Update", color = SubText, fontSize = 10.sp)
+                            Text(info.apkSizeMb, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Text("v${info.versionCode}", color = SubText, fontSize = 11.sp)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 // Release notes (truncate kalau terlalu panjang)
                 val notes = info.releaseNotes.take(500)
                 if (notes.isNotEmpty()) {

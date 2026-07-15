@@ -1702,6 +1702,7 @@ private fun GHTopBarGlass(currentTime: String, batteryLevel: Int, onExit: () -> 
     Row(
         Modifier.fillMaxWidth()
             .background(GHGlassBg)
+            .blur(20.dp)  // v7.9.90: Glassmorphism blur
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
