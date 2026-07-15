@@ -33,6 +33,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.*
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -56,7 +57,10 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DLAVIE GAMEHUB v284 — Clone exact GameHub Lite (Guangzhou reference)
+// DLAVIE GAMEHUB v289 — Card polish pass (PlayStore GameHub reference)
+// v289: larger glass cards, info block below cover, top-right overflow menu
+// (Favorite / View Detail), dpad/controller focus ring, wider section spacing
+// (32dp) and stronger background blur (80dp) for a more premium glass feel.
 // ═══════════════════════════════════════════════════════════════════════════
 // UI Reference: GameHub Lite screenshots (July 2026)
 //   - Game Management: vertical list, thumbnail left, name + last start time
@@ -87,6 +91,8 @@ private val GHGreen       = Color(0xFF00FF88)   // Bright green for Play/Active
 private val GHAmber       = Color(0xFFFFB347)
 private val GHRed         = Color(0xFFFF5252)
 private val GHNavSelected = Color(0xFF00E5FF)   // Cyan for selected nav
+private val GHFocusRing   = Color(0xFF00E5FF)   // Accent focus ring (dpad/controller navigation)
+private val GHCardGlass   = Color(0x1FFFFFFF)   // Glass sheen overlay on cards
 
 // ──────────────────────────── Prefs helpers ───────────────────────────────
 private const val GH_PREFS = "gh_v284"
@@ -1612,30 +1618,30 @@ private fun GHHomeCarousel(
                 Image(
                     painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes),
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize().blur(60.dp),
+                    modifier = Modifier.fillMaxSize().blur(80.dp),
                     contentScale = ContentScale.Crop
                 )
             }
-            Box(Modifier.fillMaxSize().background(GHBg.copy(alpha = 0.85f)))
+            Box(Modifier.fillMaxSize().background(GHBg.copy(alpha = 0.82f)))
         }
 
         Column(Modifier.fillMaxSize()) {
             // ── GLASSMORPHIC TOP BAR ──
             GHTopBarGlass(currentTime, batteryLevel, onExit)
 
-            // ── SCROLLABLE CONTENT ──
+            // ── SCROLLABLE CONTENT — generous breathing room between sections ──
             Column(
                 Modifier.weight(1f).verticalScroll(rememberScrollState())
             ) {
                 // Hero Carousel (banner besar + vignette + Play Now)
                 GHHeroCarousel(dlavieGames, context, onOpenDetail, onGameClick)
 
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(32.dp))
 
                 // Quick Action Buttons (PC/Cloud/Emulator/Controller)
                 GHQuickActions()
 
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(32.dp))
 
                 // Swimlane: Popular
                 GHSwimlane(
@@ -1647,7 +1653,7 @@ private fun GHHomeCarousel(
                     onToggleFavorite = { favorites = ghToggleFavorite(context, it) }
                 )
 
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(32.dp))
 
                 // Swimlane: Favorites (kalau ada)
                 val favGames = dlavieGames.filter { it.packageName in favorites }
@@ -1660,7 +1666,7 @@ private fun GHHomeCarousel(
                         onOpenDetail = onOpenDetail,
                         onToggleFavorite = { favorites = ghToggleFavorite(context, it) }
                     )
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(32.dp))
                 }
 
                 // Swimlane: All Games
@@ -1699,11 +1705,13 @@ private fun GHHomeCarousel(
 
 @Composable
 private fun GHTopBarGlass(currentTime: String, batteryLevel: Int, onExit: () -> Unit) {
+    // Glass surface: translucent dark backdrop (content behind it is already blurred by the
+    // fullscreen background blur), plus a hairline seam so it reads as a distinct glass panel.
     Row(
         Modifier.fillMaxWidth()
             .background(GHGlassBg)
-            .blur(20.dp)  // v7.9.90: Glassmorphism blur
-            .padding(horizontal = 20.dp, vertical = 14.dp),
+            .border(BorderStroke(0.5.dp, GHBorder))
+            .padding(horizontal = 24.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Back arrow (FIXED: now works because onExit is passed from ModernLauncherActivity)
@@ -1889,20 +1897,22 @@ private fun GHSwimlane(
     onToggleFavorite: (String) -> Unit
 ) {
     Column(Modifier.fillMaxWidth()) {
-        // Title row with "See All"
+        // Title row with "See All" — extra breathing room around section headers
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(title, color = GHTextWhite, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text(title, color = GHTextWhite, fontSize = 19.sp, fontWeight = FontWeight.Bold)
             Text("See All", color = GHAccent, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         }
 
-        // Horizontal card slider
+        Spacer(Modifier.height(4.dp))
+
+        // Horizontal card slider — wider gaps so cards never feel cramped
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             items(games) { game ->
                 GHGameCardMini(
@@ -1917,7 +1927,8 @@ private fun GHSwimlane(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GAME CARD MINI — portrait 2:3 ratio for swimlanes (Gemini spec)
+// GAME CARD MINI — large glass card, info below, top-right overflow menu,
+// focus ring for controller/dpad navigation (PlayStore GameHub style)
 // ═══════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -1928,12 +1939,27 @@ private fun GHGameCardMini(
     onOpenDetail: () -> Unit,
     onToggleFavorite: () -> Unit
 ) {
-    // Press animation: scale down to 0.98 on press (Gemini spec)
+    val cardWidth = 172.dp
+    val cardHeight = 232.dp
+
+    // Press + focus animation — scale on press, glow ring on dpad/controller focus
     var isPressed by remember { mutableStateOf(false) }
+    var isFocused by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.98f else 1f,
-        animationSpec = spring(dampingRatio = 0.4f, stiffness = 300f),
+        targetValue = if (isPressed) 0.96f else if (isFocused) 1.04f else 1f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = 260f),
         label = "card_press"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (isFocused) GHFocusRing else GHBorder,
+        animationSpec = tween(180),
+        label = "card_border"
+    )
+    val borderWidth by animateDpAsState(
+        targetValue = if (isFocused) 2.dp else 1.dp,
+        animationSpec = tween(180),
+        label = "card_border_width"
     )
     val interactionSource = remember { MutableInteractionSource() }
     LaunchedEffect(interactionSource) {
@@ -1946,19 +1972,28 @@ private fun GHGameCardMini(
     }
 
     Column(
-        Modifier.width(140.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+        Modifier.width(cardWidth)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable(interactionSource = interactionSource)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = { onOpenDetail() }
             )
     ) {
-        // Card cover (140x210dp, 2:3 portrait ratio)
+        // Card cover — large glass panel with focus glow
         Box(
-            Modifier.width(140.dp).height(210.dp)
-                .clip(RoundedCornerShape(12.dp))
+            Modifier.width(cardWidth).height(cardHeight)
+                .shadow(
+                    elevation = if (isFocused) 18.dp else 6.dp,
+                    shape = RoundedCornerShape(18.dp),
+                    ambientColor = GHFocusRing.copy(alpha = if (isFocused) 0.5f else 0f),
+                    spotColor = GHFocusRing.copy(alpha = if (isFocused) 0.5f else 0f)
+                )
+                .clip(RoundedCornerShape(18.dp))
                 .background(Brush.linearGradient(game.coverGradient))
-                .border(1.dp, GHBorder, RoundedCornerShape(12.dp))
+                .border(borderWidth, borderColor, RoundedCornerShape(18.dp))
         ) {
             // Cover image
             if (game.coverImageRes != null) {
@@ -1970,24 +2005,33 @@ private fun GHGameCardMini(
                 )
             } else {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(game.coverText, color = GHTextWhite, fontSize = 32.sp, fontWeight = FontWeight.Black)
+                    Text(game.coverText, color = GHTextWhite, fontSize = 36.sp, fontWeight = FontWeight.Black)
                 }
             }
 
-            // Bottom gradient for badge readability
+            // Glass sheen — subtle top highlight for glassmorphism depth
             Box(
-                Modifier.fillMaxWidth().height(40.dp).align(Alignment.BottomStart)
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.8f))))
+                Modifier.fillMaxWidth().height(cardHeight / 2).align(Alignment.TopStart)
+                    .background(Brush.verticalGradient(listOf(GHCardGlass, Color.Transparent)))
             )
 
-            // Favorite heart (top-right)
-            Icon(
-                if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                "Favorite",
-                tint = if (isFavorite) GHRed else GHTextWhite,
-                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(20.dp)
-                    .clickable { onToggleFavorite() }
+            // Bottom gradient for badge readability
+            Box(
+                Modifier.fillMaxWidth().height(56.dp).align(Alignment.BottomStart)
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.85f))))
             )
+
+            // Overflow menu — top-right corner (matches PlayStore GameHub card layout)
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(8.dp)
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(0.45f))
+                    .clickable { showMenu = true },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.MoreVert, "More options", tint = GHTextWhite, modifier = Modifier.size(18.dp))
+            }
 
             // Status badge (bottom-left)
             val (sc, st) = when (game.serverStatus) {
@@ -1997,32 +2041,75 @@ private fun GHGameCardMini(
                 ServerStatus.BUSY -> Pair(GHAmber, "BUSY")
             }
             Box(
-                Modifier.align(Alignment.BottomStart).padding(8.dp)
-                    .clip(RoundedCornerShape(4.dp))
+                Modifier.align(Alignment.BottomStart).padding(10.dp)
+                    .clip(RoundedCornerShape(5.dp))
                     .background(sc.copy(alpha = 0.85f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                    .padding(horizontal = 7.dp, vertical = 3.dp)
             ) {
-                Text(st, color = GHTextWhite, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                Text(st, color = GHTextWhite, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            }
+
+            // Overflow dropdown — Favorite / View Detail, anchored under the 3-dot button
+            if (showMenu) {
+                Popup(
+                    alignment = Alignment.TopEnd,
+                    offset = androidx.compose.ui.unit.IntOffset(-8, 44),
+                    onDismissRequest = { showMenu = false },
+                    properties = PopupProperties(focusable = true)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF1C2333),
+                        border = BorderStroke(1.dp, GHBorderHi),
+                        shadowElevation = 12.dp,
+                        modifier = Modifier.width(168.dp)
+                    ) {
+                        Column(Modifier.padding(4.dp)) {
+                            GHMenuOption(
+                                if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                if (isFavorite) "Remove Favorite" else "Add Favorite"
+                            ) {
+                                showMenu = false
+                                onToggleFavorite()
+                            }
+                            GHMenuOption(Icons.Rounded.Info, "View Detail") {
+                                showMenu = false
+                                onOpenDetail()
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        // Title below card
-        Spacer(Modifier.height(6.dp))
+        // Info block below card — title, meta, and a prominent View Detail affordance
+        Spacer(Modifier.height(10.dp))
         Text(
             game.title,
             color = GHTextWhite,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        Text(
-            game.sizeMb.ifEmpty { game.version },
-            color = GHTextGray,
-            fontSize = 11.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        Spacer(Modifier.height(2.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                game.sizeMb.ifEmpty { game.version },
+                color = GHTextGray,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                "View Detail",
+                color = GHAccent,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { onOpenDetail() }
+            )
+        }
     }
 }
 
