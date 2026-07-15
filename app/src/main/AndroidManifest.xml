@@ -123,6 +123,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="dlavie" android:host="connect" />
             </intent-filter>
+            <!-- v7.9.95: Deep link for game sharing (dlavie://game?pkg=PACKAGE_NAME) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dlavie" android:host="game" />
+            </intent-filter>
         </activity>
 
         <activity

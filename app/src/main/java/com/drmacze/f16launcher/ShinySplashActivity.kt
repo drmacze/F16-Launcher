@@ -181,6 +181,20 @@ class ShinySplashActivity : ComponentActivity() {
             }
         }
 
+        // ── v7.9.95: Game sharing deep link (dlavie://game?pkg=PACKAGE_NAME) ──
+        if (portalData != null && portalData.scheme == "dlavie" && portalData.host == "game") {
+            val gamePkg = portalData.getQueryParameter("pkg")
+            if (!gamePkg.isNullOrBlank()) {
+                // Save target package to prefs — ModernLauncherActivity will open GameHub
+                getSharedPreferences("dlavie_deep_link", android.content.Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("target_game_pkg", gamePkg)
+                    .putLong("deep_link_timestamp", System.currentTimeMillis())
+                    .apply()
+                android.util.Log.i("DLavie", "Deep link: open game $gamePkg")
+            }
+        }
+
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(
                 background = Color.Black, surface = Color.Black,
