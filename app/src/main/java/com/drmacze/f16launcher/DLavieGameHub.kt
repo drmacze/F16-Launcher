@@ -197,7 +197,7 @@ fun DLavieGameHub(
         // ── ADAPTIVE BLURRED BACKGROUND ──
         featuredGame?.let { game ->
             if (game.coverImageRes != null) {
-                Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = null, modifier = Modifier.fillMaxSize().blur(60.dp), contentScale = ContentScale.Crop)
+                Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = null, modifier = Modifier.fillMaxSize().blur(80.dp), contentScale = ContentScale.Crop)
             }
             // Dark overlay
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x99000000), Color(0xCC000000), Color(0x99000000)))))
@@ -276,7 +276,7 @@ private fun GlassTopBar(
     onTabSelect: (Int) -> Unit,
     onExit: () -> Unit
 ) {
-    Column(Modifier.fillMaxWidth().background(GHGlassBar)) {
+    Column(Modifier.fillMaxWidth()) {
         // Row 1: Profile + time
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             // Profile avatar
@@ -336,28 +336,21 @@ private fun LibraryContent(
     onToggleFavorite: (String) -> Unit,
     onDelete: (String) -> Unit
 ) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        // ── FEATURED GAME CARD (large) ──
-        featuredGame?.let { game ->
-            FeaturedGameCard(game = game, isInstalled = ghIsInstalled(context, game.packageName), onPlay = { onPlay(game.packageName) }, onOpenDetail = { onOpenDetail(game) })
-            Spacer(Modifier.height(16.dp))
-        }
+    // v7.9.96: CLEAN FULLSCREEN — no featured card, no section header
+    // Just game cards centered, fill entire screen, no scroll
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .collect { idx -> if (idx < games.size) onFeaturedChange(games[idx]) }
+    }
 
-        // ── SECTION HEADER ──
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("All Games", color = GHTextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text("See All", color = GHAccent, fontSize = 12.sp)
-        }
-        Spacer(Modifier.height(8.dp))
-
-        // ── HORIZONTAL GAME GRID ──
-        val listState = rememberLazyListState()
-        LaunchedEffect(listState) {
-            snapshotFlow { listState.firstVisibleItemIndex }
-                .collect { idx -> if (idx < games.size) onFeaturedChange(games[idx]) }
-        }
-
-        LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.weight(1f)) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        LazyRow(
+            state = listState,
+            contentPadding = PaddingValues(horizontal = 48.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
             itemsIndexed(games) { idx, game ->
                 GameGridCard(
                     game = game,
@@ -609,7 +602,7 @@ private fun GlassBottomNav(selectedTab: Int, onTabSelect: (Int) -> Unit, onExit:
         Triple("Videos", Icons.Rounded.VideoLibrary, 2),
         Triple("Exit", Icons.Rounded.Close, -1)
     )
-    Row(Modifier.fillMaxWidth().background(GHGlassBar).padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
         items.forEach { (label, icon, tab) ->
             val selected = when (label) {
                 "Home" -> selectedTab == 1 // Library is home
@@ -644,7 +637,7 @@ private fun GameDetailCompact(game: GameItem, context: Context, onBack: () -> Un
     Box(Modifier.fillMaxSize().background(GHBg)) {
         // Blurred bg
         if (game.coverImageRes != null) {
-            Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = null, modifier = Modifier.fillMaxSize().blur(40.dp), contentScale = ContentScale.Crop)
+            Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = null, modifier = Modifier.fillMaxSize().blur(60.dp), contentScale = ContentScale.Crop)
         }
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xAA000000), Color(0xDD000000)))))
 
