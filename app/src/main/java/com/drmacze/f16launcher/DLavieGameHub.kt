@@ -61,20 +61,20 @@ import java.util.*
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ── Design tokens ──
-private val Bg = Color(0xFF000000)
-private val GlassBar = Color(0x1A000000)       // 10% black for glass bars
-private val GlassCard = Color(0x26FFFFFF)       // 15% white for glass cards
-private val GlassCardHi = Color(0x40FFFFFF)     // 25% white for focused
-private val Border = Color(0x1AFFFFFF)          // 10% white border
-private val BorderHi = Color(0x40FFFFFF)        // 25% white border
-private val TextWhite = Color(0xFFFFFFFF)
-private val TextGray = Color(0xFFAAAAAA)
-private val TextDim = Color(0xFF666666)
-private val Accent = Color(0xFF00E5FF)          // Cyan accent
-private val Green = Color(0xFF00FF00)           // Progress/achievement
-private val Gold = Color(0xFFFFD700)            // Badges/ratings
-private val Red = Color(0xFFFF5252)
-private val Amber = Color(0xFFFFB347)
+private val GHBg = Color(0xFF000000)
+private val GHGlassBar = Color(0x1A000000)       // 10% black for glass bars
+private val GHGlassCard = Color(0x26FFFFFF)       // 15% white for glass cards
+private val GHGlassCardHi = Color(0x40FFFFFF)     // 25% white for focused
+private val GHBorder = Color(0x1AFFFFFF)          // 10% white border
+private val GHBorderHi = Color(0x40FFFFFF)        // 25% white border
+private val GHTextWhite = Color(0xFFFFFFFF)
+private val GHTextGray = Color(0xFFAAAAAA)
+private val GHTextDim = Color(0xFF666666)
+private val GHAccent = Color(0xFF00E5FF)          // Cyan accent
+private val GHGreen = Color(0xFF00FF00)           // Progress/achievement
+private val GHGold = Color(0xFFFFD700)            // Badges/ratings
+private val GHRed = Color(0xFFFF5252)
+private val GHAmber = Color(0xFFFFB347)
 
 // ── Helpers ──
 private fun ghBattery(c: Context): Int = try {
@@ -118,7 +118,7 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
     }
 
     if (visible && phase < 5) {
-        Box(Modifier.fillMaxSize().background(Bg), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().background(GHBg), contentAlignment = Alignment.Center) {
             val logoAlpha by animateFloatAsState(when (phase) { 0 -> 0f; 1 -> 1f; 2 -> 1f; 3 -> 1f; 4 -> 0f; else -> 0f }, tween(800, easing = FastOutSlowInEasing), label = "la")
             val logoScale by animateFloatAsState(when (phase) { 0 -> 0.7f; 1 -> 1f; 2 -> 1f; 3 -> 1f; 4 -> 1.15f; else -> 1f }, tween(800, easing = FastOutSlowInEasing), label = "ls")
             val textAlpha by animateFloatAsState(when (phase) { 0 -> 0f; 1 -> 0f; 2 -> 1f; 3 -> 1f; 4 -> 0f; else -> 0f }, tween(400, easing = FastOutSlowInEasing), label = "ta")
@@ -131,12 +131,12 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
                         val r = 70f
                         moveTo(0f, -r); lineTo(r * 0.866f, -r * 0.5f); lineTo(r * 0.866f, r * 0.5f)
                         lineTo(0f, r); lineTo(-r * 0.866f, r * 0.5f); lineTo(-r * 0.866f, -r * 0.5f); close()
-                    }).background(TextWhite), contentAlignment = Alignment.Center
-                ) { Text("DL", color = Bg, fontSize = 26.sp, fontWeight = FontWeight.Black) }
+                    }).background(GHTextWhite), contentAlignment = Alignment.Center
+                ) { Text("DL", color = GHBg, fontSize = 26.sp, fontWeight = FontWeight.Black) }
                 Spacer(Modifier.height(20.dp))
-                Text(typedText, color = TextWhite, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp, modifier = Modifier.graphicsLayer { this.alpha = textAlpha })
+                Text(typedText, color = GHTextWhite, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp, modifier = Modifier.graphicsLayer { this.alpha = textAlpha })
                 Spacer(Modifier.height(16.dp))
-                if (loadingMsg.isNotEmpty()) { Text(loadingMsg, color = TextDim, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.graphicsLayer { this.alpha = msgAlpha }) }
+                if (loadingMsg.isNotEmpty()) { Text(loadingMsg, color = GHTextDim, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.graphicsLayer { this.alpha = msgAlpha }) }
             }
         }
     }
@@ -193,7 +193,7 @@ fun DLavieGameHub(
     var selectedTab by remember { mutableStateOf(1) } // 0=Store, 1=Library, 2=Videos, 3=Settings
     var showDetail by remember { mutableStateOf<GameItem?>(null) }
 
-    Box(Modifier.fillMaxSize().background(Bg)) {
+    Box(Modifier.fillMaxSize().background(GHBg)) {
         // ── ADAPTIVE BLURRED BACKGROUND ──
         featuredGame?.let { game ->
             if (game.coverImageRes != null) {
@@ -235,7 +235,7 @@ fun DLavieGameHub(
                             else -> {
                                 // Store/Videos/Settings placeholder
                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text(when(selectedTab) { 0 -> "Store"; 2 -> "Videos"; 3 -> "Settings"; else -> "" }, color = TextWhite, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                                    Text(when(selectedTab) { 0 -> "Store"; 2 -> "Videos"; 3 -> "Settings"; else -> "" }, color = GHTextWhite, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -263,33 +263,33 @@ private fun GlassTopBar(
     onTabSelect: (Int) -> Unit,
     onExit: () -> Unit
 ) {
-    Column(Modifier.fillMaxWidth().background(GlassBar)) {
+    Column(Modifier.fillMaxWidth().background(GHGlassBar)) {
         // Row 1: Profile + time
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             // Profile avatar
-            Box(Modifier.size(32.dp).clip(CircleShape).background(Accent).border(2.dp, TextWhite, CircleShape), contentAlignment = Alignment.Center) {
-                Text("D", color = Bg, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Box(Modifier.size(32.dp).clip(CircleShape).background(GHAccent).border(2.dp, GHTextWhite, CircleShape), contentAlignment = Alignment.Center) {
+                Text("D", color = GHBg, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.width(8.dp))
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("DLavie Player", color = TextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text("DLavie Player", color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.width(6.dp))
-                    Box(Modifier.clip(RoundedCornerShape(4.dp)).background(Bg).border(1.dp, Gold, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) {
-                        Text("ULTIMATE", color = Gold, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    Box(Modifier.clip(RoundedCornerShape(4.dp)).background(GHBg).border(1.dp, GHGold, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) {
+                        Text("ULTIMATE", color = GHGold, fontSize = 8.sp, fontWeight = FontWeight.Bold)
                     }
                 }
-                Text("18291 points", color = TextGray, fontSize = 11.sp)
+                Text("18291 points", color = GHTextGray, fontSize = 11.sp)
             }
             Spacer(Modifier.weight(1f))
             // Time + battery
-            Text(currentTime, color = TextWhite, fontSize = 13.sp)
+            Text(currentTime, color = GHTextWhite, fontSize = 13.sp)
             Spacer(Modifier.width(8.dp))
-            Icon(Icons.Rounded.BatteryFull, "Battery", tint = TextGray, modifier = Modifier.size(16.dp))
+            Icon(Icons.Rounded.BatteryFull, "Battery", tint = GHTextGray, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(2.dp))
-            Text("$batteryLevel%", color = TextGray, fontSize = 11.sp)
+            Text("$batteryLevel%", color = GHTextGray, fontSize = 11.sp)
             Spacer(Modifier.width(8.dp))
-            Icon(Icons.Rounded.ArrowBack, "Exit", tint = TextWhite, modifier = Modifier.size(20.dp).clickable { onExit() })
+            Icon(Icons.Rounded.ArrowBack, "Exit", tint = GHTextWhite, modifier = Modifier.size(20.dp).clickable { onExit() })
         }
 
         // Row 2: Navigation tabs
@@ -298,9 +298,9 @@ private fun GlassTopBar(
             tabs.forEachIndexed { idx, label ->
                 val selected = selectedTab == idx
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onTabSelect(idx) }) {
-                    Text(label, color = if (selected) TextWhite else TextGray, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                    Text(label, color = if (selected) GHTextWhite else GHTextGray, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
                     Spacer(Modifier.height(4.dp))
-                    if (selected) { Box(Modifier.width(24.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(TextWhite)) }
+                    if (selected) { Box(Modifier.width(24.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(GHTextWhite)) }
                 }
             }
         }
@@ -329,8 +329,8 @@ private fun LibraryContent(
 
         // ── SECTION HEADER ──
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("All Games", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text("See All", color = Accent, fontSize = 12.sp)
+            Text("All Games", color = GHTextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("See All", color = GHAccent, fontSize = 12.sp)
         }
         Spacer(Modifier.height(8.dp))
 
@@ -367,7 +367,7 @@ private fun FeaturedGameCard(game: GameItem, isInstalled: Boolean, onPlay: () ->
             Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = game.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         } else {
             Box(Modifier.fillMaxSize().background(Brush.linearGradient(game.coverGradient)), contentAlignment = Alignment.Center) {
-                Text(game.coverText, color = TextWhite, fontSize = 36.sp, fontWeight = FontWeight.Black)
+                Text(game.coverText, color = GHTextWhite, fontSize = 36.sp, fontWeight = FontWeight.Black)
             }
         }
 
@@ -376,36 +376,36 @@ private fun FeaturedGameCard(game: GameItem, isInstalled: Boolean, onPlay: () ->
 
         // Content
         Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
-            Text(game.title, color = TextWhite, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(game.title, color = GHTextWhite, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(game.subtitle, color = TextGray, fontSize = 13.sp)
+                Text(game.subtitle, color = GHTextGray, fontSize = 13.sp)
                 if (isInstalled) {
-                    Text("Installed", color = Green, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Installed", color = GHGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
             Spacer(Modifier.height(8.dp))
 
             // Play button
             Row(
-                Modifier.clip(RoundedCornerShape(8.dp)).background(if (isInstalled) Green else Accent).clickable { onPlay() }.padding(horizontal = 20.dp, vertical = 8.dp),
+                Modifier.clip(RoundedCornerShape(8.dp)).background(if (isInstalled) GHGreen else GHAccent).clickable { onPlay() }.padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download, null, tint = Bg, modifier = Modifier.size(16.dp))
-                Text(if (isInstalled) "Play" else "Install", color = Bg, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Icon(if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download, null, tint = GHBg, modifier = Modifier.size(16.dp))
+                Text(if (isInstalled) "Play" else "Install", color = GHBg, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
 
         // Status badge
         val (sc, st) = when (game.serverStatus) {
-            ServerStatus.ONLINE -> Pair(Green, "ONLINE")
-            ServerStatus.MAINTENANCE -> Pair(Amber, "MAINT")
-            ServerStatus.OFFLINE -> Pair(Red, "OFFLINE")
-            ServerStatus.BUSY -> Pair(Amber, "BUSY")
+            ServerStatus.ONLINE -> Pair(GHGreen, "ONLINE")
+            ServerStatus.MAINTENANCE -> Pair(GHAmber, "MAINT")
+            ServerStatus.OFFLINE -> Pair(GHRed, "OFFLINE")
+            ServerStatus.BUSY -> Pair(GHAmber, "BUSY")
         }
         Box(Modifier.align(Alignment.TopEnd).padding(12.dp).clip(RoundedCornerShape(4.dp)).background(sc.copy(alpha = 0.9f)).padding(horizontal = 6.dp, vertical = 2.dp)) {
-            Text(st, color = TextWhite, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text(st, color = GHTextWhite, fontSize = 9.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -432,7 +432,7 @@ private fun GameGridCard(
                 Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = game.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             } else {
                 Box(Modifier.fillMaxSize().background(Brush.linearGradient(game.coverGradient)), contentAlignment = Alignment.Center) {
-                    Text(game.coverText, color = TextWhite, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                    Text(game.coverText, color = GHTextWhite, fontSize = 28.sp, fontWeight = FontWeight.Black)
                 }
             }
 
@@ -441,25 +441,25 @@ private fun GameGridCard(
 
             // Status dot
             val dotColor = when (game.serverStatus) {
-                ServerStatus.ONLINE -> Green
-                ServerStatus.MAINTENANCE -> Amber
-                ServerStatus.OFFLINE -> Red
-                ServerStatus.BUSY -> Amber
+                ServerStatus.ONLINE -> GHGreen
+                ServerStatus.MAINTENANCE -> GHAmber
+                ServerStatus.OFFLINE -> GHRed
+                ServerStatus.BUSY -> GHAmber
             }
             Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(8.dp).clip(CircleShape).background(dotColor))
 
             // Installed badge
             if (isInstalled) {
-                Box(Modifier.align(Alignment.BottomEnd).padding(6.dp).clip(RoundedCornerShape(3.dp)).background(Green.copy(alpha = 0.8f)).padding(horizontal = 4.dp, vertical = 1.dp)) {
-                    Text("✓", color = Bg, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                Box(Modifier.align(Alignment.BottomEnd).padding(6.dp).clip(RoundedCornerShape(3.dp)).background(GHGreen.copy(alpha = 0.8f)).padding(horizontal = 4.dp, vertical = 1.dp)) {
+                    Text("✓", color = GHBg, fontSize = 8.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
 
         // Title below card
         Spacer(Modifier.height(6.dp))
-        Text(game.title, color = TextWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(game.version, color = TextGray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(game.title, color = GHTextWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(game.version, color = GHTextGray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -476,7 +476,7 @@ private fun GlassBottomNav(selectedTab: Int, onTabSelect: (Int) -> Unit, onExit:
         Triple("Videos", Icons.Rounded.VideoLibrary, 2),
         Triple("Exit", Icons.Rounded.Close, -1)
     )
-    Row(Modifier.fillMaxWidth().background(GlassBar).padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+    Row(Modifier.fillMaxWidth().background(GHGlassBar).padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
         items.forEach { (label, icon, tab) ->
             val selected = when (label) {
                 "Home" -> selectedTab == 1 // Library is home
@@ -492,9 +492,9 @@ private fun GlassBottomNav(selectedTab: Int, onTabSelect: (Int) -> Unit, onExit:
                 }.padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(icon, label, tint = if (selected) TextWhite else TextGray, modifier = Modifier.size(22.dp))
+                Icon(icon, label, tint = if (selected) GHTextWhite else GHTextGray, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.height(2.dp))
-                Text(label, color = if (selected) TextWhite else TextGray, fontSize = 9.sp, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal)
+                Text(label, color = if (selected) GHTextWhite else GHTextGray, fontSize = 9.sp, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal)
             }
         }
     }
@@ -508,7 +508,7 @@ private fun GlassBottomNav(selectedTab: Int, onTabSelect: (Int) -> Unit, onExit:
 private fun GameDetailCompact(game: GameItem, context: Context, onBack: () -> Unit, onPlay: () -> Unit) {
     val isInstalled = ghIsInstalled(context, game.packageName)
 
-    Box(Modifier.fillMaxSize().background(Bg)) {
+    Box(Modifier.fillMaxSize().background(GHBg)) {
         // Blurred bg
         if (game.coverImageRes != null) {
             Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = null, modifier = Modifier.fillMaxSize().blur(40.dp), contentScale = ContentScale.Crop)
@@ -518,9 +518,9 @@ private fun GameDetailCompact(game: GameItem, context: Context, onBack: () -> Un
         Column(Modifier.fillMaxSize()) {
             // Top bar with back
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.ArrowBack, "Back", tint = TextWhite, modifier = Modifier.size(24.dp).clickable { onBack() })
+                Icon(Icons.Rounded.ArrowBack, "Back", tint = GHTextWhite, modifier = Modifier.size(24.dp).clickable { onBack() })
                 Spacer(Modifier.width(16.dp))
-                Text(game.title, color = TextWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(game.title, color = GHTextWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
 
             // Cover image
@@ -529,14 +529,14 @@ private fun GameDetailCompact(game: GameItem, context: Context, onBack: () -> Un
                     Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = game.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 }
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.7f)))))
-                Text(game.title, color = TextWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
+                Text(game.title, color = GHTextWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
             }
 
             // Info
             Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                Text("Description", color = TextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("Description", color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text(game.description, color = TextGray, fontSize = 13.sp)
+                Text(game.description, color = GHTextGray, fontSize = 13.sp)
                 Spacer(Modifier.height(12.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -549,13 +549,13 @@ private fun GameDetailCompact(game: GameItem, context: Context, onBack: () -> Un
 
                 // Play button
                 Row(
-                    Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(8.dp)).background(if (isInstalled) Green else Accent).clickable { onPlay() },
+                    Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(8.dp)).background(if (isInstalled) GHGreen else GHAccent).clickable { onPlay() },
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download, null, tint = Bg, modifier = Modifier.size(20.dp))
+                    Icon(if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download, null, tint = GHBg, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (isInstalled) "Play Now" else "Install", color = Bg, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(if (isInstalled) "Play Now" else "Install", color = GHBg, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -565,7 +565,7 @@ private fun GameDetailCompact(game: GameItem, context: Context, onBack: () -> Un
 @Composable
 private fun InfoChip(label: String, value: String) {
     Column {
-        Text(label, color = TextGray, fontSize = 10.sp)
-        Text(value, color = TextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(label, color = GHTextGray, fontSize = 10.sp)
+        Text(value, color = GHTextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
 }
