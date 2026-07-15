@@ -28,7 +28,8 @@ import java.util.Locale
 fun SettingsScreen(
     api: CommunityApi,
     onBack: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onCheckUpdate: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -346,6 +347,17 @@ fun SettingsScreen(
             title = "Trusted by DLavie",
             subtitle = "Game resmi yang diverifikasi",
             onAction = {}
+        )
+
+        // v7.9.92: Manual Check Update button
+        SettingsAction(
+            icon = Icons.Rounded.SystemUpdate,
+            title = "Cek Pembaruan",
+            subtitle = "Periksa versi terbaru DLavie Launcher",
+            onAction = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onCheckUpdate()
+            }
         )
 
         Spacer(Modifier.height(24.dp))
