@@ -4008,7 +4008,7 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
             ),
             isInstalled = { pkg -> isGameInstalled(context) },
             onGameClick = { pkg ->
-                onGameCardClick(gameInstalled, avgRating, ratingCount, maintenanceBlocked, myRating)
+                if (pkg == GAME_PKG_16 && gameInstalled) launchGame(context)
             }
         )
 
