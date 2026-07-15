@@ -1848,6 +1848,7 @@ fun MainShell(
                                     Page.GameHub -> DLavieGameHub(
                                             onNav = { page = it },
                                             onExit = { page = Page.Home },
+                                            api = api,
                                             onGameClick = { gamePackage ->
                                                 // v7.9.13: Find GameItem by packageName, set as detail target.
                                                 // v7.9.13 FIX: Fetch server status dari Supabase (jangan hardcode!).
@@ -2263,6 +2264,7 @@ fun MainShell(
                 DLavieGameHub(
                     onNav = { showGameHub = false },
                     onExit = { showGameHub = false },
+                    api = api,
                     onGameClick = { gamePackage ->
                         showGameHub = false
                         scope.launch {
