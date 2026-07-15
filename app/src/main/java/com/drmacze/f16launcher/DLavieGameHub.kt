@@ -223,13 +223,26 @@ fun DLavieGameHub(
                     Box(Modifier.weight(1f)) {
                         when (selectedTab) {
                             1 -> { // Library (default)
+                                var favorites by remember { mutableStateOf(ghLoadFavorites(context)) }
                                 LibraryContent(
                                     games = games,
                                     context = context,
                                     featuredGame = featuredGame,
                                     onFeaturedChange = { featuredGame = it },
                                     onOpenDetail = { showDetail = it },
-                                    onPlay = { pkg -> ghLaunch(context, pkg); onGameClick(pkg) }
+                                    onPlay = { pkg -> ghLaunch(context, pkg); onGameClick(pkg) },
+                                    favorites = favorites,
+                                    onToggleFavorite = { pkg -> favorites = ghToggleFavorite(context, pkg) },
+                                    onDelete = { pkg ->
+                                        // Delete from user games (if it's a user game)
+                                        try {
+                                            val prefs = context.getSharedPreferences("gh_user_games", Context.MODE_PRIVATE)
+                                            val raw = prefs.getString("games", "") ?: ""
+                                            val u = raw.split("\n").filter { !it.startsWith("|$pkg|") && !it.contains("|$pkg|") }
+                                            prefs.edit().putString("games", u.joinToString("\n")).apply()
+                                        } catch (_: Exception) {}
+                                        android.widget.Toast.makeText(context, "Game removed from library", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
                                 )
                             }
                             else -> {
@@ -318,7 +331,10 @@ private fun LibraryContent(
     featuredGame: GameItem?,
     onFeaturedChange: (GameItem) -> Unit,
     onOpenDetail: (GameItem) -> Unit,
-    onPlay: (String) -> Unit
+    onPlay: (String) -> Unit,
+    favorites: Set<String>,
+    onToggleFavorite: (String) -> Unit,
+    onDelete: (String) -> Unit
 ) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
         // ── FEATURED GAME CARD (large) ──
@@ -341,18 +357,57 @@ private fun LibraryContent(
                 .collect { idx -> if (idx < games.size) onFeaturedChange(games[idx]) }
         }
 
-        LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
+        LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.weight(1f)) {
             itemsIndexed(games) { idx, game ->
                 GameGridCard(
                     game = game,
                     isInstalled = ghIsInstalled(context, game.packageName),
                     isFocused = game.packageName == featuredGame?.packageName,
+                    isFavorite = game.packageName in favorites,
                     onClick = { onOpenDetail(game) },
-                    onPlay = { onPlay(game.packageName) }
+                    onPlay = { onPlay(game.packageName) },
+                    onToggleFavorite = { onToggleFavorite(game.packageName) },
+                    onDelete = { onDelete(game.packageName) },
+                    onShare = { ghShareGame(context, game) }
                 )
             }
         }
     }
+}
+
+// ── v7.9.95: Share game via Android share sheet ──
+// Link: https://drmacze.github.io/dlavie-web/#/game?pkg=PACKAGE_NAME
+// Website akan handle: kalau punya APK → redirect ke dlavie://game?pkg=PACKAGE_NAME
+//                      kalau tidak → tampilkan download page
+private fun ghShareGame(context: Context, game: GameItem) {
+    val shareUrl = "https://drmacze.github.io/dlavie-web/#/game?pkg=${game.packageName}"
+    val shareText = "Main ${game.title} di DLavie Launcher! Download sekarang: $shareUrl"
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "DLavie Launcher - ${game.title}")
+        putExtra(Intent.EXTRA_TEXT, shareText)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(Intent.createChooser(shareIntent, "Bagikan ${game.title}").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
+    } catch (e: Exception) {
+        android.util.Log.w("DLavie", "Share failed: ${e.message}")
+    }
+}
+
+// ── v7.9.95: Favorite persistence (SharedPreferences) ──
+private const val GH_PREFS = "gh_favorites_v293"
+private fun ghLoadFavorites(c: Context): Set<String> = try {
+    c.getSharedPreferences(GH_PREFS, Context.MODE_PRIVATE).getStringSet("fav_pkgs", emptySet()) ?: emptySet()
+} catch (_: Exception) { emptySet() }
+
+private fun ghToggleFavorite(c: Context, pkg: String): Set<String> {
+    val current = ghLoadFavorites(c).toMutableSet()
+    if (pkg in current) current.remove(pkg) else current.add(pkg)
+    c.getSharedPreferences(GH_PREFS, Context.MODE_PRIVATE).edit().putStringSet("fav_pkgs", current).apply()
+    return current
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -419,47 +474,125 @@ private fun GameGridCard(
     game: GameItem,
     isInstalled: Boolean,
     isFocused: Boolean,
+    isFavorite: Boolean,
     onClick: () -> Unit,
-    onPlay: () -> Unit
+    onPlay: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onDelete: () -> Unit,
+    onShare: () -> Unit
 ) {
+    var showMenu by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (isFocused) 1f else 0.9f, spring(dampingRatio = 0.5f, stiffness = 200f), label = "scale")
     val alpha by animateFloatAsState(if (isFocused) 1f else 0.6f, tween(300), label = "alpha")
 
-    Column(Modifier.width(120.dp).graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }) {
-        // Card cover (120x160dp, portrait)
-        Box(Modifier.width(120.dp).height(160.dp).clip(RoundedCornerShape(8.dp)).clickable { onClick() }) {
+    Column(Modifier.width(160.dp).graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }) {
+        // ── PS5-STYLE CARD COVER (160x200dp, landscape 4:5) ──
+        Box(Modifier.width(160.dp).height(200.dp).clip(RoundedCornerShape(12.dp)).clickable { onClick() }) {
+            // Cover image
             if (game.coverImageRes != null) {
                 Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = game.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             } else {
                 Box(Modifier.fillMaxSize().background(Brush.linearGradient(game.coverGradient)), contentAlignment = Alignment.Center) {
-                    Text(game.coverText, color = GHTextWhite, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                    Text(game.coverText, color = GHTextWhite, fontSize = 32.sp, fontWeight = FontWeight.Black)
                 }
             }
 
-            // Bottom gradient
-            Box(Modifier.fillMaxWidth().height(50.dp).align(Alignment.BottomStart).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.9f)))))
-
-            // Status dot
-            val dotColor = when (game.serverStatus) {
-                ServerStatus.ONLINE -> GHGreen
-                ServerStatus.MAINTENANCE -> GHAmber
-                ServerStatus.OFFLINE -> GHRed
-                ServerStatus.BUSY -> GHAmber
+            // PS5 glow border on focused
+            if (isFocused) {
+                Box(Modifier.fillMaxSize().border(2.dp, GHAccent.copy(alpha = 0.6f), RoundedCornerShape(12.dp)))
             }
-            Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(8.dp).clip(CircleShape).background(dotColor))
 
-            // Installed badge
-            if (isInstalled) {
-                Box(Modifier.align(Alignment.BottomEnd).padding(6.dp).clip(RoundedCornerShape(3.dp)).background(GHGreen.copy(alpha = 0.8f)).padding(horizontal = 4.dp, vertical = 1.dp)) {
-                    Text("✓", color = GHBg, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                }
+            // Bottom gradient for text
+            Box(Modifier.fillMaxWidth().height(70.dp).align(Alignment.BottomStart).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.95f)))))
+
+            // Status badge (top-left, PS5 style)
+            val (sc, st) = when (game.serverStatus) {
+                ServerStatus.ONLINE -> Pair(GHGreen, "ONLINE")
+                ServerStatus.MAINTENANCE -> Pair(GHAmber, "MAINT")
+                ServerStatus.OFFLINE -> Pair(GHRed, "OFFLINE")
+                ServerStatus.BUSY -> Pair(GHAmber, "BUSY")
+            }
+            Box(Modifier.align(Alignment.TopStart).padding(8.dp).clip(RoundedCornerShape(4.dp)).background(sc.copy(alpha = 0.85f)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                Text(st, color = GHTextWhite, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+            }
+
+            // Favorite heart (top-right)
+            Icon(
+                if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                "Favorite",
+                tint = if (isFavorite) GHRed else GHTextWhite,
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(18.dp).clickable { onToggleFavorite() }
+            )
+
+            // Title + subtitle overlay (bottom)
+            Column(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
+                Text(game.title, color = GHTextWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(game.subtitle, color = GHTextGray, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
 
-        // Title below card
-        Spacer(Modifier.height(6.dp))
-        Text(game.title, color = GHTextWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(game.version, color = GHTextGray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // ── VIEW DETAIL + 3-DOT MENU (below card) ──
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            // View Detail button (PS5 style — dark glass)
+            Box(
+                Modifier.weight(1f).height(32.dp).clip(RoundedCornerShape(8.dp))
+                    .background(GHGlassCard).border(1.dp, GHBorder, RoundedCornerShape(8.dp))
+                    .clickable { onClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(Icons.Rounded.Info, null, tint = GHTextGray, modifier = Modifier.size(14.dp))
+                    Text("View Detail", color = GHTextWhite, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+
+            // 3-dot menu button
+            Box(
+                Modifier.size(32.dp).clip(RoundedCornerShape(8.dp))
+                    .background(GHGlassCard).border(1.dp, GHBorder, RoundedCornerShape(8.dp))
+                    .clickable { showMenu = !showMenu },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.MoreVert, "Menu", tint = GHTextWhite, modifier = Modifier.size(16.dp))
+            }
+        }
+
+        // ── DROPDOWN MENU (Share, Favorite, Delete) ──
+        if (showMenu) {
+            Popup(onDismissRequest = { showMenu = false }, properties = PopupProperties(focusable = true)) {
+                Column(
+                    Modifier.width(160.dp).clip(RoundedCornerShape(10.dp))
+                        .background(GHBg.copy(alpha = 0.95f)).border(1.dp, GHBorderHi, RoundedCornerShape(10.dp))
+                        .padding(4.dp)
+                ) {
+                    // Share
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onShare(); showMenu = false }.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Rounded.Share, null, tint = GHAccent, modifier = Modifier.size(16.dp))
+                        Text("Share", color = GHTextWhite, fontSize = 12.sp)
+                    }
+                    // Favorite toggle
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onToggleFavorite(); showMenu = false }.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if (isFavorite) GHRed else GHTextWhite, modifier = Modifier.size(16.dp))
+                        Text(if (isFavorite) "Remove Favorite" else "Add to Favorite", color = GHTextWhite, fontSize = 12.sp)
+                    }
+                    // Delete
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onDelete(); showMenu = false }.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Rounded.Delete, null, tint = GHRed, modifier = Modifier.size(16.dp))
+                        Text("Delete", color = GHRed, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
     }
 }
 
