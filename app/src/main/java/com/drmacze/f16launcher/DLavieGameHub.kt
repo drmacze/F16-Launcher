@@ -19,6 +19,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.pager.*
@@ -33,7 +35,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.input.pointer.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -1933,19 +1934,23 @@ private fun GHGameCardMini(
         animationSpec = spring(dampingRatio = 0.4f, stiffness = 300f),
         label = "card_press"
     )
+    val interactionSource = remember { MutableInteractionSource() }
+    LaunchedEffect(interactionSource) {
+        interactionSource.interactions.collect { interaction ->
+            when (interaction) {
+                is PressInteraction.Press -> isPressed = true
+                is PressInteraction.Release, is PressInteraction.Cancel -> isPressed = false
+            }
+        }
+    }
 
     Column(
         Modifier.width(140.dp).graphicsLayer { scaleX = scale; scaleY = scale }
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        isPressed = true
-                        tryAwaitRelease()
-                        isPressed = false
-                    },
-                    onTap = { onOpenDetail() }
-                )
-            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = { onOpenDetail() }
+            )
     ) {
         // Card cover (140x210dp, 2:3 portrait ratio)
         Box(
