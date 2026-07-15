@@ -21,6 +21,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.pager.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,6 +33,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -64,22 +67,25 @@ import java.util.*
 //   - All REAL data — no dummy. Connected to device & Supabase.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ──────────────────────────── Design Tokens ───────────────────────────────
-private val GHBg          = Color(0xFF0A0E1A)   // Deep navy-black (exact match ref)
-private val GHBgCard      = Color(0xFF111827)   // Slightly lighter card surface
-private val GHBgNav       = Color(0xFF0D1117)   // Nav bar bg
-private val GHSurface     = Color(0xFF1A2236)   // Elevated surface
+// ──────────────────────────── Design Tokens (Gemini spec) ──────────────────
+// Dark mode pekat + neon cyan accent (GameHub PlayStore style)
+private val GHBg          = Color(0xFF000000)   // Pure black (Gemini spec)
+private val GHBgCard      = Color(0xFF121212)   // Card surface (Gemini spec)
+private val GHBgNav       = Color(0xFF0A0A0A)   // Nav bar bg (translucent feel)
+private val GHSurface     = Color(0xFF1A1A1A)   // Elevated surface
+private val GHGlassBg     = Color(0x99000000)   // 60% black for glassmorphism
 private val GHBorder      = Color(0x1AFFFFFF)   // 10% white border
 private val GHBorderHi    = Color(0x33FFFFFF)   // 20% white border (selected)
 private val GHTextWhite   = Color(0xFFFFFFFF)
-private val GHTextGray    = Color(0xFFADB5BD)
-private val GHTextDim     = Color(0xFF6C757D)
-private val GHAccent      = Color(0xFF4F8EF7)   // Blue accent (matches ref)
-private val GHAccentTab   = Color(0xFFFFFFFF)   // Active tab text
-private val GHGreen       = Color(0xFF4CAF50)
+private val GHTextGray    = Color(0xFFA0A0A0)   // Gemini spec: #A0A0A0
+private val GHTextDim     = Color(0xFF666666)
+private val GHAccent      = Color(0xFF00E5FF)   // Neon cyan (Gemini spec)
+private val GHAccentDim   = Color(0xFF00B8D4)
+private val GHAccentTab   = Color(0xFFFFFFFF)
+private val GHGreen       = Color(0xFF00FF88)   // Bright green for Play/Active
 private val GHAmber       = Color(0xFFFFB347)
 private val GHRed         = Color(0xFFFF5252)
-private val GHNavSelected = Color(0xFF1E3A5F)   // Selected nav item bg
+private val GHNavSelected = Color(0xFF00E5FF)   // Cyan for selected nav
 
 // ──────────────────────────── Prefs helpers ───────────────────────────────
 private const val GH_PREFS = "gh_v284"
@@ -1547,7 +1553,7 @@ private fun GHSettingsRowHighlighted(label: String, onClick: () -> Unit) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HOME CAROUSEL — Main menu GameHub (PlayStore style)
+// HOME CAROUSEL — Gemini spec: Hero + Quick Actions + Swimlanes + Bottom Nav
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -1576,10 +1582,7 @@ private fun GHHomeCarousel(
                 developer = "DLavie Company", version = "v26.0", sizeMb = "34 MB",
                 category = "Sports", ageRating = "9+", lastUpdate = "5 Juli 2026",
                 features = listOf("Gameplay Realistis", "Roster 2025/2026", "Komunitas Aktif", "Update Rutin"),
-                screenshots = listOf(
-                    R.drawable.fifa16_screenshot_1, R.drawable.fifa16_screenshot_2,
-                    R.drawable.fifa16_screenshot_3, R.drawable.fifa16_screenshot_4
-                ),
+                screenshots = listOf(R.drawable.fifa16_screenshot_1, R.drawable.fifa16_screenshot_2, R.drawable.fifa16_screenshot_3, R.drawable.fifa16_screenshot_4),
                 apkUrl = FIFA16_APK_URL
             ),
             GameItem(
@@ -1599,127 +1602,119 @@ private fun GHHomeCarousel(
     }
 
     var favorites by remember { mutableStateOf(ghLoadFavorites(context)) }
-    var focusedIndex by remember { mutableStateOf(0) }
-    var showFavOnly by remember { mutableStateOf(false) }
-
-    val displayGames = if (showFavOnly) dlavieGames.filter { it.packageName in favorites } else dlavieGames
+    var bottomTab by remember { mutableStateOf(0) }  // 0=Home, 1=Library, 2=Community, 3=Profile
 
     Box(Modifier.fillMaxSize().background(GHBg)) {
+        // ── ADAPTIVE BLURRED BACKGROUND (from first game cover) ──
+        dlavieGames.firstOrNull()?.let { game ->
+            if (game.coverImageRes != null) {
+                Image(
+                    painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize().blur(60.dp),
+                    contentScale = ContentScale.Crop
+                )
+            }
+            Box(Modifier.fillMaxSize().background(GHBg.copy(alpha = 0.85f)))
+        }
+
         Column(Modifier.fillMaxSize()) {
-            // ── TOP BAR (transparan) ──
-            GHTopBarHome(
-                currentTime = currentTime,
-                batteryLevel = batteryLevel,
-                showFavOnly = showFavOnly,
-                onToggleFav = { showFavOnly = !showFavOnly },
-                onExit = onExit
-            )
+            // ── GLASSMORPHIC TOP BAR ──
+            GHTopBarGlass(currentTime, batteryLevel, onExit)
 
-            // ── CAROUSEL (LazyRow horizontal scroll) ──
-            Box(
-                Modifier.fillMaxWidth().weight(1f),
-                contentAlignment = Alignment.Center
+            // ── SCROLLABLE CONTENT ──
+            Column(
+                Modifier.weight(1f).verticalScroll(rememberScrollState())
             ) {
-                if (displayGames.isEmpty()) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Rounded.FavoriteBorder, null, tint = GHTextDim, modifier = Modifier.size(56.dp))
-                        Spacer(Modifier.height(12.dp))
-                        Text("No favorites yet", color = GHTextGray, fontSize = 14.sp)
-                        Spacer(Modifier.height(4.dp))
-                        Text("Tap heart icon to add", color = GHTextDim, fontSize = 11.sp)
-                    }
-                } else {
-                    val listState = rememberLazyListState()
-                    LaunchedEffect(listState) {
-                        snapshotFlow { listState.firstVisibleItemIndex }
-                            .collect { idx -> if (idx < displayGames.size) focusedIndex = idx }
-                    }
+                // Hero Carousel (banner besar + vignette + Play Now)
+                GHHeroCarousel(dlavieGames, context, onOpenDetail, onGameClick)
 
-                    LazyRow(
-                        state = listState,
-                        contentPadding = PaddingValues(horizontal = 56.dp),
-                        horizontalArrangement = Arrangement.spacedBy(20.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        itemsIndexed(displayGames) { idx, game ->
-                            GHCarouselCard(
-                                game = game,
-                                isInstalled = isPackageInstalled(context, game.packageName),
-                                isFavorite = game.packageName in favorites,
-                                isFocused = idx == focusedIndex,
-                                onOpenDetail = { onOpenDetail(game) },
-                                onPlay = {
-                                    ghSaveLastRun(context, game.packageName)
-                                    onGameClick(game.packageName)
-                                },
-                                onToggleFavorite = {
-                                    favorites = ghToggleFavorite(context, game.packageName)
-                                }
-                            )
-                        }
-                    }
+                Spacer(Modifier.height(20.dp))
 
-                    // ── PAGE INDICATOR (dots) ──
-                    Row(
-                        Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        repeat(displayGames.size) { i ->
-                            Box(
-                                Modifier.size(if (i == focusedIndex) 8.dp else 6.dp)
-                                    .clip(CircleShape)
-                                    .background(if (i == focusedIndex) GHAccent else GHTextDim.copy(alpha = 0.4f))
-                            )
-                        }
-                    }
+                // Quick Action Buttons (PC/Cloud/Emulator/Controller)
+                GHQuickActions()
+
+                Spacer(Modifier.height(24.dp))
+
+                // Swimlane: Popular
+                GHSwimlane(
+                    title = "Popular Games",
+                    games = dlavieGames,
+                    context = context,
+                    favorites = favorites,
+                    onOpenDetail = onOpenDetail,
+                    onToggleFavorite = { favorites = ghToggleFavorite(context, it) }
+                )
+
+                Spacer(Modifier.height(20.dp))
+
+                // Swimlane: Favorites (kalau ada)
+                val favGames = dlavieGames.filter { it.packageName in favorites }
+                if (favGames.isNotEmpty()) {
+                    GHSwimlane(
+                        title = "Your Favorites",
+                        games = favGames,
+                        context = context,
+                        favorites = favorites,
+                        onOpenDetail = onOpenDetail,
+                        onToggleFavorite = { favorites = ghToggleFavorite(context, it) }
+                    )
+                    Spacer(Modifier.height(20.dp))
                 }
+
+                // Swimlane: All Games
+                GHSwimlane(
+                    title = "All Games",
+                    games = dlavieGames,
+                    context = context,
+                    favorites = favorites,
+                    onOpenDetail = onOpenDetail,
+                    onToggleFavorite = { favorites = ghToggleFavorite(context, it) }
+                )
+
+                Spacer(Modifier.height(100.dp))  // Space for bottom nav
             }
 
-            // ── BOTTOM NAV (floating, glassmorphic) ──
-            GHBottomNav(
-                currentScreen = 3,
-                onNavHome = { onSwitchScreen(3) },
-                onNavGame = { onNavToGameMgmt() },
-                onNavDownload = { onNavToDownload() },
-                onNavSettings = { onNavToSettings() },
-                onExit = onExit
+            // ── BOTTOM NAV (4 items: Home/Library/Community/Profile) ──
+            GHBottomNavGemini(
+                currentTab = bottomTab,
+                onTabChange = { tab ->
+                    bottomTab = tab
+                    when (tab) {
+                        0 -> {}  // Already home
+                        1 -> onNavToGameMgmt()  // Library → Game Management
+                        2 -> onNavToDownload()  // Community → Download (placeholder)
+                        3 -> onNavToSettings()  // Profile → Settings
+                    }
+                }
             )
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TOP BAR HOME — transparent, minimal
+// GLASSMORPHIC TOP BAR — translucent + blur (Gemini spec)
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun GHTopBarHome(
-    currentTime: String,
-    batteryLevel: Int,
-    showFavOnly: Boolean,
-    onToggleFav: () -> Unit,
-    onExit: () -> Unit
-) {
+private fun GHTopBarGlass(currentTime: String, batteryLevel: Int, onExit: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth()
+            .background(GHGlassBg)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Back arrow (FIXED: now works because onExit is passed from ModernLauncherActivity)
         Icon(
-            Icons.Rounded.ArrowBack, "Exit",
+            Icons.Rounded.ArrowBack, "Back",
             tint = GHTextWhite,
-            modifier = Modifier.size(24.dp).clickable { onExit() }
+            modifier = Modifier.size(26.dp).clickable { onExit() }
         )
         Spacer(Modifier.width(20.dp))
-        Text("GameHub", color = GHTextWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-        // Favorite filter toggle
-        Icon(
-            if (showFavOnly) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-            "Favorite",
-            tint = if (showFavOnly) GHRed else GHTextGray,
-            modifier = Modifier.size(22.dp).clickable { onToggleFav() }
-        )
+        Text("GameHub", color = GHTextWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Icon(Icons.Rounded.Search, "Search", tint = GHTextWhite, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(16.dp))
-        Icon(Icons.Rounded.Search, "Search", tint = GHTextGray, modifier = Modifier.size(22.dp))
+        Icon(Icons.Rounded.Notifications, "Notifications", tint = GHTextWhite, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(12.dp))
         Icon(Icons.Rounded.BatteryFull, "Battery", tint = GHTextGray, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(3.dp))
@@ -1730,50 +1725,236 @@ private fun GHTopBarHome(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CAROUSEL CARD — large, full-bleed cover, info below
+// HERO CAROUSEL — banner besar + vignette + Play Now (Gemini spec)
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun GHHeroCarousel(
+    games: List<GameItem>,
+    context: Context,
+    onOpenDetail: (GameItem) -> Unit,
+    onGameClick: (String) -> Unit
+) {
+    val pagerState = rememberPagerState(pageCount = { games.size })
+
+    // Auto-scroll
+    LaunchedEffect(pagerState) {
+        while (true) {
+            delay(4000)
+            val next = (pagerState.currentPage + 1) % games.size
+            pagerState.animateScrollToPage(next)
+        }
+    }
+
+    Box(
+        Modifier.fillMaxWidth().height(280.dp).padding(horizontal = 16.dp)
+    ) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp))
+        ) { page ->
+            val game = games[page]
+            Box(
+                Modifier.fillMaxSize()
+                    .background(Brush.linearGradient(game.coverGradient))
+                    .clickable { onOpenDetail(game) }
+            ) {
+                // Cover image full bleed
+                if (game.coverImageRes != null) {
+                    Image(
+                        painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes),
+                        contentDescription = game.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+
+                // Vignette (gradient hitam ke transparan di bawah)
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Transparent, Color.Black.copy(0.9f))
+                        )
+                    )
+                )
+
+                // Status badge top-right
+                val (sc, st) = when (game.serverStatus) {
+                    ServerStatus.ONLINE -> Pair(GHGreen, "ONLINE")
+                    ServerStatus.MAINTENANCE -> Pair(GHAmber, "MAINT")
+                    ServerStatus.OFFLINE -> Pair(GHRed, "OFFLINE")
+                    ServerStatus.BUSY -> Pair(GHAmber, "BUSY")
+                }
+                Box(
+                    Modifier.align(Alignment.TopEnd).padding(12.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(sc.copy(alpha = 0.85f))
+                        .border(1.dp, sc, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(st, color = GHTextWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+
+                // Title + Play Now button at bottom
+                Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
+                    Text(game.title, color = GHTextWhite, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(game.subtitle, color = GHTextGray, fontSize = 13.sp)
+                    Spacer(Modifier.height(12.dp))
+                    // Play Now button (neon cyan, glowing)
+                    Row(
+                        Modifier.clip(RoundedCornerShape(10.dp))
+                            .background(GHAccent)
+                            .clickable {
+                                ghSaveLastRun(context, game.packageName)
+                                onGameClick(game.packageName)
+                            }
+                            .padding(horizontal = 20.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.PlayArrow, null, tint = GHBg, modifier = Modifier.size(20.dp))
+                        Text("Play Now", color = GHBg, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // Page indicator dots
+        Row(
+            Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            repeat(games.size) { i ->
+                Box(
+                    Modifier.size(if (i == pagerState.currentPage) 8.dp else 6.dp)
+                        .clip(CircleShape)
+                        .background(if (i == pagerState.currentPage) GHAccent else GHTextDim.copy(alpha = 0.5f))
+                )
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QUICK ACTIONS — row of 4-5 circular icons (Gemini spec)
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun GHQuickActions() {
+    val actions = listOf(
+        Triple("PC Games", Icons.Rounded.DesktopWindows, GHAccent),
+        Triple("Cloud", Icons.Rounded.Cloud, GHGreen),
+        Triple("Emulator", Icons.Rounded.SportsEsports, GHAmber),
+        Triple("Controller", Icons.Rounded.Gamepad, GHRed),
+        Triple("Steam", Icons.Rounded.SportsEsports, Color(0xFF1B2838))
+    )
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        actions.forEach { (label, icon, color) ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.clickable { /* filter by category */ }
+            ) {
+                Box(
+                    Modifier.size(56.dp).clip(CircleShape)
+                        .background(GHBgCard)
+                        .border(1.dp, color.copy(alpha = 0.4f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, label, tint = color, modifier = Modifier.size(28.dp))
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(label, color = GHTextGray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SWIMLANE — horizontal slider per category (Gemini spec)
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun GHSwimlane(
+    title: String,
+    games: List<GameItem>,
+    context: Context,
+    favorites: Set<String>,
+    onOpenDetail: (GameItem) -> Unit,
+    onToggleFavorite: (String) -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        // Title row with "See All"
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(title, color = GHTextWhite, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text("See All", color = GHAccent, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        }
+
+        // Horizontal card slider
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(games) { game ->
+                GHGameCardMini(
+                    game = game,
+                    isFavorite = game.packageName in favorites,
+                    onOpenDetail = { onOpenDetail(game) },
+                    onToggleFavorite = { onToggleFavorite(game.packageName) }
+                )
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GAME CARD MINI — portrait 2:3 ratio for swimlanes (Gemini spec)
 // ═══════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GHCarouselCard(
+private fun GHGameCardMini(
     game: GameItem,
-    isInstalled: Boolean,
     isFavorite: Boolean,
-    isFocused: Boolean,
     onOpenDetail: () -> Unit,
-    onPlay: () -> Unit,
     onToggleFavorite: () -> Unit
 ) {
-    var showMenu by remember { mutableStateOf(false) }
-    val platform = if (game.apkUrl.endsWith(".apk", ignoreCase = true)) "Android" else "Other"
-
-    // Scale animation: focused card bigger
+    // Press animation: scale down to 0.98 on press (Gemini spec)
+    var isPressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1f else 0.85f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 200f),
-        label = "card_scale"
-    )
-    val alpha by animateFloatAsState(
-        targetValue = if (isFocused) 1f else 0.5f,
-        animationSpec = tween(300),
-        label = "card_alpha"
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = spring(dampingRatio = 0.4f, stiffness = 300f),
+        label = "card_press"
     )
 
     Column(
-        Modifier.width(220.dp).graphicsLayer {
-            scaleX = scale; scaleY = scale; this.alpha = alpha
-        },
-        horizontalAlignment = Alignment.CenterHorizontally
+        Modifier.width(140.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        tryAwaitRelease()
+                        isPressed = false
+                    },
+                    onTap = { onOpenDetail() }
+                )
+            }
     ) {
-        // ── CARD COVER (220x300dp, full-bleed, rounded) ──
+        // Card cover (140x210dp, 2:3 portrait ratio)
         Box(
-            Modifier.width(220.dp).height(300.dp)
-                .clip(RoundedCornerShape(20.dp))
+            Modifier.width(140.dp).height(210.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(Brush.linearGradient(game.coverGradient))
-                .border(1.dp, GHBorderHi, RoundedCornerShape(20.dp))
-                .clickable { onOpenDetail() }
+                .border(1.dp, GHBorder, RoundedCornerShape(12.dp))
         ) {
-            // Cover image full bleed
+            // Cover image
             if (game.coverImageRes != null) {
                 Image(
                     painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes),
@@ -1783,54 +1964,23 @@ private fun GHCarouselCard(
                 )
             } else {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(game.coverText, color = GHTextWhite, fontSize = 48.sp, fontWeight = FontWeight.Black)
+                    Text(game.coverText, color = GHTextWhite, fontSize = 32.sp, fontWeight = FontWeight.Black)
                 }
             }
 
-            // Top gradient overlay
+            // Bottom gradient for badge readability
             Box(
-                Modifier.fillMaxWidth().height(60.dp).align(Alignment.TopStart)
-                    .background(Brush.verticalGradient(listOf(Color.Black.copy(0.7f), Color.Transparent)))
+                Modifier.fillMaxWidth().height(40.dp).align(Alignment.BottomStart)
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.8f))))
             )
 
-            // Platform label (top-left)
-            Row(
-                Modifier.align(Alignment.TopStart).padding(12.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(GHAccent.copy(alpha = 0.85f))
-                    .border(1.dp, GHAccent, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Icon(Icons.Rounded.Android, platform, tint = GHTextWhite, modifier = Modifier.size(12.dp))
-                Text(platform, color = GHTextWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
-
-            // 3-dot menu (top-right)
-            Box(
-                Modifier.align(Alignment.TopEnd).padding(8.dp)
-                    .size(32.dp).clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black.copy(0.5f))
-                    .clickable { showMenu = !showMenu },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Rounded.MoreVert, "Menu", tint = GHTextWhite, modifier = Modifier.size(20.dp))
-            }
-
-            // Favorite heart (bottom-right)
+            // Favorite heart (top-right)
             Icon(
                 if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                 "Favorite",
                 tint = if (isFavorite) GHRed else GHTextWhite,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp).size(26.dp)
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(20.dp)
                     .clickable { onToggleFavorite() }
-            )
-
-            // Bottom gradient overlay
-            Box(
-                Modifier.fillMaxWidth().height(100.dp).align(Alignment.BottomStart)
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.9f))))
             )
 
             // Status badge (bottom-left)
@@ -1841,174 +1991,83 @@ private fun GHCarouselCard(
                 ServerStatus.BUSY -> Pair(GHAmber, "BUSY")
             }
             Box(
-                Modifier.align(Alignment.BottomStart).padding(12.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(sc.copy(alpha = 0.9f))
-                    .border(1.dp, sc, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                Modifier.align(Alignment.BottomStart).padding(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(sc.copy(alpha = 0.85f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
-                Text(st, color = GHTextWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(st, color = GHTextWhite, fontSize = 8.sp, fontWeight = FontWeight.Bold)
             }
         }
 
-        // ── INFO BELOW CARD ──
-        Spacer(Modifier.height(12.dp))
+        // Title below card
+        Spacer(Modifier.height(6.dp))
         Text(
             game.title,
             color = GHTextWhite,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center
+            overflow = TextOverflow.Ellipsis
         )
-        Spacer(Modifier.height(2.dp))
         Text(
-            game.subtitle,
+            game.sizeMb.ifEmpty { game.version },
             color = GHTextGray,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center
+            overflow = TextOverflow.Ellipsis
         )
-
-        // ── BUTTONS ROW ──
-        Spacer(Modifier.height(10.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // View Detail button
-            Box(
-                Modifier.weight(1f).height(40.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(GHSurface)
-                    .border(1.dp, GHBorderHi, RoundedCornerShape(10.dp))
-                    .clickable { onOpenDetail() },
-                contentAlignment = Alignment.Center
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Icons.Rounded.Info, null, tint = GHTextGray, modifier = Modifier.size(16.dp))
-                    Text("View Detail", color = GHTextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                }
-            }
-
-            // Play / Install button
-            Box(
-                Modifier.weight(1f).height(40.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(GHAccent)
-                    .clickable { onPlay() },
-                contentAlignment = Alignment.Center
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(
-                        if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download,
-                        null, tint = GHTextWhite, modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        if (isInstalled) "Play" else "Install",
-                        color = GHTextWhite, fontSize = 13.sp, fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        // ── DROPDOWN MENU (glassmorphic) ──
-        if (showMenu) {
-            Popup(
-                onDismissRequest = { showMenu = false },
-                properties = PopupProperties(focusable = true)
-            ) {
-                Column(
-                    Modifier.width(180.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(GHSurface.copy(alpha = 0.95f))
-                        .border(1.dp, GHBorderHi, RoundedCornerShape(12.dp))
-                        .padding(4.dp)
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-                            .clickable { onToggleFavorite(); showMenu = false }
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Icon(
-                            if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                            null, tint = if (isFavorite) GHRed else GHTextWhite, modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            if (isFavorite) "Remove from Favorite" else "Add to Favorite",
-                            color = GHTextWhite, fontSize = 13.sp
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// BOTTOM NAV — floating glassmorphic, 5 items (Home/Game/Download/Settings/Exit)
+// BOTTOM NAV — 4 items (Home/Library/Community/Profile) with active state
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun GHBottomNav(
-    currentScreen: Int,
-    onNavHome: () -> Unit,
-    onNavGame: () -> Unit,
-    onNavDownload: () -> Unit,
-    onNavSettings: () -> Unit,
-    onExit: () -> Unit
+private fun GHBottomNavGemini(
+    currentTab: Int,
+    onTabChange: (Int) -> Unit
 ) {
-    Box(
-        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-        contentAlignment = Alignment.Center
+    val tabs = listOf(
+        Triple("Home", Icons.Rounded.Home, 0),
+        Triple("Library", Icons.Rounded.SportsEsports, 1),
+        Triple("Community", Icons.Rounded.Forum, 2),
+        Triple("Profile", Icons.Rounded.Person, 3)
+    )
+    Row(
+        Modifier.fillMaxWidth()
+            .background(GHBg.copy(alpha = 0.95f))
+            .border(width = 1.dp, color = GHBorder, shape = RectangleShape)
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        Row(
-            Modifier.clip(RoundedCornerShape(24.dp))
-                .background(GHBgNav.copy(alpha = 0.85f))
-                .border(1.dp, GHBorderHi, RoundedCornerShape(24.dp))
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            GHNavButtonItem(Icons.Rounded.Home, "Home", currentScreen == 3, onNavHome)
-            GHNavButtonItem(Icons.Rounded.SportsEsports, "Game", currentScreen == 0, onNavGame)
-            GHNavButtonItem(Icons.Rounded.Download, "Download", currentScreen == 1, onNavDownload)
-            GHNavButtonItem(Icons.Rounded.Settings, "Settings", currentScreen == 2, onNavSettings)
-            GHNavButtonItem(Icons.Rounded.Close, "Exit", false, onExit)
+        tabs.forEach { (label, icon, idx) ->
+            val selected = currentTab == idx
+            Column(
+                Modifier.clip(RoundedCornerShape(12.dp))
+                    .clickable { onTabChange(idx) }
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    icon, label,
+                    tint = if (selected) GHAccent else GHTextGray,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    label,
+                    color = if (selected) GHAccent else GHTextGray,
+                    fontSize = 10.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                )
+                // Active indicator line
+                if (selected) {
+                    Spacer(Modifier.height(2.dp))
+                    Box(Modifier.width(20.dp).height(2.dp).clip(CircleShape).background(GHAccent))
+                }
+            }
         }
-    }
-}
-
-@Composable
-private fun GHNavButtonItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Column(
-        Modifier.clip(RoundedCornerShape(16.dp))
-            .background(if (selected) GHAccent.copy(alpha = 0.2f) else Color.Transparent)
-            .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            icon, label,
-            tint = if (selected) GHAccent else GHTextGray,
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            label,
-            color = if (selected) GHAccent else GHTextGray,
-            fontSize = 10.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
-        )
     }
 }
