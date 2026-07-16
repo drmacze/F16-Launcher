@@ -16,6 +16,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -42,17 +43,17 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DLAVIE GAMEHUB v300 — Modern Glassmorphism (clean, minimal, cinematic)
+// DLAVIE GAMEHUB v302 — Sidebar + Swipe Card + Glow
 // ═══════════════════════════════════════════════════════════════════════════
-// No colored borders. Blurred game cover bg. Glass cards with subtle shadow.
-// Minimal UI. Clean spacing. Modern aesthetic.
+// No bottom nav. Hamburger (3 lines) in top bar opens sidebar drawer.
+// Swipe cards: focused card scales up + white glow behind.
+// Status label: clean pill, minimal.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ── Minimal palette ──
 private val Bg = Color(0xFF050505)
-private val GlassSurface = Color(0x15FFFFFF)     // 8% white — very subtle glass
-private val GlassSurfaceHi = Color(0x25FFFFFF)   // 15% white — focused glass
-private val Divider = Color(0x10FFFFFF)           // 6% white — barely visible
+private val GlassSurface = Color(0x12FFFFFF)
+private val GlassSurfaceHi = Color(0x22FFFFFF)
+private val Divider = Color(0x10FFFFFF)
 private val White = Color(0xFFFFFFFF)
 private val Gray = Color(0xFF909090)
 private val GrayDim = Color(0xFF555555)
@@ -61,26 +62,12 @@ private val AmberDot = Color(0xFFFBBF24)
 private val RedDot = Color(0xFFEF4444)
 private val Gold = Color(0xFFFFD700)
 
-// ── Helpers ──
-private fun ghBattery(c: Context): Int = try {
-    (c.getSystemService(Context.BATTERY_SERVICE) as BatteryManager).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-} catch (_: Exception) { 100 }
-
-private fun ghTime(c: Context): String = try {
-    val is24 = DateFormat.is24HourFormat(c)
-    SimpleDateFormat(if (is24) "HH:mm" else "h:mm a", Locale.getDefault()).format(Date())
-} catch (_: Exception) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()) }
-
+private fun ghBattery(c: Context): Int = try { (c.getSystemService(Context.BATTERY_SERVICE) as BatteryManager).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) } catch (_: Exception) { 100 }
+private fun ghTime(c: Context): String = try { val is24 = DateFormat.is24HourFormat(c); SimpleDateFormat(if (is24) "HH:mm" else "h:mm a", Locale.getDefault()).format(Date()) } catch (_: Exception) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()) }
 private fun ghInstalled(c: Context, pkg: String): Boolean = try { c.packageManager.getPackageInfo(pkg, 0); true } catch (_: Throwable) { false }
 private fun ghLaunch(c: Context, pkg: String) = try { c.packageManager.getLaunchIntentForPackage(pkg)?.let { it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); c.startActivity(it); true } ?: false } catch (_: Throwable) { false }
-
-private fun ghShare(ctx: Context, g: GameItem) {
-    val url = "https://drmacze.github.io/dlavie-web/#/game?pkg=${g.packageName}"
-    val i = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_SUBJECT, "DLavie - ${g.title}"); putExtra(Intent.EXTRA_TEXT, "Main ${g.title} di DLavie! $url"); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-    try { ctx.startActivity(Intent.createChooser(i, "Bagikan").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) } catch (_: Exception) {}
-}
-
-private const val PREFS = "gh_fav_v300"
+private fun ghShare(ctx: Context, g: GameItem) { val url = "https://drmacze.github.io/dlavie-web/#/game?pkg=${g.packageName}"; val i = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_SUBJECT, "DLavie - ${g.title}"); putExtra(Intent.EXTRA_TEXT, "Main ${g.title} di DLavie! $url"); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }; try { ctx.startActivity(Intent.createChooser(i, "Bagikan").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) } catch (_: Exception) {} }
+private const val PREFS = "gh_fav_v302"
 private fun ghLoadFav(c: Context): Set<String> = try { c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getStringSet("f", emptySet()) ?: emptySet() } catch (_: Exception) { emptySet() }
 private fun ghToggleFav(c: Context, p: String): Set<String> { val s = ghLoadFav(c).toMutableSet(); if (p in s) s.remove(p) else s.add(p); c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet("f", s).apply(); return s }
 
@@ -90,20 +77,9 @@ private fun ghToggleFav(c: Context, p: String): Set<String> { val s = ghLoadFav(
 
 @Composable
 fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
-    var phase by remember { mutableStateOf(0) }
-    var typed by remember { mutableStateOf("") }
-    var msg by remember { mutableStateOf("") }
-    val full = "DLAVIE"
-    val msgs = listOf("Memuat aset game...", "Menata antarmuka...", "Memindai data...", "Menghubungkan ke server...", "Menyiapkan GameHub...")
-    LaunchedEffect(visible) {
-        if (visible) {
-            phase = 0; delay(800); phase = 1; delay(800); phase = 2
-            for (i in full.indices) { typed = full.substring(0, i + 1); delay(120) }
-            delay(400); phase = 3
-            for (m in msgs) { msg = m; delay(700) }
-            msg = ""; delay(300); phase = 4; delay(600); onComplete(); phase = 5
-        }
-    }
+    var phase by remember { mutableStateOf(0) }; var typed by remember { mutableStateOf("") }; var msg by remember { mutableStateOf("") }
+    val full = "DLAVIE"; val msgs = listOf("Memuat aset game...", "Menata antarmuka...", "Memindai data...", "Menghubungkan ke server...", "Menyiapkan GameHub...")
+    LaunchedEffect(visible) { if (visible) { phase = 0; delay(800); phase = 1; delay(800); phase = 2; for (i in full.indices) { typed = full.substring(0, i + 1); delay(120) }; delay(400); phase = 3; for (m in msgs) { msg = m; delay(700) }; msg = ""; delay(300); phase = 4; delay(600); onComplete(); phase = 5 } }
     if (visible && phase < 5) {
         Box(Modifier.fillMaxSize().background(Bg), contentAlignment = Alignment.Center) {
             val la by animateFloatAsState(when (phase) { 0 -> 0f; 1 -> 1f; 2 -> 1f; 3 -> 1f; 4 -> 0f; else -> 0f }, tween(800, easing = FastOutSlowInEasing), label = "la")
@@ -111,8 +87,7 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
             val ta by animateFloatAsState(when (phase) { 2 -> 1f; 4 -> 0f; else -> 0f }, tween(400), label = "ta")
             val fo by animateFloatAsState(if (phase == 4) 0f else 1f, tween(600), label = "fo")
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.graphicsLayer { this.alpha = fo }) {
-                Box(Modifier.size(72.dp).graphicsLayer { scaleX = ls; scaleY = ls; this.alpha = la }
-                    .clip(androidx.compose.foundation.shape.GenericShape { _, _ -> val r = 70f; moveTo(0f, -r); lineTo(r * 0.866f, -r * 0.5f); lineTo(r * 0.866f, r * 0.5f); lineTo(0f, r); lineTo(-r * 0.866f, r * 0.5f); lineTo(-r * 0.866f, -r * 0.5f); close() }).background(White), contentAlignment = Alignment.Center) { Text("DL", color = Bg, fontSize = 26.sp, fontWeight = FontWeight.Black) }
+                Box(Modifier.size(72.dp).graphicsLayer { scaleX = ls; scaleY = ls; this.alpha = la }.clip(androidx.compose.foundation.shape.GenericShape { _, _ -> val r = 70f; moveTo(0f, -r); lineTo(r * 0.866f, -r * 0.5f); lineTo(r * 0.866f, r * 0.5f); lineTo(0f, r); lineTo(-r * 0.866f, r * 0.5f); lineTo(-r * 0.866f, -r * 0.5f); close() }).background(White), contentAlignment = Alignment.Center) { Text("DL", color = Bg, fontSize = 26.sp, fontWeight = FontWeight.Black) }
                 Spacer(Modifier.height(20.dp))
                 Text(typed, color = White, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp, modifier = Modifier.graphicsLayer { this.alpha = ta })
                 if (msg.isNotEmpty()) { Spacer(Modifier.height(16.dp)); Text(msg, color = Gray, fontSize = 12.sp, modifier = Modifier.graphicsLayer { this.alpha = ta }) }
@@ -122,7 +97,7 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MAIN — Blurred bg + glass cards + minimal UI
+// MAIN — hamburger sidebar + swipe cards + glow
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -158,181 +133,202 @@ fun DLavieGameHub(onExit: () -> Unit = {}, onNav: (Page) -> Unit = {}, onGameCli
     var favorites by remember { mutableStateOf(ghLoadFav(context)) }
     var selectedTab by remember { mutableStateOf(1) }
     var focusedIdx by remember { mutableStateOf(0) }
+    var showSidebar by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize().background(Bg)) {
-        // ── ADAPTIVE BLURRED BACKGROUND (from first game cover) ──
+        // ── ADAPTIVE BLURRED BACKGROUND ──
         games.getOrNull(focusedIdx)?.let { game ->
             if (game.coverImageRes != null) {
                 Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = null, modifier = Modifier.fillMaxSize().blur(80.dp), contentScale = ContentScale.Crop)
             }
-            // Dark overlay for depth
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xD9000000), Color(0xEE000000), Color(0xD9000000)))))
         }
 
         if (!showTransition) {
             showDetail?.let { g -> DetailPage(g, context, { showDetail = null }, { ghLaunch(context, g.packageName); onGameClick(g.packageName) }) } ?: run {
                 Column(Modifier.fillMaxSize()) {
-                    // ── TOP BAR (fully transparent, minimal) ──
-                    TopBar(time, batt, displayName, avatarUrl, username, role, selectedTab, { selectedTab = it }, onExit)
+                    // ── TOP BAR (hamburger + profile + tabs + status) ──
+                    TopBarWithHamburger(time, batt, displayName, avatarUrl, username, role, selectedTab, { selectedTab = it }, onExit, { showSidebar = true })
 
-                    // ── CONTENT (centered, one screen) ──
+                    // ── CONTENT (swipe cards) ──
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         if (selectedTab == 1) {
-                            LazyRow(contentPadding = PaddingValues(horizontal = 40.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                            val listState = rememberLazyListState()
+                            LaunchedEffect(listState) { snapshotFlow { listState.firstVisibleItemIndex }.collect { idx -> if (idx < games.size) focusedIdx = idx } }
+
+                            LazyRow(state = listState, contentPadding = PaddingValues(horizontal = 60.dp), horizontalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.fillMaxWidth()) {
                                 itemsIndexed(games) { idx, g ->
-                                    GlassGameCard(
-                                        game = g,
-                                        installed = ghInstalled(context, g.packageName),
-                                        isFav = g.packageName in favorites,
-                                        isFocused = idx == focusedIdx,
-                                        onClick = { showDetail = g },
-                                        onPlay = { ghLaunch(context, g.packageName); onGameClick(g.packageName) },
-                                        onFav = { favorites = ghToggleFav(context, g.packageName) },
-                                        onShare = { ghShare(context, g) },
-                                        onFocus = { focusedIdx = idx }
+                                    SwipeGameCard(
+                                        game = g, installed = ghInstalled(context, g.packageName), isFav = g.packageName in favorites, isFocused = idx == focusedIdx,
+                                        onClick = { showDetail = g }, onPlay = { ghLaunch(context, g.packageName); onGameClick(g.packageName) },
+                                        onFav = { favorites = ghToggleFav(context, g.packageName) }, onShare = { ghShare(context, g) }
                                     )
                                 }
+                            }
+
+                            // Page indicator dots
+                            Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                repeat(games.size) { i -> Box(Modifier.size(if (i == focusedIdx) 8.dp else 5.dp).clip(CircleShape).background(if (i == focusedIdx) White else GrayDim.copy(alpha = 0.4f))) }
                             }
                         } else {
                             Text(when(selectedTab) { 0 -> "Store"; 2 -> "Videos"; 3 -> "Settings"; else -> "" }, color = White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         }
                     }
-
-                    // ── BOTTOM NAV (fully transparent, minimal) ──
-                    BottomNav(selectedTab, { selectedTab = it }, onExit)
                 }
             }
         }
+
+        // ── SIDEBAR DRAWER ──
+        if (showSidebar) {
+            SidebarDrawer(displayName, avatarUrl, username, role, selectedTab, { selectedTab = it; showSidebar = false }, { showSidebar = false }, onExit)
+        }
+
         GameHubTransition(visible = showTransition) { showTransition = false }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TOP BAR — transparent, minimal profile + tabs
+// TOP BAR — hamburger (3 lines) + profile + tabs
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun TopBar(time: String, batt: Int, name: String, avatar: String, user: String, role: String, tab: Int, onTab: (Int) -> Unit, onExit: () -> Unit) {
+private fun TopBarWithHamburger(time: String, batt: Int, name: String, avatar: String, user: String, role: String, tab: Int, onTab: (Int) -> Unit, onExit: () -> Unit, onMenu: () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
-        // Row 1: Profile + status
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            // Avatar (glass circle, no colored bg)
-            Box(Modifier.size(34.dp).clip(CircleShape).background(GlassSurface).border(1.dp, Divider, CircleShape), contentAlignment = Alignment.Center) {
+            // Hamburger icon (3 lines)
+            Icon(Icons.Rounded.Menu, "Menu", tint = White, modifier = Modifier.size(24.dp).clickable { onMenu() })
+            Spacer(Modifier.width(12.dp))
+            // Avatar
+            Box(Modifier.size(32.dp).clip(CircleShape).background(GlassSurface).border(1.dp, Divider, CircleShape), contentAlignment = Alignment.Center) {
                 if (avatar.isNotEmpty()) AsyncImage(model = avatar, contentDescription = "Avatar", modifier = Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
-                else Text(name.take(1).uppercase(), color = White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                else Text(name.take(1).uppercase(), color = White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
             }
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(name, color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 130.dp))
-                    Spacer(Modifier.width(6.dp))
+                    Text(name, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 120.dp))
+                    Spacer(Modifier.width(5.dp))
                     val badge = when (role.lowercase()) { "admin" -> "ADMIN"; "developer" -> "DEV"; "owner" -> "OWNER"; "moderator" -> "MOD"; else -> "" }
-                    if (badge.isNotEmpty()) { Text(badge, color = Gold, fontSize = 8.sp, fontWeight = FontWeight.Bold) }
+                    if (badge.isNotEmpty()) Text(badge, color = Gold, fontSize = 8.sp, fontWeight = FontWeight.Bold)
                 }
-                Text("@$user", color = Gray, fontSize = 11.sp)
+                Text("@$user", color = Gray, fontSize = 10.sp)
             }
-            // Status (right side, minimal)
-            Text(time, color = White.copy(alpha = 0.7f), fontSize = 12.sp)
-            Spacer(Modifier.width(6.dp))
-            Icon(Icons.Rounded.BatteryFull, null, tint = Gray, modifier = Modifier.size(14.dp))
+            // Status
+            Text(time, color = White.copy(alpha = 0.6f), fontSize = 11.sp)
+            Spacer(Modifier.width(5.dp))
+            Icon(Icons.Rounded.BatteryFull, null, tint = Gray, modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(2.dp))
-            Text("$batt%", color = Gray, fontSize = 11.sp)
-            Spacer(Modifier.width(10.dp))
-            Icon(Icons.Rounded.ArrowBack, "Exit", tint = White.copy(alpha = 0.7f), modifier = Modifier.size(20.dp).clickable { onExit() })
+            Text("$batt%", color = Gray, fontSize = 10.sp)
         }
-        // Row 2: Tabs (minimal, no underline — just color change)
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        // Tabs (minimal text)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             listOf("Store", "Library", "Videos", "Settings").forEachIndexed { i, label ->
                 val sel = tab == i
-                Text(label, color = if (sel) White else GrayDim, fontSize = 13.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.clickable { onTab(i) }.padding(vertical = 6.dp))
+                Text(label, color = if (sel) White else GrayDim, fontSize = 12.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.clickable { onTab(i) }.padding(vertical = 4.dp))
             }
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GLASS GAME CARD — no border, glass surface, subtle shadow, minimal content
+// SWIPE GAME CARD — focused card scales up + white glow behind
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun GlassGameCard(
+private fun SwipeGameCard(
     game: GameItem, installed: Boolean, isFav: Boolean, isFocused: Boolean,
-    onClick: () -> Unit, onPlay: () -> Unit, onFav: () -> Unit, onShare: () -> Unit,
-    onFocus: () -> Unit
+    onClick: () -> Unit, onPlay: () -> Unit, onFav: () -> Unit, onShare: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    val dotColor = when (game.serverStatus) { ServerStatus.ONLINE -> GreenDot; ServerStatus.MAINTENANCE -> AmberDot; ServerStatus.OFFLINE -> RedDot; ServerStatus.BUSY -> AmberDot }
 
-    // Focus animation — smooth scale
-    val scale by animateFloatAsState(if (isFocused) 1f else 0.88f, spring(dampingRatio = 0.6f, stiffness = 200f), label = "focus_scale")
-    val alpha by animateFloatAsState(if (isFocused) 1f else 0.5f, tween(400), label = "focus_alpha")
+    // Focus animation: scale + glow
+    val scale by animateFloatAsState(if (isFocused) 1f else 0.78f, spring(dampingRatio = 0.5f, stiffness = 200f), label = "scale")
+    val alpha by animateFloatAsState(if (isFocused) 1f else 0.35f, tween(400), label = "alpha")
+    val glowAlpha by animateFloatAsState(if (isFocused) 0.4f else 0f, tween(500), label = "glow")
 
-    Column(Modifier.width(170.dp).graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }) {
-        // ── CARD (170x240dp, glass surface, NO border, rounded) ──
-        Box(
-            Modifier.width(170.dp).height(240.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(GlassSurface)
-                .clickable { onFocus(); onClick() }
-        ) {
-            // Cover image (fills card, slightly faded)
-            if (game.coverImageRes != null) {
-                Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = game.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            } else {
-                Box(Modifier.fillMaxSize().background(Brush.linearGradient(game.coverGradient)), contentAlignment = Alignment.Center) { Text(game.coverText, color = White, fontSize = 32.sp, fontWeight = FontWeight.Black) }
+    // Status config
+    val (dotColor, statusLabel) = when (game.serverStatus) {
+        ServerStatus.ONLINE -> Pair(GreenDot, "Online")
+        ServerStatus.MAINTENANCE -> Pair(AmberDot, "Maintenance")
+        ServerStatus.OFFLINE -> Pair(RedDot, "Offline")
+        ServerStatus.BUSY -> Pair(AmberDot, "Busy")
+    }
+
+    Column(Modifier.width(180.dp).graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }, horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(contentAlignment = Alignment.Center) {
+            // ── WHITE GLOW BEHIND CARD (only when focused) ──
+            if (isFocused) {
+                Box(Modifier.width(190.dp).height(250.dp).blur(30.dp).background(White.copy(alpha = glowAlpha), RoundedCornerShape(20.dp)))
             }
 
-            // Glass overlay (subtle white tint for glassmorphism)
-            Box(Modifier.fillMaxSize().background(GlassSurface))
+            // ── CARD (180x240dp, glass, no border, 16dp radius) ──
+            Box(
+                Modifier.width(180.dp).height(240.dp).clip(RoundedCornerShape(16.dp)).background(GlassSurface).clickable { onClick() }
+            ) {
+                // Cover image
+                if (game.coverImageRes != null) {
+                    Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = game.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                } else {
+                    Box(Modifier.fillMaxSize().background(Brush.linearGradient(game.coverGradient)), contentAlignment = Alignment.Center) { Text(game.coverText, color = White, fontSize = 32.sp, fontWeight = FontWeight.Black) }
+                }
 
-            // Bottom gradient for text
-            Box(Modifier.fillMaxWidth().height(90.dp).align(Alignment.BottomStart).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000)))))
+                // Glass overlay
+                Box(Modifier.fillMaxSize().background(GlassSurface))
 
-            // Status dot (top-left, minimal — just a dot, no text badge)
-            Box(Modifier.align(Alignment.TopStart).padding(12.dp).size(8.dp).clip(CircleShape).background(dotColor))
+                // Bottom gradient
+                Box(Modifier.fillMaxWidth().height(100.dp).align(Alignment.BottomStart).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000)))))
 
-            // Heart icon (top-right, subtle)
-            Icon(
-                if (isFav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                "Fav", tint = if (isFav) RedDot else White.copy(alpha = 0.6f),
-                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).size(18.dp).clickable { onFav() }
-            )
+                // ── STATUS PILL (top-left, clean creative) ──
+                Row(
+                    Modifier.align(Alignment.TopStart).padding(10.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color(0xCC000000))
+                        .border(1.dp, dotColor.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    // Pulsing dot
+                    val pulseAlpha by rememberInfiniteTransition(label = "pulse").animateFloat(
+                        initialValue = 0.5f, targetValue = 1f,
+                        animationSpec = infiniteRepeatable(animation = tween(1000), repeatMode = RepeatMode.Reverse),
+                        label = "dot_pulse"
+                    )
+                    Box(Modifier.size(6.dp).clip(CircleShape).background(dotColor.copy(alpha = pulseAlpha)))
+                    Text(statusLabel, color = White.copy(alpha = 0.8f), fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                }
 
-            // Title + subtitle (bottom, minimal)
-            Column(Modifier.align(Alignment.BottomStart).padding(14.dp)) {
-                Text(game.title, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(game.subtitle, color = Gray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // Heart icon (top-right)
+                Icon(if (isFav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, "Fav", tint = if (isFav) RedDot else White.copy(alpha = 0.5f), modifier = Modifier.align(Alignment.TopEnd).padding(10.dp).size(16.dp).clickable { onFav() })
+
+                // Title + subtitle (bottom)
+                Column(Modifier.align(Alignment.BottomStart).padding(14.dp)) {
+                    Text(game.title, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(game.subtitle, color = Gray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
 
-        // ── VIEW DETAIL + 3-DOT (below card, glass, minimal) ──
+        // ── VIEW DETAIL + 3-DOT (below card) ──
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // View Detail
-            Box(
-                Modifier.weight(1f).height(34.dp).clip(RoundedCornerShape(10.dp))
-                    .background(GlassSurface).clickable { onClick() },
-                contentAlignment = Alignment.Center
-            ) {
+            Box(Modifier.weight(1f).height(32.dp).clip(RoundedCornerShape(10.dp)).background(GlassSurface).clickable { onClick() }, contentAlignment = Alignment.Center) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(Icons.Rounded.Info, null, tint = Gray, modifier = Modifier.size(13.dp))
-                    Text("View Detail", color = White.copy(alpha = 0.8f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    Icon(Icons.Rounded.Info, null, tint = Gray, modifier = Modifier.size(12.dp))
+                    Text("View Detail", color = White.copy(alpha = 0.7f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
                 }
             }
-            // 3-dot
-            Box(
-                Modifier.size(34.dp).clip(RoundedCornerShape(10.dp))
-                    .background(GlassSurface).clickable { showMenu = !showMenu },
-                contentAlignment = Alignment.Center
-            ) { Icon(Icons.Rounded.MoreVert, "Menu", tint = White.copy(alpha = 0.8f), modifier = Modifier.size(15.dp)) }
+            Box(Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).background(GlassSurface).clickable { showMenu = !showMenu }, contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.MoreVert, "Menu", tint = White.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
+            }
         }
 
         // ── DROPDOWN ──
         if (showMenu) {
             Popup(onDismissRequest = { showMenu = false }, properties = PopupProperties(focusable = true)) {
-                Column(Modifier.width(160.dp).clip(RoundedCornerShape(12.dp)).background(Bg.copy(alpha = 0.95f)).padding(4.dp)) {
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onShare(); showMenu = false }.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { Icon(Icons.Rounded.Share, null, tint = White.copy(alpha = 0.7f), modifier = Modifier.size(15.dp)); Text("Share", color = White, fontSize = 12.sp) }
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onFav(); showMenu = false }.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { Icon(if (isFav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if (isFav) RedDot else White.copy(alpha = 0.7f), modifier = Modifier.size(15.dp)); Text(if (isFav) "Remove Favorite" else "Add Favorite", color = White, fontSize = 12.sp) }
+                Column(Modifier.width(150.dp).clip(RoundedCornerShape(12.dp)).background(Bg.copy(alpha = 0.95f)).padding(4.dp)) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onShare(); showMenu = false }.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { Icon(Icons.Rounded.Share, null, tint = White.copy(alpha = 0.6f), modifier = Modifier.size(14.dp)); Text("Share", color = White, fontSize = 11.sp) }
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onFav(); showMenu = false }.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { Icon(if (isFav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if (isFav) RedDot else White.copy(alpha = 0.6f), modifier = Modifier.size(14.dp)); Text(if (isFav) "Remove Favorite" else "Add Favorite", color = White, fontSize = 11.sp) }
                 }
             }
         }
@@ -340,20 +336,54 @@ private fun GlassGameCard(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// BOTTOM NAV — transparent, minimal, no background
+// SIDEBAR DRAWER — slide from left
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun BottomNav(tab: Int, onTab: (Int) -> Unit, onExit: () -> Unit) {
-    val items = listOf(Triple("Home", Icons.Rounded.Home, 1), Triple("Library", Icons.Rounded.SportsEsports, 1), Triple("Store", Icons.Rounded.Store, 0), Triple("Videos", Icons.Rounded.VideoLibrary, 2), Triple("Exit", Icons.Rounded.Close, -1))
-    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-        items.forEach { (label, icon, t) ->
-            val sel = tab == t && t != -1
-            Column(Modifier.clickable { if (t == -1) onExit() else onTab(t) }.padding(horizontal = 12.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(icon, label, tint = if (sel) White else GrayDim, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.height(2.dp))
-                Text(label, color = if (sel) White else GrayDim, fontSize = 9.sp, fontWeight = if (sel) FontWeight.Medium else FontWeight.Normal)
+private fun SidebarDrawer(name: String, avatar: String, user: String, role: String, tab: Int, onTab: (Int) -> Unit, onDismiss: () -> Unit, onExit: () -> Unit) {
+    val drawerOffset by animateFloatAsState(if (true) 0f else -1f, tween(300), label = "drawer")
+
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable { onDismiss() }) {
+        Column(
+            Modifier.fillMaxHeight().width(280.dp).background(Bg.copy(alpha = 0.98f)).clickable { },
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Profile header
+            Column(Modifier.fillMaxWidth().padding(24.dp)) {
+                Box(Modifier.size(56.dp).clip(CircleShape).background(GlassSurface).border(1.dp, Divider, CircleShape), contentAlignment = Alignment.Center) {
+                    if (avatar.isNotEmpty()) AsyncImage(model = avatar, contentDescription = "Avatar", modifier = Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+                    else Text(name.take(1).uppercase(), color = White, fontSize = 22.sp, fontWeight = FontWeight.Medium)
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(name, color = White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text("@$user", color = Gray, fontSize = 12.sp)
+                val badge = when (role.lowercase()) { "admin" -> "ADMIN"; "developer" -> "DEV"; "owner" -> "OWNER"; "moderator" -> "MOD"; else -> "" }
+                if (badge.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(badge, color = Gold, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
             }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Divider))
+
+            // Nav items
+            val items = listOf(
+                Triple("Home", Icons.Rounded.Home, 1),
+                Triple("Library", Icons.Rounded.SportsEsports, 1),
+                Triple("Store", Icons.Rounded.Store, 0),
+                Triple("Videos", Icons.Rounded.VideoLibrary, 2),
+                Triple("Settings", Icons.Rounded.Settings, 3)
+            )
+            items.forEach { (label, icon, t) ->
+                val sel = tab == t
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (sel) GlassSurfaceHi else Color.Transparent).clickable { onTab(t) }.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(icon, label, tint = if (sel) White else Gray, modifier = Modifier.size(20.dp))
+                    Text(label, color = if (sel) White else Gray, fontSize = 14.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Divider))
+            Row(Modifier.fillMaxWidth().clickable { onExit() }.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Rounded.Close, "Exit", tint = Gray, modifier = Modifier.size(20.dp))
+                Text("Exit GameHub", color = Gray, fontSize = 14.sp)
+            }
+            Text("DLavie GameHub v302", color = GrayDim, fontSize = 10.sp, modifier = Modifier.padding(20.dp))
         }
     }
 }
@@ -366,7 +396,6 @@ private fun BottomNav(tab: Int, onTab: (Int) -> Unit, onExit: () -> Unit) {
 private fun DetailPage(game: GameItem, context: Context, onBack: () -> Unit, onPlay: () -> Unit) {
     val installed = ghInstalled(context, game.packageName)
     Box(Modifier.fillMaxSize().background(Bg)) {
-        // Blurred bg
         if (game.coverImageRes != null) {
             Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = null, modifier = Modifier.fillMaxSize().blur(60.dp), contentScale = ContentScale.Crop)
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xCC000000), Color(0xEE000000)))))
