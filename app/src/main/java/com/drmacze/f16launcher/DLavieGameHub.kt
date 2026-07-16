@@ -51,20 +51,20 @@ import java.util.*
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ── Design tokens ──
-private val BgDark = Color(0xFF0A0A0A)
-private val BgGradientStart = Color(0xFF000000)
-private val BgGradientEnd = Color(0xFF1A1A1A)
-private val GlassBg = Color(0x20000000)       // 12% black glass
-private val CardBorder = Color(0x30FFFFFF)     // 19% white border
-private val CardBorderFocused = Color(0x60FFFFFF) // 37% white focused
-private val TextWhite = Color(0xFFFFFFFF)
-private val TextGray = Color(0xFF888888)
-private val AccentBlue = Color(0xFF3498DB)
-private val AccentPurple = Color(0xFF9B59B6)
-private val GreenOnline = Color(0xFF4CAF50)
-private val AmberMaint = Color(0xFFFFB347)
-private val RedOff = Color(0xFFFF5252)
-private val Gold = Color(0xFFFFD700)
+private val GHBgDark = Color(0xFF0A0A0A)
+private val GHBgGradientStart = Color(0xFF000000)
+private val GHBgGradientEnd = Color(0xFF1A1A1A)
+private val GHGlassBg = Color(0x20000000)       // 12% black glass
+private val GHCardBorder = Color(0x30FFFFFF)     // 19% white border
+private val GHCardBorderFocused = Color(0x60FFFFFF) // 37% white focused
+private val GHTextWhite = Color(0xFFFFFFFF)
+private val GHTextGray = Color(0xFF888888)
+private val GHAccentBlue = Color(0xFF3498DB)
+private val GHAccentPurple = Color(0xFF9B59B6)
+private val GHGreenOnline = Color(0xFF4CAF50)
+private val GHAmberMaint = Color(0xFFFFB347)
+private val GHRedOff = Color(0xFFFF5252)
+private val GHGold = Color(0xFFFFD700)
 
 // ── Helpers ──
 private fun ghBattery(c: Context): Int = try {
@@ -131,7 +131,7 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
     }
 
     if (visible && phase < 5) {
-        Box(Modifier.fillMaxSize().background(BgDark), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().background(GHBgDark), contentAlignment = Alignment.Center) {
             val logoAlpha by animateFloatAsState(when (phase) { 0 -> 0f; 1 -> 1f; 2 -> 1f; 3 -> 1f; 4 -> 0f; else -> 0f }, tween(800, easing = FastOutSlowInEasing), label = "la")
             val logoScale by animateFloatAsState(when (phase) { 0 -> 0.7f; 1 -> 1f; 2 -> 1f; 3 -> 1f; 4 -> 1.15f; else -> 1f }, tween(800, easing = FastOutSlowInEasing), label = "ls")
             val textAlpha by animateFloatAsState(when (phase) { 0 -> 0f; 1 -> 0f; 2 -> 1f; 3 -> 1f; 4 -> 0f; else -> 0f }, tween(400, easing = FastOutSlowInEasing), label = "ta")
@@ -144,12 +144,12 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
                         val r = 70f
                         moveTo(0f, -r); lineTo(r * 0.866f, -r * 0.5f); lineTo(r * 0.866f, r * 0.5f)
                         lineTo(0f, r); lineTo(-r * 0.866f, r * 0.5f); lineTo(-r * 0.866f, -r * 0.5f); close()
-                    }).background(TextWhite), contentAlignment = Alignment.Center
-                ) { Text("DL", color = BgDark, fontSize = 26.sp, fontWeight = FontWeight.Black) }
+                    }).background(GHTextWhite), contentAlignment = Alignment.Center
+                ) { Text("DL", color = GHBgDark, fontSize = 26.sp, fontWeight = FontWeight.Black) }
                 Spacer(Modifier.height(20.dp))
-                Text(typedText, color = TextWhite, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp, modifier = Modifier.graphicsLayer { this.alpha = textAlpha })
+                Text(typedText, color = GHTextWhite, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp, modifier = Modifier.graphicsLayer { this.alpha = textAlpha })
                 Spacer(Modifier.height(16.dp))
-                if (loadingMsg.isNotEmpty()) { Text(loadingMsg, color = TextGray, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.graphicsLayer { this.alpha = msgAlpha }) }
+                if (loadingMsg.isNotEmpty()) { Text(loadingMsg, color = GHTextGray, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.graphicsLayer { this.alpha = msgAlpha }) }
             }
         }
     }
@@ -210,9 +210,9 @@ fun DLavieGameHub(
     var favorites by remember { mutableStateOf(ghLoadFavorites(context)) }
     var selectedTab by remember { mutableStateOf(1) } // 0=Store, 1=Library, 2=Videos, 3=Settings
 
-    Box(Modifier.fillMaxSize().background(BgDark)) {
+    Box(Modifier.fillMaxSize().background(GHBgDark)) {
         // ── DARK GRADIENT BACKGROUND (no game cover blur) ──
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(BgGradientStart, BgGradientEnd))))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(GHBgGradientStart, GHBgGradientEnd))))
 
         if (!showTransition) {
             showDetail?.let { game ->
@@ -250,7 +250,7 @@ fun DLavieGameHub(
                                 }
                             }
                             else -> {
-                                Text(when(selectedTab) { 0 -> "Store"; 2 -> "Videos"; 3 -> "Settings"; else -> "" }, color = TextWhite, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                                Text(when(selectedTab) { 0 -> "Store"; 2 -> "Videos"; 3 -> "Settings"; else -> "" }, color = GHTextWhite, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -281,35 +281,35 @@ private fun RefTopBar(
         // Row 1: Profile + time
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             // Avatar
-            Box(Modifier.size(36.dp).clip(CircleShape).background(AccentBlue).border(2.dp, TextWhite, CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(36.dp).clip(CircleShape).background(GHAccentBlue).border(2.dp, GHTextWhite, CircleShape), contentAlignment = Alignment.Center) {
                 if (avatarUrl.isNotEmpty()) {
                     AsyncImage(model = avatarUrl, contentDescription = "Avatar", modifier = Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
                 } else {
-                    Text(displayName.take(1).uppercase(), color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(displayName.take(1).uppercase(), color = GHTextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(displayName, color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 140.dp))
+                    Text(displayName, color = GHTextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 140.dp))
                     Spacer(Modifier.width(6.dp))
                     val badge = when (role.lowercase()) { "admin" -> "ADMIN"; "developer" -> "DEV"; "owner" -> "OWNER"; "moderator" -> "MOD"; else -> "" }
                     if (badge.isNotEmpty()) {
-                        Box(Modifier.clip(RoundedCornerShape(4.dp)).background(BgDark).border(1.dp, Gold, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp)) {
-                            Text(badge, color = Gold, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        Box(Modifier.clip(RoundedCornerShape(4.dp)).background(GHBgDark).border(1.dp, GHGold, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp)) {
+                            Text(badge, color = GHGold, fontSize = 8.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
-                Text("@$username", color = TextGray, fontSize = 12.sp)
+                Text("@$username", color = GHTextGray, fontSize = 12.sp)
             }
             // Time + battery
-            Text(currentTime, color = TextWhite, fontSize = 13.sp)
+            Text(currentTime, color = GHTextWhite, fontSize = 13.sp)
             Spacer(Modifier.width(8.dp))
-            Icon(Icons.Rounded.BatteryFull, "Battery", tint = TextGray, modifier = Modifier.size(16.dp))
+            Icon(Icons.Rounded.BatteryFull, "Battery", tint = GHTextGray, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(2.dp))
-            Text("$batteryLevel%", color = TextGray, fontSize = 11.sp)
+            Text("$batteryLevel%", color = GHTextGray, fontSize = 11.sp)
             Spacer(Modifier.width(8.dp))
-            Icon(Icons.Rounded.ArrowBack, "Exit", tint = TextWhite, modifier = Modifier.size(20.dp).clickable { onExit() })
+            Icon(Icons.Rounded.ArrowBack, "Exit", tint = GHTextWhite, modifier = Modifier.size(20.dp).clickable { onExit() })
         }
 
         // Row 2: Tabs
@@ -317,9 +317,9 @@ private fun RefTopBar(
             listOf("Store", "Library", "Videos", "Settings").forEachIndexed { idx, label ->
                 val selected = selectedTab == idx
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onTabSelect(idx) }) {
-                    Text(label, color = if (selected) TextWhite else TextGray, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                    Text(label, color = if (selected) GHTextWhite else GHTextGray, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
                     Spacer(Modifier.height(4.dp))
-                    if (selected) { Box(Modifier.width(24.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(TextWhite)) }
+                    if (selected) { Box(Modifier.width(24.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(GHTextWhite)) }
                 }
             }
         }
@@ -337,7 +337,7 @@ private fun RefGameCard(
     onToggleFavorite: () -> Unit, onShare: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    val borderColor = if (isInstalled) AccentBlue else AccentPurple
+    val borderColor = if (isInstalled) GHAccentBlue else GHAccentPurple
 
     Column(Modifier.width(180.dp)) {
         // ── CARD COVER (180x260dp) ──
@@ -347,7 +347,7 @@ private fun RefGameCard(
                 Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = game.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             } else {
                 Box(Modifier.fillMaxSize().background(Brush.linearGradient(game.coverGradient)), contentAlignment = Alignment.Center) {
-                    Text(game.coverText, color = TextWhite, fontSize = 36.sp, fontWeight = FontWeight.Black)
+                    Text(game.coverText, color = GHTextWhite, fontSize = 36.sp, fontWeight = FontWeight.Black)
                 }
             }
 
@@ -356,26 +356,26 @@ private fun RefGameCard(
 
             // Status badge (top-left)
             val (sc, st) = when (game.serverStatus) {
-                ServerStatus.ONLINE -> Pair(GreenOnline, "ONLINE")
-                ServerStatus.MAINTENANCE -> Pair(AmberMaint, "MAINT")
-                ServerStatus.OFFLINE -> Pair(RedOff, "OFFLINE")
-                ServerStatus.BUSY -> Pair(AmberMaint, "BUSY")
+                ServerStatus.ONLINE -> Pair(GHGreenOnline, "ONLINE")
+                ServerStatus.MAINTENANCE -> Pair(GHAmberMaint, "MAINT")
+                ServerStatus.OFFLINE -> Pair(GHRedOff, "OFFLINE")
+                ServerStatus.BUSY -> Pair(GHAmberMaint, "BUSY")
             }
             Box(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(4.dp)).background(sc.copy(alpha = 0.85f)).padding(horizontal = 8.dp, vertical = 3.dp)) {
-                Text(st, color = TextWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(st, color = GHTextWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
 
             // Heart icon (top-right)
             Icon(
                 if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                "Favorite", tint = if (isFavorite) RedOff else TextWhite,
+                "Favorite", tint = if (isFavorite) GHRedOff else GHTextWhite,
                 modifier = Modifier.align(Alignment.TopEnd).padding(10.dp).size(22.dp).clickable { onToggleFavorite() }
             )
 
             // Title + subtitle (bottom)
             Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
-                Text(game.title, color = TextWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(game.subtitle, color = TextGray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(game.title, color = GHTextWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(game.subtitle, color = GHTextGray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
 
@@ -385,35 +385,35 @@ private fun RefGameCard(
             // View Detail button
             Box(
                 Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(8.dp))
-                    .background(GlassBg).border(1.dp, CardBorder, RoundedCornerShape(8.dp))
+                    .background(GHGlassBg).border(1.dp, GHCardBorder, RoundedCornerShape(8.dp))
                     .clickable { onClick() },
                 contentAlignment = Alignment.Center
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Icon(Icons.Rounded.Info, null, tint = TextGray, modifier = Modifier.size(15.dp))
-                    Text("View Detail", color = TextWhite, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    Icon(Icons.Rounded.Info, null, tint = GHTextGray, modifier = Modifier.size(15.dp))
+                    Text("View Detail", color = GHTextWhite, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 }
             }
             // 3-dot menu
             Box(
                 Modifier.size(36.dp).clip(RoundedCornerShape(8.dp))
-                    .background(GlassBg).border(1.dp, CardBorder, RoundedCornerShape(8.dp))
+                    .background(GHGlassBg).border(1.dp, GHCardBorder, RoundedCornerShape(8.dp))
                     .clickable { showMenu = !showMenu },
                 contentAlignment = Alignment.Center
-            ) { Icon(Icons.Rounded.MoreVert, "Menu", tint = TextWhite, modifier = Modifier.size(18.dp)) }
+            ) { Icon(Icons.Rounded.MoreVert, "Menu", tint = GHTextWhite, modifier = Modifier.size(18.dp)) }
         }
 
         // ── DROPDOWN MENU ──
         if (showMenu) {
             Popup(onDismissRequest = { showMenu = false }, properties = PopupProperties(focusable = true)) {
-                Column(Modifier.width(170.dp).clip(RoundedCornerShape(10.dp)).background(BgDark.copy(alpha = 0.95f)).border(1.dp, CardBorderFocused, RoundedCornerShape(10.dp)).padding(4.dp)) {
+                Column(Modifier.width(170.dp).clip(RoundedCornerShape(10.dp)).background(GHBgDark.copy(alpha = 0.95f)).border(1.dp, GHCardBorderFocused, RoundedCornerShape(10.dp)).padding(4.dp)) {
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onShare(); showMenu = false }.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Icon(Icons.Rounded.Share, null, tint = AccentBlue, modifier = Modifier.size(16.dp))
-                        Text("Share", color = TextWhite, fontSize = 12.sp)
+                        Icon(Icons.Rounded.Share, null, tint = GHAccentBlue, modifier = Modifier.size(16.dp))
+                        Text("Share", color = GHTextWhite, fontSize = 12.sp)
                     }
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onToggleFavorite(); showMenu = false }.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Icon(if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if (isFavorite) RedOff else TextWhite, modifier = Modifier.size(16.dp))
-                        Text(if (isFavorite) "Remove Favorite" else "Add to Favorite", color = TextWhite, fontSize = 12.sp)
+                        Icon(if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if (isFavorite) GHRedOff else GHTextWhite, modifier = Modifier.size(16.dp))
+                        Text(if (isFavorite) "Remove Favorite" else "Add to Favorite", color = GHTextWhite, fontSize = 12.sp)
                     }
                 }
             }
@@ -438,9 +438,9 @@ private fun RefBottomNav(selectedTab: Int, onTabSelect: (Int) -> Unit, onExit: (
         items.forEach { (label, icon, tab) ->
             val selected = selectedTab == tab && tab != -1
             Column(Modifier.clip(RoundedCornerShape(8.dp)).clickable { if (tab == -1) onExit() else onTabSelect(tab) }.padding(horizontal = 14.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(icon, label, tint = if (selected) TextWhite else TextGray, modifier = Modifier.size(22.dp))
+                Icon(icon, label, tint = if (selected) GHTextWhite else GHTextGray, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.height(2.dp))
-                Text(label, color = if (selected) TextWhite else TextGray, fontSize = 10.sp, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal)
+                Text(label, color = if (selected) GHTextWhite else GHTextGray, fontSize = 10.sp, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal)
             }
         }
     }
@@ -453,34 +453,34 @@ private fun RefBottomNav(selectedTab: Int, onTabSelect: (Int) -> Unit, onExit: (
 @Composable
 private fun GameDetailCompact(game: GameItem, context: Context, onBack: () -> Unit, onPlay: () -> Unit) {
     val isInstalled = ghIsInstalled(context, game.packageName)
-    Box(Modifier.fillMaxSize().background(BgDark)) {
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(BgGradientStart, BgGradientEnd))))
+    Box(Modifier.fillMaxSize().background(GHBgDark)) {
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(GHBgGradientStart, GHBgGradientEnd))))
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.ArrowBack, "Back", tint = TextWhite, modifier = Modifier.size(24.dp).clickable { onBack() })
+                Icon(Icons.Rounded.ArrowBack, "Back", tint = GHTextWhite, modifier = Modifier.size(24.dp).clickable { onBack() })
                 Spacer(Modifier.width(16.dp))
-                Text(game.title, color = TextWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(game.title, color = GHTextWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
             Box(Modifier.fillMaxWidth().height(200.dp).padding(horizontal = 16.dp).clip(RoundedCornerShape(12.dp))) {
                 if (game.coverImageRes != null) { Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = game.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.7f)))))
-                Text(game.title, color = TextWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
+                Text(game.title, color = GHTextWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
             }
             Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                Text("Description", color = TextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("Description", color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text(game.description, color = TextGray, fontSize = 13.sp)
+                Text(game.description, color = GHTextGray, fontSize = 13.sp)
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Column { Text("Version", color = TextGray, fontSize = 10.sp); Text(game.version, color = TextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
-                    Column { Text("Size", color = TextGray, fontSize = 10.sp); Text(game.sizeMb, color = TextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
-                    Column { Text("Status", color = TextGray, fontSize = 10.sp); Text(when(game.serverStatus) { ServerStatus.ONLINE -> "Online"; ServerStatus.MAINTENANCE -> "Maintenance"; else -> "Offline" }, color = TextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
+                    Column { Text("Version", color = GHTextGray, fontSize = 10.sp); Text(game.version, color = GHTextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
+                    Column { Text("Size", color = GHTextGray, fontSize = 10.sp); Text(game.sizeMb, color = GHTextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
+                    Column { Text("Status", color = GHTextGray, fontSize = 10.sp); Text(when(game.serverStatus) { ServerStatus.ONLINE -> "Online"; ServerStatus.MAINTENANCE -> "Maintenance"; else -> "Offline" }, color = GHTextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
                 }
                 Spacer(Modifier.height(20.dp))
-                Row(Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(8.dp)).background(if (isInstalled) GreenOnline else AccentBlue).clickable { onPlay() }, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    Icon(if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download, null, tint = BgDark, modifier = Modifier.size(20.dp))
+                Row(Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(8.dp)).background(if (isInstalled) GHGreenOnline else GHAccentBlue).clickable { onPlay() }, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download, null, tint = GHBgDark, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (isInstalled) "Play Now" else "Install", color = BgDark, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(if (isInstalled) "Play Now" else "Install", color = GHBgDark, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
