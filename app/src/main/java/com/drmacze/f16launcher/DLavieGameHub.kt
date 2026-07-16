@@ -16,6 +16,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.*
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -148,21 +149,45 @@ fun DLavieGameHub(onExit: () -> Unit = {}, onNav: (Page) -> Unit = {}, onGameCli
                     // ── TOP BAR ──
                     TopBarWithHamburger(time, batt, displayName, avatarUrl, username, role, selectedTab, { selectedTab = it }, onExit, { showSidebar = true })
 
-                    // ── CONTENT (HorizontalPager — proper swipe) ──
+                    // ── CONTENT (Cover Flow Carousel — 3D rotation + scale + opacity + snap) ──
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         if (selectedTab == 1) {
+                            // v304: Cover Flow Carousel with snap + inertia
                             HorizontalPager(
                                 state = pagerState,
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(horizontal = 80.dp),
-                                pageSpacing = 24.dp
+                                contentPadding = PaddingValues(horizontal = 100.dp),
+                                pageSpacing = 0.dp,
+                                flingBehavior = PagerDefaults.flingBehavior(
+                                    state = pagerState,
+                                    snapAnimationSpec = spring(dampingRatio = 0.55f, stiffness = 250f),
+                                    decayAnimationSpec = exponentialDecay(frictionMultiplier = 0.85f)
+                                )
                             ) { page ->
                                 val game = games[page]
-                                val isFocused = page == focusedIdx
+                                // v304: Real-time offset for 3D Cover Flow effect
+                                val pageOffset = pagerState.currentPageOffsetFraction
+                                val distanceFromCenter = page - pagerState.currentPage + pageOffset
+
+                                // Cover Flow: 3D rotation (max 35deg), scale, alpha, translation
+                                val rotationY = distanceFromCenter * -35f
+                                val scaleVal = (1f - kotlin.math.abs(distanceFromCenter) * 0.3f).coerceIn(0.5f, 1f)
+                                val alphaVal = (1f - kotlin.math.abs(distanceFromCenter) * 0.5f).coerceIn(0.15f, 1f)
+                                val translationX = distanceFromCenter * -80f
+
                                 SwipeGameCard(
-                                    game = game, installed = ghInstalled(context, game.packageName), isFav = game.packageName in favorites, isFocused = isFocused,
-                                    onClick = { showDetail = game }, onPlay = { ghLaunch(context, game.packageName); onGameClick(game.packageName) },
-                                    onFav = { favorites = ghToggleFav(context, game.packageName) }, onShare = { ghShare(context, game) }
+                                    game = game,
+                                    installed = ghInstalled(context, game.packageName),
+                                    isFav = game.packageName in favorites,
+                                    isFocused = kotlin.math.abs(distanceFromCenter) < 0.5f,
+                                    rotationY = rotationY,
+                                    scaleVal = scaleVal,
+                                    alphaVal = alphaVal,
+                                    translationX = translationX,
+                                    onClick = { showDetail = game },
+                                    onPlay = { ghLaunch(context, game.packageName); onGameClick(game.packageName) },
+                                    onFav = { favorites = ghToggleFav(context, game.packageName) },
+                                    onShare = { ghShare(context, game) }
                                 )
                             }
 
@@ -250,16 +275,13 @@ private fun TopBarWithHamburger(time: String, batt: Int, name: String, avatar: S
 @Composable
 private fun SwipeGameCard(
     game: GameItem, installed: Boolean, isFav: Boolean, isFocused: Boolean,
+    rotationY: Float = 0f, scaleVal: Float = 1f, alphaVal: Float = 1f, translationX: Float = 0f,
     onClick: () -> Unit, onPlay: () -> Unit, onFav: () -> Unit, onShare: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    // v303: Smooth scale + alpha based on focus (tween 400ms for smoothness)
-    val scale by animateFloatAsState(if (isFocused) 1f else 0.75f, tween(400, easing = FastOutSlowInEasing), label = "scale")
-    val alpha by animateFloatAsState(if (isFocused) 1f else 0.3f, tween(400, easing = FastOutSlowInEasing), label = "alpha")
-
-    // v303: Smooth glow — radial gradient, not blur box
-    val glowAlpha by animateFloatAsState(if (isFocused) 0.35f else 0f, tween(600, easing = FastOutSlowInEasing), label = "glow")
+    // v304: Glow follows real-time alphaVal (not animated separately)
+    val glowAlpha = (alphaVal * 0.35f).coerceIn(0f, 0.35f)
 
     val (dotColor, statusLabel) = when (game.serverStatus) {
         ServerStatus.ONLINE -> Pair(GreenDot, "Online")
@@ -268,7 +290,19 @@ private fun SwipeGameCard(
         ServerStatus.BUSY -> Pair(AmberDot, "Busy")
     }
 
-    Column(Modifier.width(180.dp).graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }, horizontalAlignment = Alignment.CenterHorizontally) {
+    // v304: Cover Flow — 3D rotation + scale + alpha + translation
+    Column(
+        Modifier.width(180.dp)
+            .graphicsLayer {
+                this.rotationY = rotationY
+                this.scaleX = scaleVal
+                this.scaleY = scaleVal
+                this.alpha = alphaVal
+                this.translationX = translationX
+                this.cameraDistance = 8 * density
+            },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         Box(contentAlignment = Alignment.Center) {
             // ── SMOOTH RADIAL GLOW (behind card, only when focused) ──
             if (glowAlpha > 0.01f) {
