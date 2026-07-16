@@ -7,23 +7,17 @@ import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
-import android.os.StatFs
 import android.text.format.DateFormat
-import android.view.InputDevice
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -39,42 +33,38 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import coil.compose.AsyncImage
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DLAVIE GAMEHUB v292 — Full-screen redesign (reference match)
+// DLAVIE GAMEHUB v297 — Reference match (Screenshot_20260716-065844.jpg)
 // ═══════════════════════════════════════════════════════════════════════════
-// Full screen, no edge padding. Adaptive blurred background.
-// Glassmorphic top/bottom bars. Featured game card + horizontal grid.
+// Full screen, dark gradient bg, glassmorphic bars, 2 game cards centered,
+// View Detail + 3-dot menu below each card.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ── Design tokens (v7.9.97 — deeper black, stronger glass) ──
-private val GHBg = Color(0xFF000000)              // Pure black
-private val GHGlassBar = Color(0x33000000)        // 20% black for glass bars (stronger)
-private val GHGlassCard = Color(0x1FFFFFFF)       // 12% white for glass cards (subtler)
-private val GHGlassCardHi = Color(0x33FFFFFF)     // 20% white for focused
-private val GHBorder = Color(0x14FFFFFF)          // 8% white border (thinner)
-private val GHBorderHi = Color(0x40FFFFFF)        // 25% white border
-private val GHTextWhite = Color(0xFFFFFFFF)
-private val GHTextGray = Color(0xFFB0B0B0)        // Lighter gray for better contrast
-private val GHTextDim = Color(0xFF707070)
-private val GHAccent = Color(0xFF00E5FF)          // Cyan accent
-private val GHGreen = Color(0xFF00FF00)           // Progress/achievement
-private val GHGold = Color(0xFFFFD700)            // Badges/ratings
-private val GHRed = Color(0xFFFF5252)
-private val GHAmber = Color(0xFFFFB347)
+// ── Design tokens ──
+private val BgDark = Color(0xFF0A0A0A)
+private val BgGradientStart = Color(0xFF000000)
+private val BgGradientEnd = Color(0xFF1A1A1A)
+private val GlassBg = Color(0x20000000)       // 12% black glass
+private val CardBorder = Color(0x30FFFFFF)     // 19% white border
+private val CardBorderFocused = Color(0x60FFFFFF) // 37% white focused
+private val TextWhite = Color(0xFFFFFFFF)
+private val TextGray = Color(0xFF888888)
+private val AccentBlue = Color(0xFF3498DB)
+private val AccentPurple = Color(0xFF9B59B6)
+private val GreenOnline = Color(0xFF4CAF50)
+private val AmberMaint = Color(0xFFFFB347)
+private val RedOff = Color(0xFFFF5252)
+private val Gold = Color(0xFFFFD700)
 
 // ── Helpers ──
 private fun ghBattery(c: Context): Int = try {
@@ -95,8 +85,31 @@ private fun ghLaunch(c: Context, pkg: String) = try {
     if (intent != null) { intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); c.startActivity(intent); true } else false
 } catch (_: Throwable) { false }
 
+private fun ghShareGame(context: Context, game: GameItem) {
+    val shareUrl = "https://drmacze.github.io/dlavie-web/#/game?pkg=${game.packageName}"
+    val shareText = "Main ${game.title} di DLavie Launcher! Download sekarang: $shareUrl"
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "DLavie Launcher - ${game.title}")
+        putExtra(Intent.EXTRA_TEXT, shareText)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try { context.startActivity(Intent.createChooser(shareIntent, "Bagikan ${game.title}").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) } catch (_: Exception) {}
+}
+
+private const val GH_PREFS = "gh_favorites_v297"
+private fun ghLoadFavorites(c: Context): Set<String> = try {
+    c.getSharedPreferences(GH_PREFS, Context.MODE_PRIVATE).getStringSet("fav_pkgs", emptySet()) ?: emptySet()
+} catch (_: Exception) { emptySet() }
+private fun ghToggleFavorite(c: Context, pkg: String): Set<String> {
+    val current = ghLoadFavorites(c).toMutableSet()
+    if (pkg in current) current.remove(pkg) else current.add(pkg)
+    c.getSharedPreferences(GH_PREFS, Context.MODE_PRIVATE).edit().putStringSet("fav_pkgs", current).apply()
+    return current
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
-// TRANSITION — hexagon logo + typing DLAVIE + loading
+// TRANSITION
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -118,7 +131,7 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
     }
 
     if (visible && phase < 5) {
-        Box(Modifier.fillMaxSize().background(GHBg), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().background(BgDark), contentAlignment = Alignment.Center) {
             val logoAlpha by animateFloatAsState(when (phase) { 0 -> 0f; 1 -> 1f; 2 -> 1f; 3 -> 1f; 4 -> 0f; else -> 0f }, tween(800, easing = FastOutSlowInEasing), label = "la")
             val logoScale by animateFloatAsState(when (phase) { 0 -> 0.7f; 1 -> 1f; 2 -> 1f; 3 -> 1f; 4 -> 1.15f; else -> 1f }, tween(800, easing = FastOutSlowInEasing), label = "ls")
             val textAlpha by animateFloatAsState(when (phase) { 0 -> 0f; 1 -> 0f; 2 -> 1f; 3 -> 1f; 4 -> 0f; else -> 0f }, tween(400, easing = FastOutSlowInEasing), label = "ta")
@@ -131,19 +144,19 @@ fun GameHubTransition(visible: Boolean, onComplete: () -> Unit) {
                         val r = 70f
                         moveTo(0f, -r); lineTo(r * 0.866f, -r * 0.5f); lineTo(r * 0.866f, r * 0.5f)
                         lineTo(0f, r); lineTo(-r * 0.866f, r * 0.5f); lineTo(-r * 0.866f, -r * 0.5f); close()
-                    }).background(GHTextWhite), contentAlignment = Alignment.Center
-                ) { Text("DL", color = GHBg, fontSize = 26.sp, fontWeight = FontWeight.Black) }
+                    }).background(TextWhite), contentAlignment = Alignment.Center
+                ) { Text("DL", color = BgDark, fontSize = 26.sp, fontWeight = FontWeight.Black) }
                 Spacer(Modifier.height(20.dp))
-                Text(typedText, color = GHTextWhite, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp, modifier = Modifier.graphicsLayer { this.alpha = textAlpha })
+                Text(typedText, color = TextWhite, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp, modifier = Modifier.graphicsLayer { this.alpha = textAlpha })
                 Spacer(Modifier.height(16.dp))
-                if (loadingMsg.isNotEmpty()) { Text(loadingMsg, color = GHTextDim, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.graphicsLayer { this.alpha = msgAlpha }) }
+                if (loadingMsg.isNotEmpty()) { Text(loadingMsg, color = TextGray, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.graphicsLayer { this.alpha = msgAlpha }) }
             }
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MAIN COMPOSABLE — Full screen, adaptive bg, glassmorphic bars
+// MAIN COMPOSABLE
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -156,12 +169,11 @@ fun DLavieGameHub(
     val context = LocalContext.current
     var showTransition by remember { mutableStateOf(true) }
 
-    // v7.9.97: Real profile data dari CommunityApi
     val displayName = remember { api?.displayName()?.ifEmpty { "DLavie Player" } ?: "DLavie Player" }
     val avatarUrl = remember { api?.avatarUrl() ?: "" }
+    val username = remember { api?.username()?.ifBlank { "user" } ?: "user" }
     val role = remember { api?.role() ?: "member" }
 
-    // Immersive mode
     DisposableEffect(Unit) {
         val activity = context as? Activity
         activity?.window?.let { window ->
@@ -187,7 +199,6 @@ fun DLavieGameHub(
     var batteryLevel by remember { mutableStateOf(ghBattery(context)) }
     LaunchedEffect(Unit) { while (true) { currentTime = ghTime(context); batteryLevel = ghBattery(context); delay(30_000) } }
 
-    // Game data (REAL GameItem)
     val games = remember {
         listOf(
             GameItem(title = "FIFA 16 Mobile", subtitle = "DLavie 26 Mod", packageName = GAME_PKG_16, mainActivity = "com.byfen.downloadzipsdk.MainActivity", coverGradient = listOf(Color(0xFF0A1628), Color(0xFF1A3A6B)), coverText = "DL", coverImageRes = R.drawable.fifa16_cover, serverStatus = ServerStatus.ONLINE, description = "FIFA 16 Mobile dengan mod DLavie 26", version = "v26.0", sizeMb = "34 MB", apkUrl = FIFA16_APK_URL),
@@ -195,77 +206,57 @@ fun DLavieGameHub(
         )
     }
 
-    var featuredGame by remember { mutableStateOf(games.firstOrNull()) }
-    var selectedTab by remember { mutableStateOf(1) } // 0=Store, 1=Library, 2=Videos, 3=Settings
     var showDetail by remember { mutableStateOf<GameItem?>(null) }
+    var favorites by remember { mutableStateOf(ghLoadFavorites(context)) }
+    var selectedTab by remember { mutableStateOf(1) } // 0=Store, 1=Library, 2=Videos, 3=Settings
 
-    Box(Modifier.fillMaxSize().background(GHBg)) {
-        // ── ADAPTIVE BLURRED BACKGROUND ──
-        featuredGame?.let { game ->
-            if (game.coverImageRes != null) {
-                Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = null, modifier = Modifier.fillMaxSize().blur(80.dp), contentScale = ContentScale.Crop)
-            }
-            // Dark overlay
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x99000000), Color(0xCC000000), Color(0x99000000)))))
-        }
+    Box(Modifier.fillMaxSize().background(BgDark)) {
+        // ── DARK GRADIENT BACKGROUND (no game cover blur) ──
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(BgGradientStart, BgGradientEnd))))
 
         if (!showTransition) {
-            // ── DETAIL OVERLAY ──
             showDetail?.let { game ->
                 GameDetailCompact(game = game, context = context, onBack = { showDetail = null }, onPlay = { ghLaunch(context, game.packageName); onGameClick(game.packageName) })
             } ?: run {
-                // ── MAIN LAYOUT (full screen) ──
                 Column(Modifier.fillMaxSize()) {
-                    // TOP BAR (glassmorphic, transparent)
-                    GlassTopBar(
-                        currentTime = currentTime,
-                        batteryLevel = batteryLevel,
-                        selectedTab = selectedTab,
-                        onTabSelect = { selectedTab = it },
-                        onExit = onExit,
-                        displayName = displayName,
-                        avatarUrl = avatarUrl,
-                        role = role,
-                        username = api?.username()?.ifBlank { "user" } ?: "user"
+                    // ── TOP BAR (glassmorphic, transparent) ──
+                    RefTopBar(
+                        currentTime = currentTime, batteryLevel = batteryLevel,
+                        displayName = displayName, avatarUrl = avatarUrl,
+                        username = username, role = role,
+                        selectedTab = selectedTab, onTabSelect = { selectedTab = it },
+                        onExit = onExit
                     )
 
-                    // CONTENT (fills remaining space)
-                    Box(Modifier.weight(1f)) {
+                    // ── CONTENT (centered, one screen, no scroll) ──
+                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         when (selectedTab) {
-                            1 -> { // Library (default)
-                                var favorites by remember { mutableStateOf(ghLoadFavorites(context)) }
-                                LibraryContent(
-                                    games = games,
-                                    context = context,
-                                    featuredGame = featuredGame,
-                                    onFeaturedChange = { featuredGame = it },
-                                    onOpenDetail = { showDetail = it },
-                                    onPlay = { pkg -> ghLaunch(context, pkg); onGameClick(pkg) },
-                                    favorites = favorites,
-                                    onToggleFavorite = { pkg -> favorites = ghToggleFavorite(context, pkg) },
-                                    onDelete = { pkg ->
-                                        // Delete from user games (if it's a user game)
-                                        try {
-                                            val prefs = context.getSharedPreferences("gh_user_games", Context.MODE_PRIVATE)
-                                            val raw = prefs.getString("games", "") ?: ""
-                                            val u = raw.split("\n").filter { !it.startsWith("|$pkg|") && !it.contains("|$pkg|") }
-                                            prefs.edit().putString("games", u.joinToString("\n")).apply()
-                                        } catch (_: Exception) {}
-                                        android.widget.Toast.makeText(context, "Game removed from library", android.widget.Toast.LENGTH_SHORT).show()
+                            1 -> { // Library
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 32.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    itemsIndexed(games) { idx, game ->
+                                        RefGameCard(
+                                            game = game,
+                                            isInstalled = ghIsInstalled(context, game.packageName),
+                                            isFavorite = game.packageName in favorites,
+                                            onClick = { showDetail = game },
+                                            onPlay = { ghLaunch(context, game.packageName); onGameClick(game.packageName) },
+                                            onToggleFavorite = { favorites = ghToggleFavorite(context, game.packageName) },
+                                            onShare = { ghShareGame(context, game) }
+                                        )
                                     }
-                                )
+                                }
                             }
                             else -> {
-                                // Store/Videos/Settings placeholder
-                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text(when(selectedTab) { 0 -> "Store"; 2 -> "Videos"; 3 -> "Settings"; else -> "" }, color = GHTextWhite, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                                }
+                                Text(when(selectedTab) { 0 -> "Store"; 2 -> "Videos"; 3 -> "Settings"; else -> "" }, color = TextWhite, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
 
-                    // BOTTOM NAV (glassmorphic)
-                    GlassBottomNav(selectedTab = selectedTab, onTabSelect = { selectedTab = it }, onExit = onExit)
+                    // ── BOTTOM NAV (glassmorphic, transparent) ──
+                    RefBottomNav(selectedTab = selectedTab, onTabSelect = { selectedTab = it }, onExit = onExit)
                 }
             }
         }
@@ -275,73 +266,60 @@ fun DLavieGameHub(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GLASS TOP BAR — profile + tabs + time
+// REFERENCE TOP BAR — profile + tabs + time
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun GlassTopBar(
-    currentTime: String,
-    batteryLevel: Int,
-    selectedTab: Int,
-    onTabSelect: (Int) -> Unit,
-    onExit: () -> Unit,
-    displayName: String = "DLavie Player",
-    avatarUrl: String = "",
-    role: String = "member",
-    username: String = "user"
+private fun RefTopBar(
+    currentTime: String, batteryLevel: Int,
+    displayName: String, avatarUrl: String,
+    username: String, role: String,
+    selectedTab: Int, onTabSelect: (Int) -> Unit,
+    onExit: () -> Unit
 ) {
     Column(Modifier.fillMaxWidth()) {
         // Row 1: Profile + time
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            // Profile avatar — real avatar dari URL atau fallback initial
-            Box(Modifier.size(32.dp).clip(CircleShape).background(GHAccent).border(2.dp, GHTextWhite, CircleShape), contentAlignment = Alignment.Center) {
+            // Avatar
+            Box(Modifier.size(36.dp).clip(CircleShape).background(AccentBlue).border(2.dp, TextWhite, CircleShape), contentAlignment = Alignment.Center) {
                 if (avatarUrl.isNotEmpty()) {
                     AsyncImage(model = avatarUrl, contentDescription = "Avatar", modifier = Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
                 } else {
-                    Text(displayName.take(1).uppercase(), color = GHBg, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text(displayName.take(1).uppercase(), color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            Spacer(Modifier.width(8.dp))
-            Column {
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(displayName, color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 120.dp))
+                    Text(displayName, color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 140.dp))
                     Spacer(Modifier.width(6.dp))
-                    // Role badge — dynamic dari database
-                    val badgeText = when (role.lowercase()) {
-                        "admin" -> "ADMIN"
-                        "developer" -> "DEV"
-                        "owner" -> "OWNER"
-                        "moderator" -> "MOD"
-                        else -> ""
-                    }
-                    if (badgeText.isNotEmpty()) {
-                        Box(Modifier.clip(RoundedCornerShape(4.dp)).background(GHBg).border(1.dp, GHGold, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) {
-                            Text(badgeText, color = GHGold, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    val badge = when (role.lowercase()) { "admin" -> "ADMIN"; "developer" -> "DEV"; "owner" -> "OWNER"; "moderator" -> "MOD"; else -> "" }
+                    if (badge.isNotEmpty()) {
+                        Box(Modifier.clip(RoundedCornerShape(4.dp)).background(BgDark).border(1.dp, Gold, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp)) {
+                            Text(badge, color = Gold, fontSize = 8.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
-                Text("@$username", color = GHTextGray, fontSize = 11.sp)
+                Text("@$username", color = TextGray, fontSize = 12.sp)
             }
-            Spacer(Modifier.weight(1f))
             // Time + battery
-            Text(currentTime, color = GHTextWhite, fontSize = 13.sp)
+            Text(currentTime, color = TextWhite, fontSize = 13.sp)
             Spacer(Modifier.width(8.dp))
-            Icon(Icons.Rounded.BatteryFull, "Battery", tint = GHTextGray, modifier = Modifier.size(16.dp))
+            Icon(Icons.Rounded.BatteryFull, "Battery", tint = TextGray, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(2.dp))
-            Text("$batteryLevel%", color = GHTextGray, fontSize = 11.sp)
+            Text("$batteryLevel%", color = TextGray, fontSize = 11.sp)
             Spacer(Modifier.width(8.dp))
-            Icon(Icons.Rounded.ArrowBack, "Exit", tint = GHTextWhite, modifier = Modifier.size(20.dp).clickable { onExit() })
+            Icon(Icons.Rounded.ArrowBack, "Exit", tint = TextWhite, modifier = Modifier.size(20.dp).clickable { onExit() })
         }
 
-        // Row 2: Navigation tabs
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            val tabs = listOf("Store", "Library", "Videos", "Settings")
-            tabs.forEachIndexed { idx, label ->
+        // Row 2: Tabs
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            listOf("Store", "Library", "Videos", "Settings").forEachIndexed { idx, label ->
                 val selected = selectedTab == idx
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onTabSelect(idx) }) {
-                    Text(label, color = if (selected) GHTextWhite else GHTextGray, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                    Text(label, color = if (selected) TextWhite else TextGray, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
                     Spacer(Modifier.height(4.dp))
-                    if (selected) { Box(Modifier.width(24.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(GHTextWhite)) }
+                    if (selected) { Box(Modifier.width(24.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(TextWhite)) }
                 }
             }
         }
@@ -349,267 +327,93 @@ private fun GlassTopBar(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// LIBRARY CONTENT — featured game + horizontal grid
+// REFERENCE GAME CARD — full cover, status badge, heart, View Detail + 3-dot
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun LibraryContent(
-    games: List<GameItem>,
-    context: Context,
-    featuredGame: GameItem?,
-    onFeaturedChange: (GameItem) -> Unit,
-    onOpenDetail: (GameItem) -> Unit,
-    onPlay: (String) -> Unit,
-    favorites: Set<String>,
-    onToggleFavorite: (String) -> Unit,
-    onDelete: (String) -> Unit
-) {
-    // v7.9.96: CLEAN FULLSCREEN — no featured card, no section header
-    // Just game cards centered, fill entire screen, no scroll
-    val listState = rememberLazyListState()
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.firstVisibleItemIndex }
-            .collect { idx -> if (idx < games.size) onFeaturedChange(games[idx]) }
-    }
-
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        LazyRow(
-            state = listState,
-            contentPadding = PaddingValues(horizontal = 48.dp),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            itemsIndexed(games) { idx, game ->
-                GameGridCard(
-                    game = game,
-                    isInstalled = ghIsInstalled(context, game.packageName),
-                    isFocused = game.packageName == featuredGame?.packageName,
-                    isFavorite = game.packageName in favorites,
-                    onClick = { onOpenDetail(game) },
-                    onPlay = { onPlay(game.packageName) },
-                    onToggleFavorite = { onToggleFavorite(game.packageName) },
-                    onDelete = { onDelete(game.packageName) },
-                    onShare = { ghShareGame(context, game) }
-                )
-            }
-        }
-    }
-}
-
-// ── v7.9.95: Share game via Android share sheet ──
-// Link: https://drmacze.github.io/dlavie-web/#/game?pkg=PACKAGE_NAME
-// Website akan handle: kalau punya APK → redirect ke dlavie://game?pkg=PACKAGE_NAME
-//                      kalau tidak → tampilkan download page
-private fun ghShareGame(context: Context, game: GameItem) {
-    val shareUrl = "https://drmacze.github.io/dlavie-web/#/game?pkg=${game.packageName}"
-    val shareText = "Main ${game.title} di DLavie Launcher! Download sekarang: $shareUrl"
-    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_SUBJECT, "DLavie Launcher - ${game.title}")
-        putExtra(Intent.EXTRA_TEXT, shareText)
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    try {
-        context.startActivity(Intent.createChooser(shareIntent, "Bagikan ${game.title}").apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        })
-    } catch (e: Exception) {
-        android.util.Log.w("DLavie", "Share failed: ${e.message}")
-    }
-}
-
-// ── v7.9.95: Favorite persistence (SharedPreferences) ──
-private const val GH_PREFS = "gh_favorites_v293"
-private fun ghLoadFavorites(c: Context): Set<String> = try {
-    c.getSharedPreferences(GH_PREFS, Context.MODE_PRIVATE).getStringSet("fav_pkgs", emptySet()) ?: emptySet()
-} catch (_: Exception) { emptySet() }
-
-private fun ghToggleFavorite(c: Context, pkg: String): Set<String> {
-    val current = ghLoadFavorites(c).toMutableSet()
-    if (pkg in current) current.remove(pkg) else current.add(pkg)
-    c.getSharedPreferences(GH_PREFS, Context.MODE_PRIVATE).edit().putStringSet("fav_pkgs", current).apply()
-    return current
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// FEATURED GAME CARD — large, with progress + achievement
-// ═══════════════════════════════════════════════════════════════════════════
-
-@Composable
-private fun FeaturedGameCard(game: GameItem, isInstalled: Boolean, onPlay: () -> Unit, onOpenDetail: () -> Unit) {
-    Box(Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(12.dp)).clickable { onOpenDetail() }) {
-        // Cover image
-        if (game.coverImageRes != null) {
-            Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = game.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        } else {
-            Box(Modifier.fillMaxSize().background(Brush.linearGradient(game.coverGradient)), contentAlignment = Alignment.Center) {
-                Text(game.coverText, color = GHTextWhite, fontSize = 36.sp, fontWeight = FontWeight.Black)
-            }
-        }
-
-        // Dark gradient overlay
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(0.3f), Color.Black.copy(0.85f)))))
-
-        // Content
-        Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
-            Text(game.title, color = GHTextWhite, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(game.subtitle, color = GHTextGray, fontSize = 13.sp)
-                if (isInstalled) {
-                    Text("Installed", color = GHGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-
-            // Play button
-            Row(
-                Modifier.clip(RoundedCornerShape(8.dp)).background(if (isInstalled) GHGreen else GHAccent).clickable { onPlay() }.padding(horizontal = 20.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download, null, tint = GHBg, modifier = Modifier.size(16.dp))
-                Text(if (isInstalled) "Play" else "Install", color = GHBg, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-
-        // Status badge
-        val (sc, st) = when (game.serverStatus) {
-            ServerStatus.ONLINE -> Pair(GHGreen, "ONLINE")
-            ServerStatus.MAINTENANCE -> Pair(GHAmber, "MAINT")
-            ServerStatus.OFFLINE -> Pair(GHRed, "OFFLINE")
-            ServerStatus.BUSY -> Pair(GHAmber, "BUSY")
-        }
-        Box(Modifier.align(Alignment.TopEnd).padding(12.dp).clip(RoundedCornerShape(4.dp)).background(sc.copy(alpha = 0.9f)).padding(horizontal = 6.dp, vertical = 2.dp)) {
-            Text(st, color = GHTextWhite, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// GAME GRID CARD — smaller, portrait, scrollable
-// ═══════════════════════════════════════════════════════════════════════════
-
-@Composable
-private fun GameGridCard(
-    game: GameItem,
-    isInstalled: Boolean,
-    isFocused: Boolean,
-    isFavorite: Boolean,
-    onClick: () -> Unit,
-    onPlay: () -> Unit,
-    onToggleFavorite: () -> Unit,
-    onDelete: () -> Unit,
-    onShare: () -> Unit
+private fun RefGameCard(
+    game: GameItem, isInstalled: Boolean, isFavorite: Boolean,
+    onClick: () -> Unit, onPlay: () -> Unit,
+    onToggleFavorite: () -> Unit, onShare: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (isFocused) 1f else 0.9f, spring(dampingRatio = 0.5f, stiffness = 200f), label = "scale")
-    val alpha by animateFloatAsState(if (isFocused) 1f else 0.6f, tween(300), label = "alpha")
+    val borderColor = if (isInstalled) AccentBlue else AccentPurple
 
-    Column(Modifier.width(160.dp).graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }) {
-        // ── PS5-STYLE CARD COVER (160x200dp, landscape 4:5) ──
-        Box(Modifier.width(160.dp).height(200.dp).clip(RoundedCornerShape(12.dp)).clickable { onClick() }) {
+    Column(Modifier.width(180.dp)) {
+        // ── CARD COVER (180x260dp) ──
+        Box(Modifier.width(180.dp).height(260.dp).clip(RoundedCornerShape(12.dp)).border(2.dp, borderColor, RoundedCornerShape(12.dp)).clickable { onClick() }) {
             // Cover image
             if (game.coverImageRes != null) {
                 Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = game.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             } else {
                 Box(Modifier.fillMaxSize().background(Brush.linearGradient(game.coverGradient)), contentAlignment = Alignment.Center) {
-                    Text(game.coverText, color = GHTextWhite, fontSize = 32.sp, fontWeight = FontWeight.Black)
+                    Text(game.coverText, color = TextWhite, fontSize = 36.sp, fontWeight = FontWeight.Black)
                 }
             }
 
-            // PS5 glow border on focused
-            if (isFocused) {
-                Box(Modifier.fillMaxSize().border(2.dp, GHAccent.copy(alpha = 0.6f), RoundedCornerShape(12.dp)))
-            }
+            // Bottom gradient
+            Box(Modifier.fillMaxWidth().height(80.dp).align(Alignment.BottomStart).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.9f)))))
 
-            // Bottom gradient for text
-            Box(Modifier.fillMaxWidth().height(70.dp).align(Alignment.BottomStart).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.95f)))))
-
-            // Status badge (top-left, PS5 style)
+            // Status badge (top-left)
             val (sc, st) = when (game.serverStatus) {
-                ServerStatus.ONLINE -> Pair(GHGreen, "ONLINE")
-                ServerStatus.MAINTENANCE -> Pair(GHAmber, "MAINT")
-                ServerStatus.OFFLINE -> Pair(GHRed, "OFFLINE")
-                ServerStatus.BUSY -> Pair(GHAmber, "BUSY")
+                ServerStatus.ONLINE -> Pair(GreenOnline, "ONLINE")
+                ServerStatus.MAINTENANCE -> Pair(AmberMaint, "MAINT")
+                ServerStatus.OFFLINE -> Pair(RedOff, "OFFLINE")
+                ServerStatus.BUSY -> Pair(AmberMaint, "BUSY")
             }
-            Box(Modifier.align(Alignment.TopStart).padding(8.dp).clip(RoundedCornerShape(4.dp)).background(sc.copy(alpha = 0.85f)).padding(horizontal = 6.dp, vertical = 2.dp)) {
-                Text(st, color = GHTextWhite, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+            Box(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(4.dp)).background(sc.copy(alpha = 0.85f)).padding(horizontal = 8.dp, vertical = 3.dp)) {
+                Text(st, color = TextWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
 
-            // Favorite heart (top-right)
+            // Heart icon (top-right)
             Icon(
                 if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                "Favorite",
-                tint = if (isFavorite) GHRed else GHTextWhite,
-                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(18.dp).clickable { onToggleFavorite() }
+                "Favorite", tint = if (isFavorite) RedOff else TextWhite,
+                modifier = Modifier.align(Alignment.TopEnd).padding(10.dp).size(22.dp).clickable { onToggleFavorite() }
             )
 
-            // Title + subtitle overlay (bottom)
-            Column(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
-                Text(game.title, color = GHTextWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(game.subtitle, color = GHTextGray, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Title + subtitle (bottom)
+            Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
+                Text(game.title, color = TextWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(game.subtitle, color = TextGray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
 
         // ── VIEW DETAIL + 3-DOT MENU (below card) ──
-        Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            // View Detail button (PS5 style — dark glass)
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            // View Detail button
             Box(
-                Modifier.weight(1f).height(32.dp).clip(RoundedCornerShape(8.dp))
-                    .background(GHGlassCard).border(1.dp, GHBorder, RoundedCornerShape(8.dp))
+                Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(8.dp))
+                    .background(GlassBg).border(1.dp, CardBorder, RoundedCornerShape(8.dp))
                     .clickable { onClick() },
                 contentAlignment = Alignment.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(Icons.Rounded.Info, null, tint = GHTextGray, modifier = Modifier.size(14.dp))
-                    Text("View Detail", color = GHTextWhite, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Icon(Icons.Rounded.Info, null, tint = TextGray, modifier = Modifier.size(15.dp))
+                    Text("View Detail", color = TextWhite, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 }
             }
-
-            // 3-dot menu button
+            // 3-dot menu
             Box(
-                Modifier.size(32.dp).clip(RoundedCornerShape(8.dp))
-                    .background(GHGlassCard).border(1.dp, GHBorder, RoundedCornerShape(8.dp))
+                Modifier.size(36.dp).clip(RoundedCornerShape(8.dp))
+                    .background(GlassBg).border(1.dp, CardBorder, RoundedCornerShape(8.dp))
                     .clickable { showMenu = !showMenu },
                 contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Rounded.MoreVert, "Menu", tint = GHTextWhite, modifier = Modifier.size(16.dp))
-            }
+            ) { Icon(Icons.Rounded.MoreVert, "Menu", tint = TextWhite, modifier = Modifier.size(18.dp)) }
         }
 
-        // ── DROPDOWN MENU (Share, Favorite, Delete) ──
+        // ── DROPDOWN MENU ──
         if (showMenu) {
             Popup(onDismissRequest = { showMenu = false }, properties = PopupProperties(focusable = true)) {
-                Column(
-                    Modifier.width(160.dp).clip(RoundedCornerShape(10.dp))
-                        .background(GHBg.copy(alpha = 0.95f)).border(1.dp, GHBorderHi, RoundedCornerShape(10.dp))
-                        .padding(4.dp)
-                ) {
-                    // Share
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onShare(); showMenu = false }.padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(Icons.Rounded.Share, null, tint = GHAccent, modifier = Modifier.size(16.dp))
-                        Text("Share", color = GHTextWhite, fontSize = 12.sp)
+                Column(Modifier.width(170.dp).clip(RoundedCornerShape(10.dp)).background(BgDark.copy(alpha = 0.95f)).border(1.dp, CardBorderFocused, RoundedCornerShape(10.dp)).padding(4.dp)) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onShare(); showMenu = false }.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Rounded.Share, null, tint = AccentBlue, modifier = Modifier.size(16.dp))
+                        Text("Share", color = TextWhite, fontSize = 12.sp)
                     }
-                    // Favorite toggle
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onToggleFavorite(); showMenu = false }.padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if (isFavorite) GHRed else GHTextWhite, modifier = Modifier.size(16.dp))
-                        Text(if (isFavorite) "Remove Favorite" else "Add to Favorite", color = GHTextWhite, fontSize = 12.sp)
-                    }
-                    // Delete
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onDelete(); showMenu = false }.padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(Icons.Rounded.Delete, null, tint = GHRed, modifier = Modifier.size(16.dp))
-                        Text("Delete", color = GHRed, fontSize = 12.sp)
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onToggleFavorite(); showMenu = false }.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if (isFavorite) RedOff else TextWhite, modifier = Modifier.size(16.dp))
+                        Text(if (isFavorite) "Remove Favorite" else "Add to Favorite", color = TextWhite, fontSize = 12.sp)
                     }
                 }
             }
@@ -618,108 +422,67 @@ private fun GameGridCard(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GLASS BOTTOM NAV — 5 items
+// REFERENCE BOTTOM NAV — 5 items, transparent
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun GlassBottomNav(selectedTab: Int, onTabSelect: (Int) -> Unit, onExit: () -> Unit) {
+private fun RefBottomNav(selectedTab: Int, onTabSelect: (Int) -> Unit, onExit: () -> Unit) {
     val items = listOf(
-        Triple("Home", Icons.Rounded.Home, 0),
+        Triple("Home", Icons.Rounded.Home, 1),
         Triple("Library", Icons.Rounded.SportsEsports, 1),
         Triple("Store", Icons.Rounded.Store, 0),
         Triple("Videos", Icons.Rounded.VideoLibrary, 2),
         Triple("Exit", Icons.Rounded.Close, -1)
     )
-    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
         items.forEach { (label, icon, tab) ->
-            val selected = when (label) {
-                "Home" -> selectedTab == 1 // Library is home
-                "Library" -> selectedTab == 1
-                "Store" -> selectedTab == 0
-                "Videos" -> selectedTab == 2
-                else -> false
-            }
-            Column(
-                Modifier.clip(RoundedCornerShape(8.dp)).clickable {
-                    if (tab == -1) onExit()
-                    else onTabSelect(tab)
-                }.padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(icon, label, tint = if (selected) GHTextWhite else GHTextGray, modifier = Modifier.size(22.dp))
+            val selected = selectedTab == tab && tab != -1
+            Column(Modifier.clip(RoundedCornerShape(8.dp)).clickable { if (tab == -1) onExit() else onTabSelect(tab) }.padding(horizontal = 14.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(icon, label, tint = if (selected) TextWhite else TextGray, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.height(2.dp))
-                Text(label, color = if (selected) GHTextWhite else GHTextGray, fontSize = 9.sp, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal)
+                Text(label, color = if (selected) TextWhite else TextGray, fontSize = 10.sp, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal)
             }
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GAME DETAIL COMPACT — overlay saat klik game
+// GAME DETAIL COMPACT
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun GameDetailCompact(game: GameItem, context: Context, onBack: () -> Unit, onPlay: () -> Unit) {
     val isInstalled = ghIsInstalled(context, game.packageName)
-
-    Box(Modifier.fillMaxSize().background(GHBg)) {
-        // Blurred bg
-        if (game.coverImageRes != null) {
-            Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = null, modifier = Modifier.fillMaxSize().blur(60.dp), contentScale = ContentScale.Crop)
-        }
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xAA000000), Color(0xDD000000)))))
-
+    Box(Modifier.fillMaxSize().background(BgDark)) {
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(BgGradientStart, BgGradientEnd))))
         Column(Modifier.fillMaxSize()) {
-            // Top bar with back
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.ArrowBack, "Back", tint = GHTextWhite, modifier = Modifier.size(24.dp).clickable { onBack() })
+                Icon(Icons.Rounded.ArrowBack, "Back", tint = TextWhite, modifier = Modifier.size(24.dp).clickable { onBack() })
                 Spacer(Modifier.width(16.dp))
-                Text(game.title, color = GHTextWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(game.title, color = TextWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
-
-            // Cover image
             Box(Modifier.fillMaxWidth().height(200.dp).padding(horizontal = 16.dp).clip(RoundedCornerShape(12.dp))) {
-                if (game.coverImageRes != null) {
-                    Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = game.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                }
+                if (game.coverImageRes != null) { Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = game.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.7f)))))
-                Text(game.title, color = GHTextWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
+                Text(game.title, color = TextWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
             }
-
-            // Info
             Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                Text("Description", color = GHTextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("Description", color = TextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text(game.description, color = GHTextGray, fontSize = 13.sp)
+                Text(game.description, color = TextGray, fontSize = 13.sp)
                 Spacer(Modifier.height(12.dp))
-
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    InfoChip("Version", game.version)
-                    InfoChip("Size", game.sizeMb)
-                    InfoChip("Status", when(game.serverStatus) { ServerStatus.ONLINE -> "Online"; ServerStatus.MAINTENANCE -> "Maintenance"; else -> "Offline" })
+                    Column { Text("Version", color = TextGray, fontSize = 10.sp); Text(game.version, color = TextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
+                    Column { Text("Size", color = TextGray, fontSize = 10.sp); Text(game.sizeMb, color = TextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
+                    Column { Text("Status", color = TextGray, fontSize = 10.sp); Text(when(game.serverStatus) { ServerStatus.ONLINE -> "Online"; ServerStatus.MAINTENANCE -> "Maintenance"; else -> "Offline" }, color = TextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
                 }
-
                 Spacer(Modifier.height(20.dp))
-
-                // Play button
-                Row(
-                    Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(8.dp)).background(if (isInstalled) GHGreen else GHAccent).clickable { onPlay() },
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download, null, tint = GHBg, modifier = Modifier.size(20.dp))
+                Row(Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(8.dp)).background(if (isInstalled) GreenOnline else AccentBlue).clickable { onPlay() }, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download, null, tint = BgDark, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (isInstalled) "Play Now" else "Install", color = GHBg, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(if (isInstalled) "Play Now" else "Install", color = BgDark, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun InfoChip(label: String, value: String) {
-    Column {
-        Text(label, color = GHTextGray, fontSize = 10.sp)
-        Text(value, color = GHTextWhite, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
 }
