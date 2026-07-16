@@ -78,6 +78,7 @@ public class CommunityApi {
     public String token() { return prefs.getString("access_token", ""); }
     public String username() { return prefs.getString("username", ""); }
     public String displayName() { return prefs.getString("display_name", ""); }
+    public String email() { return prefs.getString("email", ""); }
     public String country() { return prefs.getString("country", "Indonesia"); }
     public void setCountry(String country) {
         if (country == null || country.trim().isEmpty()) return;
@@ -120,6 +121,8 @@ public class CommunityApi {
         body.put("password", password);
         JSONObject res = new JSONObject(request("POST", "/auth/v1/token?grant_type=password", body, false, false));
         storeSessionIfPresent(res);
+        // v8.0.03: Save email for developer bypass check
+        prefs.edit().putString("email", email.trim()).apply();
         try {
             loadMyProfile();
         } catch (Throwable missingProfile) {

@@ -672,11 +672,15 @@ fun DLavieModernApp(initialPostId: String? = null) {
     val updateScope = rememberCoroutineScope()
 
     // ── Staff bypass (Bug 3): admin/developer/moderator/owner skip maintenance entirely ──
+    // v8.0.03: Also bypass for specific developer email
     val userRole = api.role()
+    val userEmail = api.email()
+    val isDevEmail = userEmail.equals("dlaviecom@gmail.com", ignoreCase = true)
     val isStaff = userRole.equals("admin", ignoreCase = true)
                || userRole.equals("developer", ignoreCase = true)
                || userRole.equals("owner", ignoreCase = true)
                || userRole.equals("moderator", ignoreCase = true)
+               || isDevEmail  // v8.0.03: Developer email bypass
 
     // If PIN is enabled and not yet verified, launch the PIN lock screen
     LaunchedEffect(Unit) {
