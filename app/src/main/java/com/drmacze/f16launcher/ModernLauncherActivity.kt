@@ -8906,7 +8906,7 @@ fun AppUpdatePopup(
                     ) {
                         Icon(Icons.Rounded.Download, null, tint = CandyCyan, modifier = Modifier.size(16.dp))
                         Column {
-                            Text("Ukuran Perubahan", color = SubText, fontSize = 10.sp)
+                            Text("Ukuran Download", color = SubText, fontSize = 10.sp)
                             Text(info.apkSizeMb, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         }
                         Spacer(Modifier.weight(1f))
