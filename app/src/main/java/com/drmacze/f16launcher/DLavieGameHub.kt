@@ -245,7 +245,7 @@ private fun GameCard(game: GameItem, installed: Boolean, isFav: Boolean, onClick
     val scale by animateFloatAsState(if (pressed) 0.96f else 1f, spring(dampingRatio = 0.4f, stiffness = 300f), label = "press")
 
     Column(Modifier.width(160.dp).graphicsLayer { scaleX = scale; scaleY = scale }
-        .pointerInput(Unit) { awaitPointerEventScope { while (true) { val e = awaitPointerEvent(); e.changes.forEach { c -> if (c.pressed) pressed = true; else pressed = false; c.consume() } } } }
+        .clickable { pressed = true; onClick(); pressed = false }
     ) {
         // ── CARD (160x240dp, 2px colored border, 12dp radius) ──
         Box(Modifier.width(160.dp).height(240.dp).clip(RoundedCornerShape(12.dp)).border(2.dp, borderColor, RoundedCornerShape(12.dp)).clickable { onClick() }) {
