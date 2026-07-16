@@ -901,7 +901,7 @@ fun DLavieModernApp(initialPostId: String? = null) {
                         if (!pinVerified && PinManager.hasPin(context)) {
                             PinLockPlaceholder(context)
                         } else {
-                            MainShell(api, maintenanceInfo = null, onLogout = logoutAction, initialPostId = initialPostId)
+                            MainShell(api, maintenanceInfo = null, onLogout = logoutAction, initialPostId = initialPostId, onTriggerUpdate = { info -> updateInfo = info; showUpdatePopup = true })
                         }
                     }
 
@@ -938,7 +938,7 @@ fun DLavieModernApp(initialPostId: String? = null) {
 
                     // ── Default: masuk launcher dengan maintenance info (untuk blur overlay Bug 2) ──
                     else -> {
-                        MainShell(api, maintenanceInfo = maintenanceState, onLogout = logoutAction, initialPostId = initialPostId)
+                        MainShell(api, maintenanceInfo = maintenanceState, onLogout = logoutAction, initialPostId = initialPostId, onTriggerUpdate = { info -> updateInfo = info; showUpdatePopup = true })
                     }
                 }
             }
@@ -1160,7 +1160,8 @@ fun MainShell(
     api: CommunityApi,
     maintenanceInfo: MaintenanceInfo? = null,
     onLogout: () -> Unit,
-    initialPostId: String? = null
+    initialPostId: String? = null,
+    onTriggerUpdate: (AppUpdateChecker.UpdateInfo) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
@@ -2000,8 +2001,8 @@ fun MainShell(
                 onDismiss = { showCheckUpdateScreen = false },
                 onUpdateAvailable = { info ->
                     showCheckUpdateScreen = false
-                    shellUpdateInfo = info
-                    shellShowUpdatePopup = true
+                    // v7.9.100: Trigger update popup via callback to DLavieModernApp
+                    onTriggerUpdate(info)
                 }
             )
         }
