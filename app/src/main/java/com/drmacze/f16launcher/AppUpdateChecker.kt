@@ -290,12 +290,12 @@ object AppUpdateChecker {
                 return ""
             }
 
-            // Step 3: Calculate delta
-            val deltaBytes = newSize - installedSize
-            android.util.Log.i("AppUpdate", "Delta: installed=${installedSize} bytes, new=${newSize} bytes, delta=${deltaBytes} bytes")
-
-            // Step 4: Format
-            formatDeltaSize(deltaBytes)
+            // v8.0.08: Show actual DOWNLOAD size (not delta) — user downloads full APK
+            // Delta was misleading (showing "0 MB" when APKs are similar size)
+            val sizeMb = newSize / (1024.0 * 1024.0)
+            val formatted = if (sizeMb >= 1.0) "%.1f MB".format(sizeMb) else "${newSize / 1024} KB"
+            android.util.Log.i("AppUpdate", "Download size: ${newSize} bytes = $formatted")
+            formatted
         } catch (e: Throwable) {
             android.util.Log.w("AppUpdate", "fetchUpdateDeltaSize failed: ${e.message}")
             ""

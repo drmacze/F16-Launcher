@@ -156,7 +156,7 @@ fun DLavieGameHub(onExit: () -> Unit = {}, onNav: (Page) -> Unit = {}, onGameCli
                             HorizontalPager(
                                 state = pagerState,
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(horizontal = 40.dp),
+                                contentPadding = PaddingValues(horizontal = 30.dp),
                                 pageSpacing = 0.dp,
                                 flingBehavior = PagerDefaults.flingBehavior(
                                     state = pagerState,
@@ -169,15 +169,15 @@ fun DLavieGameHub(onExit: () -> Unit = {}, onNav: (Page) -> Unit = {}, onGameCli
                                 val distanceFromCenter = page - pagerState.currentPage + pageOffset
 
                                 // v305: Reduced rotation (20deg), reduced scale diff, NO translationX
-                                val rotationY = distanceFromCenter * -20f
-                                val scaleVal = (1f - kotlin.math.abs(distanceFromCenter) * 0.15f).coerceIn(0.7f, 1f)
-                                val alphaVal = (1f - kotlin.math.abs(distanceFromCenter) * 0.4f).coerceIn(0.2f, 1f)
+                                val rotationY = distanceFromCenter * -15f
+                                val scaleVal = (1f - kotlin.math.abs(distanceFromCenter) * 0.25f).coerceIn(0.55f, 1f)
+                                val alphaVal = (1f - kotlin.math.abs(distanceFromCenter) * 0.85f).coerceIn(0.08f, 1f)
 
                                 SwipeGameCard(
                                     game = game,
                                     installed = ghInstalled(context, game.packageName),
                                     isFav = game.packageName in favorites,
-                                    isFocused = kotlin.math.abs(distanceFromCenter) < 0.5f,
+                                    isFocused = kotlin.math.abs(distanceFromCenter) < 0.4f,
                                     rotationY = rotationY,
                                     scaleVal = scaleVal,
                                     alphaVal = alphaVal,
