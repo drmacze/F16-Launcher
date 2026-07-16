@@ -149,14 +149,14 @@ fun DLavieGameHub(onExit: () -> Unit = {}, onNav: (Page) -> Unit = {}, onGameCli
                     // ── TOP BAR ──
                     TopBarWithHamburger(time, batt, displayName, avatarUrl, username, role, selectedTab, { selectedTab = it }, onExit, { showSidebar = true })
 
-                    // ── CONTENT (Cover Flow Carousel — 3D rotation + scale + opacity + snap) ──
+                    // ── CONTENT (Cover Flow Carousel — tight spacing, no dots) ──
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         if (selectedTab == 1) {
-                            // v304: Cover Flow Carousel with snap + inertia
+                            // v305: Tight spacing, no dot indicator
                             HorizontalPager(
                                 state = pagerState,
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(horizontal = 100.dp),
+                                contentPadding = PaddingValues(horizontal = 40.dp),
                                 pageSpacing = 0.dp,
                                 flingBehavior = PagerDefaults.flingBehavior(
                                     state = pagerState,
@@ -165,15 +165,13 @@ fun DLavieGameHub(onExit: () -> Unit = {}, onNav: (Page) -> Unit = {}, onGameCli
                                 )
                             ) { page ->
                                 val game = games[page]
-                                // v304: Real-time offset for 3D Cover Flow effect
                                 val pageOffset = pagerState.currentPageOffsetFraction
                                 val distanceFromCenter = page - pagerState.currentPage + pageOffset
 
-                                // Cover Flow: 3D rotation (max 35deg), scale, alpha, translation
-                                val rotationY = distanceFromCenter * -35f
-                                val scaleVal = (1f - kotlin.math.abs(distanceFromCenter) * 0.3f).coerceIn(0.5f, 1f)
-                                val alphaVal = (1f - kotlin.math.abs(distanceFromCenter) * 0.5f).coerceIn(0.15f, 1f)
-                                val translationX = distanceFromCenter * -80f
+                                // v305: Reduced rotation (20deg), reduced scale diff, NO translationX
+                                val rotationY = distanceFromCenter * -20f
+                                val scaleVal = (1f - kotlin.math.abs(distanceFromCenter) * 0.15f).coerceIn(0.7f, 1f)
+                                val alphaVal = (1f - kotlin.math.abs(distanceFromCenter) * 0.4f).coerceIn(0.2f, 1f)
 
                                 SwipeGameCard(
                                     game = game,
@@ -183,18 +181,14 @@ fun DLavieGameHub(onExit: () -> Unit = {}, onNav: (Page) -> Unit = {}, onGameCli
                                     rotationY = rotationY,
                                     scaleVal = scaleVal,
                                     alphaVal = alphaVal,
-                                    translationX = translationX,
+                                    translationX = 0f,
                                     onClick = { showDetail = game },
                                     onPlay = { ghLaunch(context, game.packageName); onGameClick(game.packageName) },
                                     onFav = { favorites = ghToggleFav(context, game.packageName) },
                                     onShare = { ghShare(context, game) }
                                 )
                             }
-
-                            // Page indicator dots
-                            Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                repeat(games.size) { i -> Box(Modifier.size(if (i == focusedIdx) 8.dp else 5.dp).clip(CircleShape).background(if (i == focusedIdx) White else GrayDim.copy(alpha = 0.4f))) }
-                            }
+                            // v305: NO dot indicator — removed per reference
                         } else {
                             Text(when(selectedTab) { 0 -> "Store"; 2 -> "Videos"; 3 -> "Settings"; else -> "" }, color = White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         }
