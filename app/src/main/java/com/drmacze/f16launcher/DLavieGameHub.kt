@@ -371,7 +371,7 @@ private fun BottomBarIcons(
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun SettingsScreen(context: Context, onInfo: () -> Unit = {}, api: CommunityApi?, name: String, avatar: String, user: String, role: String) {
+private fun SettingsScreen(context: Context, api: CommunityApi?, name: String, avatar: String, user: String, role: String) {
     var selectedTab by remember { mutableStateOf(0) } // 0=Permission, 1=Storage, 2=Download, 3=About
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         // Tab selector
