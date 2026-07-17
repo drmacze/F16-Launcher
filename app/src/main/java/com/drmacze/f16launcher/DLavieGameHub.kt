@@ -71,8 +71,8 @@ private val GlassCard  = Color(0x12FFFFFF)   // card fill — ultra-thin frost
 private val GlassMid   = Color(0x20FFFFFF)   // focused card fill
 private val GlassBrd   = Color(0x25FFFFFF)   // card border
 private val GlassBrdHi = Color(0x55FFFFFF)   // focused border
-private val NavBg      = Color(0x18FFFFFF)   // nav bar pill
-private val NavBrd     = Color(0x20FFFFFF)
+private val NavBg      = Color(0x40FFFFFF)   // nav bar pill
+private val NavBrd     = Color(0x4DFFFFFF)
 private val White      = Color(0xFFFFFFFF)
 private val White70    = Color(0xB3FFFFFF)
 private val White30    = Color(0x4DFFFFFF)
@@ -775,7 +775,7 @@ private fun GHBottomNavBar(selectedNav: Int, onSelect: (Int) -> Unit) {
                 val sc by animateFloatAsState(if (pressed) 0.75f else 1f, spring(0.4f, 500f), label = "np$i")
 
                 Box(
-                    Modifier.size(46.dp)
+                    Modifier.size(50.dp)
                         .graphicsLayer { scaleX = sc; scaleY = sc }
                         .clip(CircleShape)
                         .background(White.copy(bgAlpha))
