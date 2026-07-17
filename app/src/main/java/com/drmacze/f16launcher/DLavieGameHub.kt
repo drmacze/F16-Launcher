@@ -41,6 +41,8 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -132,21 +134,27 @@ fun DLavieGameHub(onExit: () -> Unit = {}, onNav: (Page) -> Unit = {}, onGameCli
     var selectedTab by remember { mutableStateOf(1) }
     var showSidebar by remember { mutableStateOf(false) }
 
-    // v307: LazyRow scroll state — touch swipe scroll (NOT page-based pager)
+    // v308: LazyRow scroll state — touch swipe scroll
     val scrollState = rememberLazyListState()
     val focusedIdx by remember { derivedStateOf {
         val center = scrollState.firstVisibleItemIndex + if (scrollState.firstVisibleItemScrollOffset > 150) 1 else 0
         center.coerceIn(0, games.lastIndex)
     }}
 
-    // v307: Snap to center — animate scroll saat user berhenti swipe
+    // v308: Snap to center — HANYA saat scroll benar-benar berhenti (bukan saat masih moving)
+    // Delay 300ms supaya user sempat swipe tanpa di-snap balik
     LaunchedEffect(scrollState) {
         snapshotFlow { scrollState.isScrollInProgress }
-            .collect { scrolling ->
-                if (!scrolling && games.isNotEmpty()) {
-                    val target = focusedIdx.coerceIn(0, games.lastIndex)
-                    delay(100)
-                    scrollState.animateScrollToItem(target)
+            .distinctUntilChanged()
+            .filter { !it } // only when scroll STOPS
+            .collect {
+                if (games.isNotEmpty()) {
+                    delay(300) // v308: wait 300ms before snapping (was 100ms — too aggressive)
+                    // Re-check: pastikan user tidak swipe lagi
+                    if (!scrollState.isScrollInProgress) {
+                        val target = focusedIdx.coerceIn(0, games.lastIndex)
+                        scrollState.animateScrollToItem(target)
+                    }
                 }
             }
     }
