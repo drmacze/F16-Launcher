@@ -79,7 +79,7 @@ private val Gray       = Color(0xFF9090A0)
 private val GrayDim    = Color(0xFF484858)
 private val Accent     = Color(0xFF00E5FF)
 private val GreenLive  = Color(0xFF4ADE80)
-private val AmberWarn  = Color(0xFFFBBF24)
+// AmberWarn dipakai dari TapTapDesignSystem (public val AmberWarn)
 private val RedAlert   = Color(0xFFEF4444)
 private val Gold       = Color(0xFFFFD700)
 private val DivCol     = Color(0x14FFFFFF)
@@ -452,6 +452,14 @@ fun DLavieGameHub(
                 onGameDetail = { sndSelect(); showDetail = it },
                 onToggleFav  = { favorites = ghToggleFav(context, it) })
             4 -> GHFriendsScreen(onBack = { sndBack(); selectedNav = 0 })
+            else -> GHHomeScreen(
+                games = games, focusedIdx = focusedIdx, listState = listState,
+                time = time, batt = batt, favorites = favorites, context = context,
+                onNavSelect = { idx -> if (idx == 5) { sndBack(); onExit() } else { sndNav(); selectedNav = idx } },
+                onGameDetail = { sndSelect(); showDetail = it },
+                onGamePlay   = { g -> sndSelect(); ghLaunch(context, g.packageName); onGameClick(g.packageName) },
+                onToggleFav  = { favorites = ghToggleFav(context, it) }
+            )
         }
         GameHubTransition(visible = showTransition) { showTransition = false }
     }
