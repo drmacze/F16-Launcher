@@ -515,7 +515,7 @@ private fun GHHomeScreen(
                 Column(Modifier.padding(start = 28.dp, end = 28.dp, bottom = 20.dp)) {
                     val brush = shimmerBrush()
                     Text(g.title,
-                        style = TextStyle(brush = brush, fontSize = 28.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp),
+                        style = TextStyle(brush = brush, fontSize = 22.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp),
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(3.dp))
                     Text(g.subtitle, color = Slate, fontSize = 12.sp, letterSpacing = 0.3.sp)
@@ -546,11 +546,11 @@ private fun GHHomeScreen(
                 }
             }
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(8.dp))
 
             // ── 6-icon glass bottom nav bar ──
             GHBottomNavBar(selectedNav = 0, onSelect = onNavSelect)
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(4.dp))
         }
     }
 
@@ -571,7 +571,7 @@ private fun GHGameCard(
     val animAlpha by animateFloatAsState(alpha, tween(260), label = "cal")
     val borderAlpha by animateFloatAsState(if (isFocused) 0.55f else 0.15f, tween(280), label = "ba")
 
-    val cardW = 158.dp; val cardH = 212.dp
+    val cardW = 158.dp; val cardH = 180.dp
 
     val (statusColor, statusLabel) = when (game.serverStatus) {
         ServerStatus.ONLINE      -> GreenOnline to "Online"
@@ -819,7 +819,7 @@ private fun GHDeleteDialog(game: GameItem, onConfirm: () -> Unit, onDismiss: () 
                 Spacer(Modifier.height(8.dp))
                 Text("Ini akan menghapus seluruh data & OBB\n\"${game.title}\" dari storage. Tidak bisa dibatalkan.",
                     color = Slate, fontSize = 13.sp, textAlign = TextAlign.Center)
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(8.dp))
                 when {
                     deleting -> { CircularProgressIndicator(color = RedAlert, modifier = Modifier.size(28.dp)); Spacer(Modifier.height(8.dp)); Text("Menghapus...", color = Slate, fontSize = 12.sp) }
                     done     -> { Icon(Icons.Rounded.CheckCircle, null, tint = GreenOnline, modifier = Modifier.size(28.dp)); Spacer(Modifier.height(8.dp)); Text("Berhasil dihapus", color = GreenOnline, fontSize = 12.sp) }
