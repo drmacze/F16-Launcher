@@ -354,6 +354,8 @@ fun DLavieGameHub(
     // Immersive full-screen
     DisposableEffect(Unit) {
         val act = context as? Activity
+        // v317: Force landscape orientation di DLavieGameHub juga (bukan hanya ModernLauncherActivity)
+        act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         act?.window?.let { w ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 w.setDecorFitsSystemWindows(false)
@@ -368,6 +370,8 @@ fun DLavieGameHub(
             }
         }
         onDispose {
+            // v317: Restore orientation
+            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             act?.window?.let { w ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     w.setDecorFitsSystemWindows(true); w.insetsController?.show(WindowInsets.Type.systemBars())
@@ -775,7 +779,7 @@ private fun GHBottomNavBar(selectedNav: Int, onSelect: (Int) -> Unit) {
                 val sc by animateFloatAsState(if (pressed) 0.75f else 1f, spring(0.4f, 500f), label = "np$i")
 
                 Box(
-                    Modifier.size(46.dp)
+                    Modifier.size(50.dp)
                         .graphicsLayer { scaleX = sc; scaleY = sc }
                         .clip(CircleShape)
                         .background(White.copy(bgAlpha))
@@ -785,12 +789,22 @@ private fun GHBottomNavBar(selectedNav: Int, onSelect: (Int) -> Unit) {
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = desc,
-                        tint = iconTint,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = desc,
+                            tint = iconTint,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.height(1.dp))
+                        Text(
+                            desc,
+                            color = iconTint,
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }
