@@ -130,9 +130,24 @@ fun DLavieGameHub(onExit: () -> Unit = {}, onNav: (Page) -> Unit = {}, onGameCli
     var selectedTab by remember { mutableStateOf(1) }
     var showSidebar by remember { mutableStateOf(false) }
 
-    // v303: HorizontalPager for proper swipe gesture
-    val pagerState = rememberPagerState(pageCount = { games.size })
-    val focusedIdx by remember { derivedStateOf { pagerState.currentPage } }
+    // v307: LazyRow scroll state — touch swipe scroll (NOT page-based pager)
+    val scrollState = rememberLazyListState()
+    val focusedIdx by remember { derivedStateOf {
+        val center = scrollState.firstVisibleItemIndex + if (scrollState.firstVisibleItemScrollOffset > 150) 1 else 0
+        center.coerceIn(0, games.lastIndex)
+    }}
+
+    // v307: Snap to center — animate scroll saat user berhenti swipe
+    LaunchedEffect(scrollState) {
+        snapshotFlow { scrollState.isScrollInProgress }
+            .collect { scrolling ->
+                if (!scrolling && games.isNotEmpty()) {
+                    val target = focusedIdx.coerceIn(0, games.lastIndex)
+                    delay(100)
+                    scrollState.animateScrollToItem(target)
+                }
+            }
+    }
 
     Box(Modifier.fillMaxSize().background(Bg)) {
         // ── ADAPTIVE BLURRED BACKGROUND ──
@@ -149,46 +164,38 @@ fun DLavieGameHub(onExit: () -> Unit = {}, onNav: (Page) -> Unit = {}, onGameCli
                     // ── TOP BAR ──
                     TopBarWithHamburger(time, batt, displayName, avatarUrl, username, role, selectedTab, { selectedTab = it }, onExit, { showSidebar = true })
 
-                    // ── CONTENT (Cover Flow Carousel — tight spacing, no dots) ──
+                    // ── CONTENT (v307: LazyRow touch scroll — multiple cards visible) ──
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         if (selectedTab == 1) {
-                            // v305: Tight spacing, no dot indicator
-                            HorizontalPager(
-                                state = pagerState,
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(horizontal = 30.dp),
-                                pageSpacing = 0.dp,
-                                flingBehavior = PagerDefaults.flingBehavior(
-                                    state = pagerState,
-                                    snapAnimationSpec = spring(dampingRatio = 0.55f, stiffness = 250f),
-                                    decayAnimationSpec = exponentialDecay(frictionMultiplier = 0.85f)
-                                )
-                            ) { page ->
-                                val game = games[page]
-                                val pageOffset = pagerState.currentPageOffsetFraction
-                                val distanceFromCenter = page - pagerState.currentPage + pageOffset
+                            LazyRow(
+                                state = scrollState,
+                                contentPadding = PaddingValues(horizontal = 60.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                itemsIndexed(games) { idx, game ->
+                                    val isCenter = idx == focusedIdx
+                                    val isAdjacent = kotlin.math.abs(idx - focusedIdx) == 1
+                                    // v307: Center card big+glow, adjacent cards smaller+dimmed, others barely visible
+                                    val scaleVal = when { isCenter -> 1f; isAdjacent -> 0.85f; else -> 0.7f }
+                                    val alphaVal = when { isCenter -> 1f; isAdjacent -> 0.5f; else -> 0.15f }
 
-                                // v305: Reduced rotation (20deg), reduced scale diff, NO translationX
-                                val rotationY = distanceFromCenter * -15f
-                                val scaleVal = (1f - kotlin.math.abs(distanceFromCenter) * 0.25f).coerceIn(0.55f, 1f)
-                                val alphaVal = (1f - kotlin.math.abs(distanceFromCenter) * 0.85f).coerceIn(0.08f, 1f)
-
-                                SwipeGameCard(
-                                    game = game,
-                                    installed = ghInstalled(context, game.packageName),
-                                    isFav = game.packageName in favorites,
-                                    isFocused = kotlin.math.abs(distanceFromCenter) < 0.4f,
-                                    rotationY = rotationY,
-                                    scaleVal = scaleVal,
-                                    alphaVal = alphaVal,
-                                    translationX = 0f,
-                                    onClick = { showDetail = game },
-                                    onPlay = { ghLaunch(context, game.packageName); onGameClick(game.packageName) },
-                                    onFav = { favorites = ghToggleFav(context, game.packageName) },
-                                    onShare = { ghShare(context, game) }
-                                )
+                                    SwipeGameCard(
+                                        game = game,
+                                        installed = ghInstalled(context, game.packageName),
+                                        isFav = game.packageName in favorites,
+                                        isFocused = isCenter,
+                                        rotationY = 0f,
+                                        scaleVal = scaleVal,
+                                        alphaVal = alphaVal,
+                                        translationX = 0f,
+                                        onClick = { showDetail = game },
+                                        onPlay = { ghLaunch(context, game.packageName); onGameClick(game.packageName) },
+                                        onFav = { favorites = ghToggleFav(context, game.packageName) },
+                                        onShare = { ghShare(context, game) }
+                                    )
+                                }
                             }
-                            // v305: NO dot indicator — removed per reference
                         } else {
                             Text(when(selectedTab) { 0 -> "Store"; 2 -> "Videos"; 3 -> "Settings"; else -> "" }, color = White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         }
