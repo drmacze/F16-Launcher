@@ -80,7 +80,7 @@ private fun ghLoadFav(c: Context): Set<String> = try { c.getSharedPreferences(PR
 private fun ghToggleFav(c: Context, p: String): Set<String> { val s = ghLoadFav(c).toMutableSet(); if (p in s) s.remove(p) else s.add(p); c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet("f", s).apply(); return s }
 
 // v311: Delete game data from device
-private fun ghDeleteGameData(context: Context, onInfo: () -> Unit = {}, packageName: String): Boolean {
+private fun ghDeleteGameData(context: Context, packageName: String): Boolean {
     return try {
         val dataDir = File("/sdcard/Android/data/$packageName")
         if (dataDir.exists()) {
