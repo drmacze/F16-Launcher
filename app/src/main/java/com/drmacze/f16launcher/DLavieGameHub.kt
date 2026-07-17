@@ -231,7 +231,7 @@ fun DLavieGameHub(onExit: () -> Unit = {}, onNav: (Page) -> Unit = {}, onGameCli
                                 }
                             }
                             "settings" -> SettingsScreen(context, api, displayName, avatarUrl, username, role)
-                            "download" -> DownloadScreen(context)
+                            "download" -> { Text("Download — buka tab Settings → Download", color = White, fontSize = 14.sp) }
                         }
                     }
 
@@ -486,7 +486,7 @@ private fun DownloadItem(title: String, size: String, url: String, context: Cont
             if (!downloading) {
                 downloading = true; progress = 0f
                 // Download + install
-                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                kotlinx.coroutines.GlobalScope.coroutinesLaunch(kotlinx.coroutines.Dispatchers.IO) {
                     try {
                         val outDir = File(context.getExternalFilesDir(null), "dlc-downloads").also { it.mkdirs() }
                         val outFile = File(outDir, title.replace(" ", "_") + ".zip")
@@ -551,7 +551,7 @@ private fun SettingCard(title: String, status: String, ok: Boolean, icon: androi
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun DetailPage(game: GameItem, context: Context, onInfo: () -> Unit = {}, onBack: () -> Unit, onPlay: () -> Unit) {
+private fun DetailPage(game: GameItem, context: Context, onBack: () -> Unit, onPlay: () -> Unit) {
     val installed = ghInstalled(context, game.packageName)
     Box(Modifier.fillMaxSize().background(Bg)) {
         if (game.coverImageRes != null) { Image(painter = androidx.compose.ui.res.painterResource(id = game.coverImageRes), contentDescription = null, modifier = Modifier.fillMaxSize().blur(60.dp), contentScale = ContentScale.Crop); Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xCC000000), Color(0xEE000000))))) }
