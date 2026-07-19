@@ -4,31 +4,41 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * App Update Checker v2 — cek versi terbaru dari Supabase app_releases table.
+ * App Update Checker v3 — GitHub-only (manifest.json).
  *
- * Sistem Draft/Publish:
- *  - Draft release: hanya admin/developer yang dapat popup update (untuk testing)
- *  - Published release: semua user dapat popup update
+ * v322 CHANGE: Supabase strategy REMOVED entirely (quota exceeded, dead call).
+ * Now goes straight to manifest.json on GitHub raw — fast, reliable, no auth needed.
  *
- * Flow:
- *  1. fetchLatestRelease(api) — query Supabase app_releases table
- *     - Regular user: WHERE is_published = true AND version_code > current
- *     - Staff (admin/developer): WHERE version_code > current (draft atau published)
- *  2. Kalau ada versi baru → tampilkan UpdatePopup
- *  3. User tap "Update" → download APK dari GitHub release URL → trigger install
+ * Sistem:
+ *  - Baca manifest.json dari GitHub raw (DLavie-Launcher-Data repo)
+ *  - Bandingkan latest_version_code dengan BuildConfig.VERSION_CODE
+ *  - Kalau ada versi baru → return UpdateInfo (dengan forceUpdate flag)
+ *  - forceUpdate = true kalau gap versi > 3 (user terlalu lama tidak update)
  *
- * Anti-bentrok:
- *  - Fixed signing key (sama untuk semua build)
- *  - applicationId sama → install sebagai update
+ * Popup behavior:
+ *  - forceUpdate = true → popup TIDAK bisa di-dismiss, user WAJIB update
+ *  - forceUpdate = false → popup bisa di-dismiss (Later button)
+ *
+ * Website fallback:
+ *  - Tombol "Buka Website DLavie" selalu tersedia
+ *  - URL: https://drmacze.github.io/dlavie-web/
  */
 object AppUpdateChecker {
+
+    /** URL website DLavie — halaman download APK */
+    const val DLAVIE_WEBSITE_URL = "https://drmacze.github.io/dlavie-web/"
+
+    /** URL manifest.json (raw GitHub) — source of truth untuk versi terbaru */
+    private const val MANIFEST_URL = "https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/manifest.json"
+
+    /** Threshold gap versi untuk force update (user tertinggal > 3 versi) */
+    private const val FORCE_UPDATE_THRESHOLD = 3
 
     data class UpdateInfo(
         val versionName: String,
@@ -37,107 +47,104 @@ object AppUpdateChecker {
         val apkUrl: String,
         val isPublished: Boolean,
         val isUpdateAvailable: Boolean,
-        val apkSizeMb: String = ""  // v7.9.90: APK size for update popup
+        val apkSizeMb: String = "",
+        /** v322: Force update kalau gap versi > threshold — popup tidak bisa di-dismiss */
+        val forceUpdate: Boolean = false,
+        /** v322: Versi saat ini di device user (untuk ditampilkan di popup) */
+        val currentVersionCode: Int = 0,
+        /** v322: Website URL untuk download manual */
+        val websiteUrl: String = DLAVIE_WEBSITE_URL
     )
 
     /**
-     * Cek update dari Supabase app_releases table.
-     * - Regular user: hanya dapat published releases
-     * - Staff (admin/developer): dapat draft + published releases
+     * Cek update dari manifest.json (GitHub raw URL).
+     * v322: Supabase dihapus, langsung ke manifest — cepat & reliable.
      *
-     * v7.9.40: Fallback ke manifest.json (GitHub raw) kalau app_releases kosong/error.
-     * Manifest berisi info launcher terbaru, jadi user tetap dapat popup update
-     * tanpa perlu SQL insert manual ke app_releases.
-     *
-     * @param api CommunityApi instance (untuk auth + role check)
+     * @param api CommunityApi instance (tidak dipakai lagi, tetap ada untuk backward compat)
+     * @param context Context untuk ambil installed APK size
      * @return UpdateInfo atau null kalau tidak ada update
      */
-    suspend fun checkForUpdate(api: CommunityApi, context: Context? = null): UpdateInfo? {
+    suspend fun checkForUpdate(api: CommunityApi? = null, context: Context? = null): UpdateInfo? {
         val currentCode = BuildConfig.VERSION_CODE
+        android.util.Log.i("AppUpdate", "v322 checkForUpdate: current=$currentCode, manifest=$MANIFEST_URL")
 
-        // ── Strategy 1: Cek dari Supabase app_releases (primary) ──
         try {
-            val filter = "version_code=gt.$currentCode&is_published=eq.true"
-            val response = api.requestPublic(
-                "GET",
-                "/rest/v1/app_releases?$filter&order=version_code.desc&limit=1&select=version_code,version_name,tag_name,apk_download_url,changelog,is_published"
-            )
-
-            val arr = JSONArray(response)
-            if (arr.length() > 0) {
-                val release = arr.getJSONObject(0)
-                val versionCode = release.optInt("version_code", 0)
-                if (versionCode > currentCode) {
-                    val apkUrl = release.optString("apk_download_url", "")
-                    if (apkUrl.isNotBlank()) {
-                        android.util.Log.i("AppUpdate", "Update found via Supabase: v$versionCode")
-                        // v7.9.93: Fetch update DELTA size (installed vs new), bukan full APK size
-                        val sizeMb = if (context != null) fetchUpdateDeltaSize(context, apkUrl) else ""
-                        return UpdateInfo(
-                            versionName = release.optString("version_name", "unknown"),
-                            versionCode = versionCode,
-                            releaseNotes = release.optString("changelog", ""),
-                            apkUrl = apkUrl,
-                            isPublished = release.optBoolean("is_published", false),
-                            isUpdateAvailable = true,
-                            apkSizeMb = sizeMb
-                        )
-                    }
-                }
-            }
-        } catch (e: Throwable) {
-            android.util.Log.w("AppUpdate", "Supabase check failed, fallback to manifest: ${e.message}")
-        }
-
-        // ── Strategy 2: Fallback ke manifest.json (GitHub raw URL) ──
-        // v7.9.40: Manifest berisi launcher info, jadi user tetap dapat update
-        // notification tanpa perlu SQL insert ke app_releases
-        try {
-            val manifestUrl = "https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/manifest.json?t=${System.currentTimeMillis()}"
+            // Cache-bust supaya tidak dapat versi stale
+            val manifestUrl = "$MANIFEST_URL?t=${System.currentTimeMillis()}"
             val conn = (URL(manifestUrl).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 10_000
-                readTimeout = 15_000
+                connectTimeout = 8_000   // v322: faster timeout (was 10s)
+                readTimeout = 12_000     // v322: faster timeout (was 15s)
                 setRequestProperty("Cache-Control", "no-cache")
-                setRequestProperty("User-Agent", "DLavie-Launcher")
+                setRequestProperty("User-Agent", "DLavie-Launcher-v322")
                 connect()
             }
             try {
-                if (conn.responseCode in 200..299) {
-                    val text = conn.inputStream.bufferedReader().use { it.readText() }
-                    val manifest = JSONObject(text)
-                    val launcher = manifest.optJSONObject("launcher") ?: return null
-                    val latestCode = launcher.optInt("latest_version_code", 0)
-                    if (latestCode > currentCode) {
-                        val apkUrl = launcher.optString("apk_url", "")
-                        if (apkUrl.isNotBlank()) {
-                            android.util.Log.i("AppUpdate", "Update found via manifest: v$latestCode")
-                            val sizeMb = if (context != null) fetchUpdateDeltaSize(context, apkUrl) else ""
-                            return UpdateInfo(
-                                versionName = launcher.optString("latest_version_name", "unknown"),
-                                versionCode = latestCode,
-                                releaseNotes = launcher.optString("release_notes", "Update terbaru tersedia").toString(),
-                                apkUrl = apkUrl,
-                                isPublished = true,
-                                isUpdateAvailable = true,
-                                apkSizeMb = sizeMb
-                            )
-                        }
-                    }
+                if (conn.responseCode !in 200..299) {
+                    android.util.Log.w("AppUpdate", "Manifest HTTP ${conn.responseCode}")
+                    return null
                 }
+                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                val manifest = JSONObject(text)
+                val launcher = manifest.optJSONObject("launcher") ?: run {
+                    android.util.Log.w("AppUpdate", "Manifest: 'launcher' object missing")
+                    return null
+                }
+                val latestCode = launcher.optInt("latest_version_code", 0)
+                android.util.Log.i("AppUpdate", "Manifest: latest=$latestCode, current=$currentCode, gap=${latestCode - currentCode}")
+
+                if (latestCode <= currentCode) {
+                    android.util.Log.i("AppUpdate", "Already up-to-date (current=$currentCode, latest=$latestCode)")
+                    return null
+                }
+
+                val apkUrl = launcher.optString("apk_url", "")
+                if (apkUrl.isBlank()) {
+                    android.util.Log.w("AppUpdate", "Manifest: apk_url kosong")
+                    return null
+                }
+
+                // v322: Force update kalau gap versi > threshold
+                val gap = latestCode - currentCode
+                val forceUpdate = gap >= FORCE_UPDATE_THRESHOLD
+                android.util.Log.i("AppUpdate", "Update available: v$latestCode (gap=$gap, forceUpdate=$forceUpdate)")
+
+                // v322: Release notes bisa array atau string
+                val notesRaw = launcher.opt("release_notes")
+                val notes = when (notesRaw) {
+                    is org.json.JSONArray -> {
+                        // Join array elements dengan newline
+                        (0 until notesRaw.length()).joinToString("\n") { i -> "• ${notesRaw.optString(i)}" }
+                    }
+                    is String -> notesRaw
+                    else -> "Update terbaru tersedia"
+                }
+
+                val sizeMb = if (context != null) fetchUpdateDeltaSize(context, apkUrl) else ""
+
+                return UpdateInfo(
+                    versionName = launcher.optString("latest_version_name", "unknown"),
+                    versionCode = latestCode,
+                    releaseNotes = notes,
+                    apkUrl = apkUrl,
+                    isPublished = true,
+                    isUpdateAvailable = true,
+                    apkSizeMb = sizeMb,
+                    forceUpdate = forceUpdate,
+                    currentVersionCode = currentCode,
+                    websiteUrl = DLAVIE_WEBSITE_URL
+                )
             } finally {
                 conn.disconnect()
             }
         } catch (e: Throwable) {
-            android.util.Log.w("AppUpdate", "Manifest check failed: ${e.message}")
+            android.util.Log.w("AppUpdate", "v322 manifest check failed: ${e.message}")
+            return null
         }
-
-        return null
     }
 
     /**
-     * Download APK ke cache dir dengan progress callback.
-     * v7.9.49: Tambah retry logic (3 attempts) supaya download tidak gagal.
+     * Download APK ke cache dir dengan progress callback + retry logic.
      */
     suspend fun downloadApk(context: Context, apkUrl: String, onProgress: ((Float) -> Unit)? = null): File? {
         val cacheDir = File(context.cacheDir, "app-updates").also { it.mkdirs() }
@@ -235,8 +242,6 @@ object AppUpdateChecker {
 
     /**
      * Trigger install APK via ACTION_VIEW + FileProvider.
-     * v7.2.8: Removed browser fallback — kalau FileProvider gagal, return false
-     * (caller handle dengan menampilkan pesan error, bukan buka browser).
      */
     fun installApk(context: Context, apkFile: File): Boolean {
         return try {
@@ -258,43 +263,35 @@ object AppUpdateChecker {
     }
 
     /**
-     * v7.9.93: Fetch UPDATE DELTA size — perubahan size dari APK terinstall ke APK baru.
-     *
-     * Cara kerja:
-     * 1. Get size APK yang sedang terinstall (PackageInfo.sourceDir → File.length())
-     * 2. Get size APK baru via HTTP HEAD request (follow redirects)
-     * 3. Delta = new_size - installed_size
-     * 4. Format sebagai "+X.X MB" (naik) atau "-X.X MB" (turun) atau "0 MB" (sama)
-     *
-     * Ini menampilkan SIZE PERUBAHAN, bukan full APK download size.
-     * User tahu "oh cuma 4MB perubahan" bukan "28MB full download".
-     *
-     * Return formatted string atau "" kalau gagal.
+     * v322: Buka website DLavie di browser default.
+     * Fallback kalau download/install APK gagal — user bisa download manual dari website.
+     */
+    fun openWebsite(context: Context): Boolean {
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(DLAVIE_WEBSITE_URL)).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+            true
+        } catch (e: Throwable) {
+            android.util.Log.e("DLavie", "openWebsite failed", e)
+            false
+        }
+    }
+
+    /**
+     * Fetch actual download size (full APK size, bukan delta).
      */
     private fun fetchUpdateDeltaSize(context: Context, apkUrl: String): String {
         return try {
-            // Step 1: Get installed APK size
-            val installedSize = try {
-                val pkgInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-                java.io.File(pkgInfo.applicationInfo?.sourceDir ?: "").length()
-            } catch (e: Exception) {
-                android.util.Log.w("AppUpdate", "Cannot get installed APK size: ${e.message}")
-                0L
-            }
-
-            // Step 2: Get new APK size via HEAD request
             val newSize = fetchRemoteApkSizeBytes(apkUrl)
-
             if (newSize <= 0L) {
                 android.util.Log.w("AppUpdate", "Cannot fetch remote APK size")
                 return ""
             }
-
-            // v8.0.08: Show actual DOWNLOAD size (not delta) — user downloads full APK
-            // Delta was misleading (showing "0 MB" when APKs are similar size)
             val sizeMb = newSize / (1024.0 * 1024.0)
             val formatted = if (sizeMb >= 1.0) "%.1f MB".format(sizeMb) else "${newSize / 1024} KB"
-            android.util.Log.i("AppUpdate", "Download size: ${newSize} bytes = $formatted")
+            android.util.Log.i("AppUpdate", "Download size: $newSize bytes = $formatted")
             formatted
         } catch (e: Throwable) {
             android.util.Log.w("AppUpdate", "fetchUpdateDeltaSize failed: ${e.message}")
@@ -302,9 +299,6 @@ object AppUpdateChecker {
         }
     }
 
-    /**
-     * Fetch raw byte size dari remote APK URL via HTTP HEAD (follow redirects).
-     */
     private fun fetchRemoteApkSizeBytes(apkUrl: String): Long {
         return try {
             var currentUrl = apkUrl
@@ -339,27 +333,6 @@ object AppUpdateChecker {
         } catch (e: Throwable) {
             android.util.Log.w("AppUpdate", "fetchRemoteApkSizeBytes failed: ${e.message}")
             0L
-        }
-    }
-
-    /**
-     * Format delta bytes ke human-readable string.
-     * Positif (naik): "+4.2 MB"
-     * Negatif (turun): "-1.3 MB"
-     * Nol: "0 MB"
-     * Kecil (< 1MB): "+450 KB"
-     */
-    private fun formatDeltaSize(deltaBytes: Long): String {
-        val absBytes = kotlin.math.abs(deltaBytes)
-        val sign = if (deltaBytes > 0) "+" else if (deltaBytes < 0) "-" else ""
-        return when {
-            absBytes >= 1_000_000 -> {
-                val mb = absBytes / (1024.0 * 1024.0)
-                "${sign}%.1f MB".format(mb)
-            }
-            absBytes >= 1_000 -> "${sign}${absBytes / 1024} KB"
-            absBytes > 0 -> "${sign}${absBytes} B"
-            else -> "0 MB"
         }
     }
 }

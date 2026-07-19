@@ -94,6 +94,8 @@ import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.ThumbUpOffAlt
 import androidx.compose.material.icons.rounded.Article
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.PriorityHigh
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.CameraAlt
@@ -720,6 +722,13 @@ fun DLavieModernApp(initialPostId: String? = null) {
             runCatching {
                 val info = AppUpdateChecker.checkForUpdate(api, context)
                 if (info != null && info.isUpdateAvailable) {
+                    // v322: forceUpdate popup SELALU show, tidak bisa di-dismiss
+                    if (info.forceUpdate) {
+                        android.util.Log.i("AppUpdate", "FORCE UPDATE: v${info.versionCode} (current=${info.currentVersionCode}) — popup tidak bisa di-dismiss")
+                        updateInfo = info
+                        showUpdatePopup = true
+                        return@runCatching
+                    }
                     // v7.9.42: Auto-reset dismissed kalau versi baru tersedia
                     // Jadi kalau user dismiss v208, popup v210 tetap muncul
                     val dismissedVersion = updatePrefs.getInt("dismissed_version_code", -1)
@@ -824,14 +833,8 @@ fun DLavieModernApp(initialPostId: String? = null) {
                             if (!updateDownloading) {
                                 val currentInfo = updateInfo
                                 if (currentInfo == null || currentInfo.apkUrl.isBlank()) {
-                                    // Tidak ada URL download — buka browser ke halaman release
-                                    try {
-                                        // PRIVACY: Don't expose GitHub repo URL. Use DLavie proxy instead.
-                                        val fallbackUrl = currentInfo?.apkUrl?.takeIf { it.isNotBlank() } ?: (LAUNCHER_APK_URL)
-                                        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUrl))
-                                        browserIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                        context.startActivity(browserIntent)
-                                    } catch (_: Throwable) { }
+                                    // Tidak ada URL download — buka website DLavie
+                                    AppUpdateChecker.openWebsite(context)
                                     showUpdatePopup = false
                                     return@AppUpdatePopup
                                 }
@@ -859,24 +862,31 @@ fun DLavieModernApp(initialPostId: String? = null) {
                                             }
                                             val installed = AppUpdateChecker.installApk(context, apkFile)
                                             if (!installed) {
-                                                updateDownloadError = "Unable to open installer. Please try again."
+                                                updateDownloadError = "Tidak bisa membuka installer. Coba download dari website DLavie."
                                             }
                                         } else {
-                                            updateDownloadError = "Download failed. Please try again."
+                                            updateDownloadError = "Download gagal. Coba download dari website DLavie."
                                         }
                                     } catch (e: Throwable) {
                                         updateDownloading = false
-                                        updateDownloadError = e.message ?: "Download failed. Check your connection."
+                                        updateDownloadError = e.message ?: "Download gagal. Coba download dari website DLavie."
                                     }
                                 }
                             }
                         },
                         onLater = {
-                            // Simpan dismissed versionCode — jangan show lagi untuk versi ini
+                            // v322: Hanya save dismissed kalau BUKAN forceUpdate
+                            // forceUpdate popup tidak bisa di-dismiss (tombol Later disembunyikan)
                             updateInfo?.let { info ->
-                                updatePrefs.edit().putInt("dismissed_version_code", info.versionCode).apply()
+                                if (!info.forceUpdate) {
+                                    updatePrefs.edit().putInt("dismissed_version_code", info.versionCode).apply()
+                                }
                             }
                             showUpdatePopup = false
+                        },
+                        onOpenWebsite = {
+                            // v322: Buka website DLavie di browser — fallback download manual
+                            AppUpdateChecker.openWebsite(context)
                         }
                     )
                 }
@@ -2013,12 +2023,13 @@ fun MainShell(
 
         // v7.9.92: Warning toast kuning untuk versi lama
         // Auto-show jika ada updateInfo dari auto-check (pass via shellUpdateInfo)
+        // v322: Skip warning toast kalau forceUpdate — popup utama sudah handle
         LaunchedEffect(Unit) {
             // Run auto-check update di MainShell scope
             withContext(Dispatchers.IO) {
                 runCatching {
                     val info = AppUpdateChecker.checkForUpdate(api, context)
-                    if (info != null && info.isUpdateAvailable) {
+                    if (info != null && info.isUpdateAvailable && !info.forceUpdate) {
                         val prefs = context.getSharedPreferences("dlavie_update_prefs", android.content.Context.MODE_PRIVATE)
                         val dismissedVersion = prefs.getInt("dismissed_version_code", -1)
                         if (dismissedVersion == info.versionCode) {
@@ -8849,16 +8860,47 @@ fun AppUpdatePopup(
     progress: Float,
     error: String = "",
     onUpdate: () -> Unit,
-    onLater: () -> Unit
+    onLater: () -> Unit,
+    onOpenWebsite: () -> Unit = {}
 ) {
+    // v322: Force update — popup tidak bisa di-dismiss
+    val forceUpdate = info.forceUpdate
     AlertDialog(
-        onDismissRequest = { if (!downloading) onLater() },
+        onDismissRequest = {
+            // v322: Hanya allow dismiss kalau BUKAN force update dan tidak sedang download
+            if (!downloading && !forceUpdate) onLater()
+        },
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.SystemUpdate, null, tint = Color.White, modifier = Modifier.size(24.dp))
+                Icon(
+                    if (forceUpdate) Icons.Rounded.PriorityHigh else Icons.Rounded.SystemUpdate,
+                    null,
+                    tint = if (forceUpdate) AmberWarn else Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
                 Spacer(Modifier.width(8.dp))
-                Text("Update Tersedia!", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                if (!info.isPublished) {
+                Text(
+                    if (forceUpdate) "Update Wajib!" else "Update Tersedia!",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black
+                )
+                if (forceUpdate) {
+                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        color = DangerRed.copy(0.18f),
+                        border = BorderStroke(1.dp, DangerRed.copy(0.5f)),
+                        shape = RoundedCornerShape(999.dp)
+                    ) {
+                        Text(
+                            "WAJIB",
+                            color = DangerRed,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                } else if (!info.isPublished) {
                     Spacer(Modifier.width(8.dp))
                     Surface(
                         color = AmberWarn.copy(0.15f),
@@ -8882,6 +8924,29 @@ fun AppUpdatePopup(
                     "Versi baru ${info.versionName} sudah tersedia.",
                     color = SoftText, fontSize = 13.sp
                 )
+                // v322: Tampilkan versi saat ini vs versi baru
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Versi Anda: v${info.currentVersionCode}  →  Versi Baru: v${info.versionCode}",
+                    color = SubText, fontSize = 11.sp, fontWeight = FontWeight.Medium
+                )
+                if (forceUpdate) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .background(DangerRed.copy(0.08f), RoundedCornerShape(10.dp))
+                            .border(1.dp, DangerRed.copy(0.25f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.Warning, null, tint = DangerRed, modifier = Modifier.size(16.dp))
+                        Text(
+                            "Versi Anda sudah terlalu lama. Anda WAJIB update ke versi terbaru untuk melanjutkan menggunakan aplikasi.",
+                            color = DangerRed, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
                 if (!info.isPublished) {
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -8957,6 +9022,30 @@ fun AppUpdatePopup(
                         Text(error, color = DangerRed, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.weight(1f))
                     }
                 }
+
+                // v322: Tombol "Buka Website DLavie" — selalu tersedia sebagai fallback
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Jika download gagal, Anda bisa mengunduh APK langsung dari website DLavie:",
+                    color = SubText, fontSize = 10.sp, lineHeight = 13.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    Modifier.fillMaxWidth()
+                        .background(CandyCyan.copy(0.06f), RoundedCornerShape(10.dp))
+                        .border(1.dp, CandyCyan.copy(0.3f), RoundedCornerShape(10.dp))
+                        .clickable { onOpenWebsite() }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Rounded.Language, null, tint = CandyCyan, modifier = Modifier.size(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Buka Website DLavie", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("drmacze.github.io/dlavie-web", color = SubText, fontSize = 10.sp)
+                    }
+                    Icon(Icons.Rounded.OpenInNew, null, tint = CandyCyan, modifier = Modifier.size(14.dp))
+                }
             }
         },
         confirmButton = {
@@ -8965,27 +9054,30 @@ fun AppUpdatePopup(
                 enabled = !downloading,
                 shape = TTShapes.button,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Carbon
+                    containerColor = if (forceUpdate) DangerRed else Color.White,
+                    contentColor = Color.White
                 )
             ) {
                 if (downloading) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Carbon, strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
                     Text("Downloading...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 } else {
                     Icon(Icons.Rounded.SystemUpdate, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Update Now", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(if (forceUpdate) "Update Sekarang" else "Update Now", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
         },
         dismissButton = {
-            TextButton(
-                onClick = onLater,
-                enabled = !downloading
-            ) {
-                Text("Later", color = SubText, fontSize = 13.sp)
+            // v322: Sembunyikan tombol "Later" kalau forceUpdate
+            if (!forceUpdate) {
+                TextButton(
+                    onClick = onLater,
+                    enabled = !downloading
+                ) {
+                    Text("Later", color = SubText, fontSize = 13.sp)
+                }
             }
         },
         containerColor = GlassBase
