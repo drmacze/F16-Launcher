@@ -8863,7 +8863,7 @@ fun AppUpdatePopup(
     onLater: () -> Unit,
     onOpenWebsite: () -> Unit = {}
 ) {
-    // v322: Force update — popup tidak bisa di-dismiss
+    // v323: Force update — popup tidak bisa di-dismiss, langsung ke website
     val forceUpdate = info.forceUpdate
     AlertDialog(
         onDismissRequest = {
@@ -8942,12 +8942,12 @@ fun AppUpdatePopup(
                     ) {
                         Icon(Icons.Rounded.Warning, null, tint = DangerRed, modifier = Modifier.size(16.dp))
                         Text(
-                            "Versi Anda sudah terlalu lama. Anda WAJIB update ke versi terbaru untuk melanjutkan menggunakan aplikasi.",
+                            "Versi Anda sudah kedaluwarsa. Anda WAJIB update ke versi terbaru untuk melanjutkan.",
                             color = DangerRed, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.weight(1f)
                         )
                     }
                 }
-                if (!info.isPublished) {
+                if (!info.isPublished && !forceUpdate) {
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Icon(Icons.Rounded.Warning, contentDescription = null, tint = AmberWarn, modifier = Modifier.size(12.dp))
@@ -8982,7 +8982,7 @@ fun AppUpdatePopup(
 
                 // Release notes (truncate kalau terlalu panjang)
                 val notes = info.releaseNotes.take(500)
-                if (notes.isNotEmpty()) {
+                if (notes.isNotEmpty() && !forceUpdate) {
                     Text(
                         notes,
                         color = SubText, fontSize = 11.sp, lineHeight = 15.sp,
@@ -8991,8 +8991,8 @@ fun AppUpdatePopup(
                     )
                 }
 
-                // Download progress
-                if (downloading) {
+                // Download progress (only for non-force update — force update goes to website)
+                if (downloading && !forceUpdate) {
                     Spacer(Modifier.height(12.dp))
                     LinearProgressIndicator(
                         progress = { progress },
@@ -9008,7 +9008,7 @@ fun AppUpdatePopup(
                 }
 
                 // v7.5.4: Error display (modern, with icon)
-                if (error.isNotBlank()) {
+                if (error.isNotBlank() && !forceUpdate) {
                     Spacer(Modifier.height(12.dp))
                     Row(
                         Modifier.fillMaxWidth()
@@ -9023,49 +9023,99 @@ fun AppUpdatePopup(
                     }
                 }
 
-                // v322: Tombol "Buka Website DLavie" — selalu tersedia sebagai fallback
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "Jika download gagal, Anda bisa mengunduh APK langsung dari website DLavie:",
-                    color = SubText, fontSize = 10.sp, lineHeight = 13.sp
-                )
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    Modifier.fillMaxWidth()
-                        .background(CandyCyan.copy(0.06f), RoundedCornerShape(10.dp))
-                        .border(1.dp, CandyCyan.copy(0.3f), RoundedCornerShape(10.dp))
-                        .clickable { onOpenWebsite() }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(Icons.Rounded.Language, null, tint = CandyCyan, modifier = Modifier.size(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Buka Website DLavie", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text("drmacze.github.io/dlavie-web", color = SubText, fontSize = 10.sp)
+                // v323: Force update — show prominent website instruction card
+                if (forceUpdate) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Klik tombol di bawah untuk membuka website DLavie dan mengunduh APK versi terbaru:",
+                        color = Color.White, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .background(CandyCyan.copy(0.10f), RoundedCornerShape(10.dp))
+                            .border(1.dp, CandyCyan.copy(0.4f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.Language, null, tint = CandyCyan, modifier = Modifier.size(20.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Website DLavie", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text("drmacze.github.io/dlavie-web", color = SubText, fontSize = 10.sp)
+                        }
+                        Icon(Icons.Rounded.OpenInNew, null, tint = CandyCyan, modifier = Modifier.size(16.dp))
                     }
-                    Icon(Icons.Rounded.OpenInNew, null, tint = CandyCyan, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Setelah download selesai, install APK baru tersebut. Aplikasi lama akan otomatis terganti dengan versi terbaru.",
+                        color = SubText, fontSize = 10.sp, lineHeight = 13.sp
+                    )
+                } else {
+                    // v322: Tombol "Buka Website DLavie" — selalu tersedia sebagai fallback
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Jika download gagal, Anda bisa mengunduh APK langsung dari website DLavie:",
+                        color = SubText, fontSize = 10.sp, lineHeight = 13.sp
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .background(CandyCyan.copy(0.06f), RoundedCornerShape(10.dp))
+                            .border(1.dp, CandyCyan.copy(0.3f), RoundedCornerShape(10.dp))
+                            .clickable { onOpenWebsite() }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.Language, null, tint = CandyCyan, modifier = Modifier.size(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Buka Website DLavie", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("drmacze.github.io/dlavie-web", color = SubText, fontSize = 10.sp)
+                        }
+                        Icon(Icons.Rounded.OpenInNew, null, tint = CandyCyan, modifier = Modifier.size(14.dp))
+                    }
                 }
             }
         },
         confirmButton = {
-            Button(
-                onClick = onUpdate,
-                enabled = !downloading,
-                shape = TTShapes.button,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (forceUpdate) DangerRed else Color.White,
-                    contentColor = Color.White
-                )
-            ) {
-                if (downloading) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+            // v323: Force update → button langsung buka website (no in-app download)
+            if (forceUpdate) {
+                Button(
+                    onClick = onOpenWebsite,
+                    shape = TTShapes.button,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DangerRed,
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Rounded.Language, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Downloading...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                } else {
-                    Icon(Icons.Rounded.SystemUpdate, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (forceUpdate) "Update Sekarang" else "Update Now", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Install Latest Version", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Rounded.OpenInNew, null, modifier = Modifier.size(16.dp))
+                }
+            } else {
+                // Normal update: keep in-app download + website option
+                Button(
+                    onClick = onUpdate,
+                    enabled = !downloading,
+                    shape = TTShapes.button,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Carbon
+                    )
+                ) {
+                    if (downloading) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Carbon, strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Downloading...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    } else {
+                        Icon(Icons.Rounded.SystemUpdate, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Update Now", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         },

@@ -37,8 +37,12 @@ object AppUpdateChecker {
     /** URL manifest.json (raw GitHub) — source of truth untuk versi terbaru */
     private const val MANIFEST_URL = "https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/manifest.json"
 
-    /** Threshold gap versi untuk force update (user tertinggal > 3 versi) */
-    private const val FORCE_UPDATE_THRESHOLD = 3
+    /**
+     * v323: Threshold gap versi untuk force update.
+     * Set to 1 — ANY version gap triggers force update.
+     * Old version users will see non-dismissable popup directing to DLavie website.
+     */
+    private const val FORCE_UPDATE_THRESHOLD = 1
 
     data class UpdateInfo(
         val versionName: String,
