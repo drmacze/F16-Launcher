@@ -71,8 +71,8 @@ private val GlassCard  = Color(0x12FFFFFF)   // card fill — ultra-thin frost
 private val GlassMid   = Color(0x20FFFFFF)   // focused card fill
 private val GlassBrd   = Color(0x25FFFFFF)   // card border
 private val GlassBrdHi = Color(0x55FFFFFF)   // focused border
-private val NavBg      = Color(0x18FFFFFF)   // nav bar pill
-private val NavBrd     = Color(0x20FFFFFF)
+private val NavBg      = Color(0x40FFFFFF)   // nav bar pill — v318: more visible
+private val NavBrd     = Color(0x4DFFFFFF)   // v318: more visible border
 private val White      = Color(0xFFFFFFFF)
 private val White70    = Color(0xB3FFFFFF)
 private val White30    = Color(0x4DFFFFFF)
@@ -354,6 +354,8 @@ fun DLavieGameHub(
     // Immersive full-screen
     DisposableEffect(Unit) {
         val act = context as? Activity
+        // v318: Force landscape orientation
+        act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         act?.window?.let { w ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 w.setDecorFitsSystemWindows(false)
@@ -368,6 +370,8 @@ fun DLavieGameHub(
             }
         }
         onDispose {
+            // v318: Restore orientation
+            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             act?.window?.let { w ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     w.setDecorFitsSystemWindows(true); w.insetsController?.show(WindowInsets.Type.systemBars())
@@ -515,7 +519,7 @@ private fun GHHomeScreen(
                 Column(Modifier.padding(start = 28.dp, end = 28.dp, bottom = 20.dp)) {
                     val brush = shimmerBrush()
                     Text(g.title,
-                        style = TextStyle(brush = brush, fontSize = 28.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp),
+                        style = TextStyle(brush = brush, fontSize = 22.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp),
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(3.dp))
                     Text(g.subtitle, color = Slate, fontSize = 12.sp, letterSpacing = 0.3.sp)
@@ -546,11 +550,11 @@ private fun GHHomeScreen(
                 }
             }
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(8.dp))
 
             // ── 6-icon glass bottom nav bar ──
             GHBottomNavBar(selectedNav = 0, onSelect = onNavSelect)
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(4.dp))
         }
     }
 
@@ -571,7 +575,7 @@ private fun GHGameCard(
     val animAlpha by animateFloatAsState(alpha, tween(260), label = "cal")
     val borderAlpha by animateFloatAsState(if (isFocused) 0.55f else 0.15f, tween(280), label = "ba")
 
-    val cardW = 158.dp; val cardH = 212.dp
+    val cardW = 158.dp; val cardH = 180.dp
 
     val (statusColor, statusLabel) = when (game.serverStatus) {
         ServerStatus.ONLINE      -> GreenOnline to "Online"
@@ -767,7 +771,7 @@ private fun GHBottomNavBar(selectedNav: Int, onSelect: (Int) -> Unit) {
                 val isSelected = selectedNav == i
                 val isExit     = i == 5
                 val iconTint by animateColorAsState(
-                    when { isExit -> RedAlert; isSelected -> White; else -> White70 },
+                    when { isExit -> RedAlert; isSelected -> White; else -> White },
                     tween(200), label = "nt$i"
                 )
                 val bgAlpha by animateFloatAsState(if (isSelected) 0.20f else 0f, tween(200), label = "nb$i")
@@ -775,7 +779,7 @@ private fun GHBottomNavBar(selectedNav: Int, onSelect: (Int) -> Unit) {
                 val sc by animateFloatAsState(if (pressed) 0.75f else 1f, spring(0.4f, 500f), label = "np$i")
 
                 Box(
-                    Modifier.size(46.dp)
+                    Modifier.size(50.dp)
                         .graphicsLayer { scaleX = sc; scaleY = sc }
                         .clip(CircleShape)
                         .background(White.copy(bgAlpha))
@@ -785,12 +789,22 @@ private fun GHBottomNavBar(selectedNav: Int, onSelect: (Int) -> Unit) {
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = desc,
-                        tint = iconTint,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = desc,
+                            tint = iconTint,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.height(1.dp))
+                        Text(
+                            desc,
+                            color = iconTint,
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }
@@ -819,7 +833,7 @@ private fun GHDeleteDialog(game: GameItem, onConfirm: () -> Unit, onDismiss: () 
                 Spacer(Modifier.height(8.dp))
                 Text("Ini akan menghapus seluruh data & OBB\n\"${game.title}\" dari storage. Tidak bisa dibatalkan.",
                     color = Slate, fontSize = 13.sp, textAlign = TextAlign.Center)
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(8.dp))
                 when {
                     deleting -> { CircularProgressIndicator(color = RedAlert, modifier = Modifier.size(28.dp)); Spacer(Modifier.height(8.dp)); Text("Menghapus...", color = Slate, fontSize = 12.sp) }
                     done     -> { Icon(Icons.Rounded.CheckCircle, null, tint = GreenOnline, modifier = Modifier.size(28.dp)); Spacer(Modifier.height(8.dp)); Text("Berhasil dihapus", color = GreenOnline, fontSize = 12.sp) }
