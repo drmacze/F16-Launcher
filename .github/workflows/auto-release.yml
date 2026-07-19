@@ -208,14 +208,18 @@ jobs:
           echo "✅ APK uploaded to DLavie-Launcher-Data"
 
       - name: Insert release to Supabase app_releases
+        # v322: Supabase step is now OPTIONAL — quota exceeded, we rely on manifest.json only.
+        # continue-on-error ensures manifest.json update still runs even if Supabase fails.
         if: steps.check_existing.outputs.exists != 'true'
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           APK_URL="https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/${{ steps.version.outputs.apk_name }}"
           GH_RELEASE_URL="https://github.com/drmacze/F16-Launcher/releases/tag/${{ steps.version.outputs.tag_name }}"
-          CHANGELOG="v${{ steps.version.outputs.version_name }} — Auto-built from F16-Launcher CI on push to main. Design system update v278: dark blue gradient, solid cards, soft blue accent, square LB/RB, wider drawer."
+          CHANGELOG="v${{ steps.version.outputs.version_name }} — Auto-built from F16-Launcher CI on push to main. v322: force-update popup + website fallback."
 
+          echo "Attempting Supabase insert (optional — non-blocking)..."
           RESPONSE=$(curl -s -X POST \
             -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
@@ -233,16 +237,9 @@ jobs:
               'changelog': '''$CHANGELOG''',
               'is_published': True
           }))
-          ")")
+          ")") || true
           echo "Supabase response: $RESPONSE"
-          # Verify insert
-          ROW_COUNT=$(echo "$RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d) if isinstance(d, list) else 0)")
-          if [ "$ROW_COUNT" -gt 0 ]; then
-            echo "✅ Supabase row inserted (version_code=${{ steps.version.outputs.version_code }})"
-          else
-            echo "❌ Supabase insert failed"
-            exit 1
-          fi
+          echo "⚠️ Supabase insert skipped/failed — manifest.json is source of truth (v322+)"
 
       - name: Update manifest.json in DLavie-Launcher-Data
         if: steps.check_existing.outputs.exists != 'true'
