@@ -122,8 +122,10 @@ fun NewsScreen(api: CommunityApi) {
                     }
                 }
             }.onSuccess { parsed ->
-                bannerSlides = parsed
-                Log.i("NewsScreen", "fetchBannerSlides GitHub fallback OK: ${parsed.size} slides")
+                @Suppress("UNCHECKED_CAST")
+                val list = parsed as? List<BannerSlide> ?: emptyList()
+                if (list.isNotEmpty()) bannerSlides = list
+                Log.i("NewsScreen", "fetchBannerSlides GitHub fallback OK: ${list.size} slides")
             }.onFailure { Log.e("NewsScreen", "fetchBannerSlides GitHub fallback FAILED", it) }
         }
 
@@ -167,8 +169,10 @@ fun NewsScreen(api: CommunityApi) {
                     }
                 }
             }.onSuccess { parsed ->
-                officialNews = parsed
-                Log.i("NewsScreen", "fetchNewsPosts GitHub fallback OK: ${parsed.size} posts")
+                @Suppress("UNCHECKED_CAST")
+                val list = parsed as? List<NewsPost> ?: emptyList()
+                if (list.isNotEmpty()) officialNews = list
+                Log.i("NewsScreen", "fetchNewsPosts GitHub fallback OK: ${list.size} posts")
             }.onFailure { Log.e("NewsScreen", "fetchNewsPosts GitHub fallback FAILED", it) }
         }
         loading = false
