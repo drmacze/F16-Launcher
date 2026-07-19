@@ -207,44 +207,7 @@ jobs:
             | python3 -c "import json,sys; d=json.load(sys.stdin); print('Asset uploaded:', d.get('name'), '-', d.get('browser_download_url', d.get('message')))"
           echo "✅ APK uploaded to DLavie-Launcher-Data"
 
-      - name: Insert release to Supabase app_releases
-        if: steps.check_existing.outputs.exists != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK_URL="https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/${{ steps.version.outputs.apk_name }}"
-          GH_RELEASE_URL="https://github.com/drmacze/F16-Launcher/releases/tag/${{ steps.version.outputs.tag_name }}"
-          CHANGELOG="v${{ steps.version.outputs.version_name }} — Auto-built from F16-Launcher CI on push to main. Design system update v278: dark blue gradient, solid cards, soft blue accent, square LB/RB, wider drawer."
-
-          RESPONSE=$(curl -s -X POST \
-            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -H "Content-Type: application/json" \
-            -H "Prefer: return=representation" \
-            "${{ secrets.SUPABASE_URL }}/rest/v1/app_releases" \
-            -d "$(python3 -c "
-          import json
-          print(json.dumps({
-              'version_code': ${{ steps.version.outputs.version_code }},
-              'version_name': '${{ steps.version.outputs.version_name }}',
-              'tag_name': '${{ steps.version.outputs.tag_name }}',
-              'github_release_url': '$GH_RELEASE_URL',
-              'apk_download_url': '$APK_URL',
-              'changelog': '''$CHANGELOG''',
-              'is_published': True
-          }))
-          ")")
-          echo "Supabase response: $RESPONSE"
-          # Verify insert
-          ROW_COUNT=$(echo "$RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d) if isinstance(d, list) else 0)")
-          if [ "$ROW_COUNT" -gt 0 ]; then
-            echo "✅ Supabase row inserted (version_code=${{ steps.version.outputs.version_code }})"
-          else
-            echo "❌ Supabase insert failed"
-            exit 1
-          fi
-
-      - name: Update manifest.json in DLavie-Launcher-Data
+      - name: Update manifest.json in DLavie-Launcher-Data (PRIMARY — no Supabase)
         if: steps.check_existing.outputs.exists != 'true'
         shell: bash
         run: |

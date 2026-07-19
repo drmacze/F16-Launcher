@@ -55,43 +55,9 @@ object AppUpdateChecker {
     suspend fun checkForUpdate(api: CommunityApi, context: Context? = null): UpdateInfo? {
         val currentCode = BuildConfig.VERSION_CODE
 
-        // ── Strategy 1: Cek dari Supabase app_releases (primary) ──
-        try {
-            val filter = "version_code=gt.$currentCode&is_published=eq.true"
-            val response = api.requestPublic(
-                "GET",
-                "/rest/v1/app_releases?$filter&order=version_code.desc&limit=1&select=version_code,version_name,tag_name,apk_download_url,changelog,is_published"
-            )
-
-            val arr = JSONArray(response)
-            if (arr.length() > 0) {
-                val release = arr.getJSONObject(0)
-                val versionCode = release.optInt("version_code", 0)
-                if (versionCode > currentCode) {
-                    val apkUrl = release.optString("apk_download_url", "")
-                    if (apkUrl.isNotBlank()) {
-                        android.util.Log.i("AppUpdate", "Update found via Supabase: v$versionCode")
-                        // v7.9.93: Fetch update DELTA size (installed vs new), bukan full APK size
-                        val sizeMb = if (context != null) fetchUpdateDeltaSize(context, apkUrl) else ""
-                        return UpdateInfo(
-                            versionName = release.optString("version_name", "unknown"),
-                            versionCode = versionCode,
-                            releaseNotes = release.optString("changelog", ""),
-                            apkUrl = apkUrl,
-                            isPublished = release.optBoolean("is_published", false),
-                            isUpdateAvailable = true,
-                            apkSizeMb = sizeMb
-                        )
-                    }
-                }
-            }
-        } catch (e: Throwable) {
-            android.util.Log.w("AppUpdate", "Supabase check failed, fallback to manifest: ${e.message}")
-        }
-
-        // ── Strategy 2: Fallback ke manifest.json (GitHub raw URL) ──
-        // v7.9.40: Manifest berisi launcher info, jadi user tetap dapat update
-        // notification tanpa perlu SQL insert ke app_releases
+        // v8.0.22: GITHUB-ONLY MODE — hapus Supabase dependency untuk update checker
+        // Supabase restricted (quota exceeded), pakai manifest.json sebagai sumber tunggal
+        // manifest.json auto-update oleh GitHub Actions workflow (auto-release.yml)
         try {
             val manifestUrl = "https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/manifest.json?t=${System.currentTimeMillis()}"
             val conn = (URL(manifestUrl).openConnection() as HttpURLConnection).apply {
@@ -113,10 +79,13 @@ object AppUpdateChecker {
                         if (apkUrl.isNotBlank()) {
                             android.util.Log.i("AppUpdate", "Update found via manifest: v$latestCode")
                             val sizeMb = if (context != null) fetchUpdateDeltaSize(context, apkUrl) else ""
+                            // Get release notes from array
+                            val notesArr = launcher.optJSONArray("release_notes")
+                            val notes = if (notesArr != null && notesArr.length() > 0) notesArr.getString(0) else "Update terbaru tersedia"
                             return UpdateInfo(
                                 versionName = launcher.optString("latest_version_name", "unknown"),
                                 versionCode = latestCode,
-                                releaseNotes = launcher.optString("release_notes", "Update terbaru tersedia").toString(),
+                                releaseNotes = notes,
                                 apkUrl = apkUrl,
                                 isPublished = true,
                                 isUpdateAvailable = true,
