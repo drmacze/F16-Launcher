@@ -78,45 +78,52 @@ fun NewsScreen(api: CommunityApi) {
         // v7.9.78: Auto-publish scheduled news yang sudah due (no pg_cron needed)
         runCatching { api.publishDueScheduledNews() }
 
-        // v8.0.23: Try Supabase first, fallback to GitHub JSON if restricted
-        var supabaseOk = false
+        // v324: Try GitHub FIRST (Supabase is dead due to egress quota).
+        // Use jsdelivr CDN — faster cache refresh than raw.githubusercontent.com
+        // Also use GitHub API endpoint as backup (always returns fresh content).
 
-        // v7.9.78: fetch banner_slides — DIRECT HTTP
+        // v7.9.78: fetch banner_slides — GITHUB FIRST (v324)
         runCatching {
             withContext(Dispatchers.IO) {
-                val url = java.net.URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/banner_slides?is_active=eq.true&select=id,sort_order,title,subtitle,media_type,media_url,link_url,duration_seconds,starts_at,ends_at&order=sort_order.asc&limit=10")
-                val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                    connectTimeout = 8000
-                    readTimeout = 10000
-                    setRequestProperty("apikey", com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY)
-                    setRequestProperty("Authorization", "Bearer ${com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY}")
-                    connect()
+                // Try jsdelivr CDN first (faster cache refresh ~10min)
+                val ghUrl = java.net.URL("https://cdn.jsdelivr.net/gh/drmacze/DLavie-Launcher-Data@main/banner_slides.json?t=${System.currentTimeMillis()}")
+                val ghConn = (ghUrl.openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 8000; readTimeout = 10000; connect()
                 }
-                if (conn.responseCode in 200..299) {
-                    val body = conn.inputStream.bufferedReader().use { it.readText() }
-                    val arr = org.json.JSONArray(body)
-                    parseBannerSlides(arr)
+                if (ghConn.responseCode in 200..299) {
+                    val body = ghConn.inputStream.bufferedReader().use { it.readText() }
+                    if (body.isNotBlank() && body.trim().startsWith("[")) {
+                        val arr = org.json.JSONArray(body)
+                        parseBannerSlides(arr)
+                    } else {
+                        throw Exception("GitHub JSON not array (likely Supabase error): ${body.take(100)}")
+                    }
                 } else {
-                    throw Exception("Supabase response: ${conn.responseCode}")
+                    throw Exception("GitHub HTTP ${ghConn.responseCode}")
                 }
             }
         }.onSuccess { parsed ->
             bannerSlides = parsed
-            supabaseOk = true
-            Log.i("NewsScreen", "fetchBannerSlides OK: ${parsed.size} slides")
-        }.onFailure {
-            Log.e("NewsScreen", "fetchBannerSlides Supabase FAILED: ${it.message}")
-            // v8.0.23: Fallback to GitHub JSON
+            Log.i("NewsScreen", "fetchBannerSlides GitHub OK: ${parsed.size} slides")
+        }.onFailure { e ->
+            Log.e("NewsScreen", "fetchBannerSlides GitHub FAILED: ${e.message}")
+            // v324: Fallback to GitHub API endpoint (always fresh, no CDN cache)
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val ghUrl = java.net.URL("https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/banner_slides.json?t=${System.currentTimeMillis()}")
-                    val ghConn = (ghUrl.openConnection() as java.net.HttpURLConnection).apply {
-                        connectTimeout = 8000; readTimeout = 10000; connect()
+                    val apiUrl = java.net.URL("https://api.github.com/repos/drmacze/DLavie-Launcher-Data/contents/banner_slides.json?ref=main")
+                    val apiConn = (apiUrl.openConnection() as java.net.HttpURLConnection).apply {
+                        connectTimeout = 8000; readTimeout = 10000
+                        setRequestProperty("Accept", "application/vnd.github+json")
+                        setRequestProperty("User-Agent", "DLavie-Launcher")
+                        connect()
                     }
-                    if (ghConn.responseCode in 200..299) {
-                        val body = ghConn.inputStream.bufferedReader().use { it.readText() }
-                        if (body.isNotBlank() && body.startsWith("[")) {
-                            val arr = org.json.JSONArray(body)
+                    if (apiConn.responseCode in 200..299) {
+                        val body = apiConn.inputStream.bufferedReader().use { it.readText() }
+                        val obj = org.json.JSONObject(body)
+                        val content = obj.getString("content").replace("\n", "")
+                        val decoded = java.util.Base64.getDecoder().decode(content).toString(Charsets.UTF_8)
+                        if (decoded.isNotBlank() && decoded.trim().startsWith("[")) {
+                            val arr = org.json.JSONArray(decoded)
                             parseBannerSlides(arr)
                         }
                     }
@@ -125,45 +132,51 @@ fun NewsScreen(api: CommunityApi) {
                 @Suppress("UNCHECKED_CAST")
                 val list = parsed as? List<BannerSlide> ?: emptyList()
                 if (list.isNotEmpty()) bannerSlides = list
-                Log.i("NewsScreen", "fetchBannerSlides GitHub fallback OK: ${list.size} slides")
-            }.onFailure { Log.e("NewsScreen", "fetchBannerSlides GitHub fallback FAILED", it) }
+                Log.i("NewsScreen", "fetchBannerSlides GitHub API OK: ${list.size} slides")
+            }.onFailure { Log.e("NewsScreen", "fetchBannerSlides GitHub API FAILED", it) }
         }
 
-        // v7.9.78: fetch news_posts — DIRECT HTTP
+        // v7.9.78: fetch news_posts — GITHUB FIRST (v324)
         runCatching {
             withContext(Dispatchers.IO) {
-                val url = java.net.URL("https://lvmucsxbmadtsgrxuwmo.supabase.co/rest/v1/news_posts?is_active=eq.true&published_at=not.is.null&select=id,title,body,footer_text,image_url,label_type,official,scheduled_at,published_at,created_at&order=published_at.desc&limit=20")
-                val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                    connectTimeout = 8000
-                    readTimeout = 10000
-                    setRequestProperty("apikey", com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY)
-                    setRequestProperty("Authorization", "Bearer ${com.drmacze.f16launcher.CommunityApi.SUPABASE_KEY}")
-                    connect()
+                val ghUrl = java.net.URL("https://cdn.jsdelivr.net/gh/drmacze/DLavie-Launcher-Data@main/news_posts.json?t=${System.currentTimeMillis()}")
+                val ghConn = (ghUrl.openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 8000; readTimeout = 10000; connect()
                 }
-                if (conn.responseCode in 200..299) {
-                    val body = conn.inputStream.bufferedReader().use { it.readText() }
-                    val arr = org.json.JSONArray(body)
-                    parseNewsPosts(arr)
+                if (ghConn.responseCode in 200..299) {
+                    val body = ghConn.inputStream.bufferedReader().use { it.readText() }
+                    if (body.isNotBlank() && body.trim().startsWith("[")) {
+                        val arr = org.json.JSONArray(body)
+                        parseNewsPosts(arr)
+                    } else {
+                        throw Exception("GitHub JSON not array (likely Supabase error): ${body.take(100)}")
+                    }
                 } else {
-                    throw Exception("Supabase response: ${conn.responseCode}")
+                    throw Exception("GitHub HTTP ${ghConn.responseCode}")
                 }
             }
         }.onSuccess { parsed ->
             officialNews = parsed
-            Log.i("NewsScreen", "fetchNewsPosts OK: ${parsed.size} posts")
-        }.onFailure {
-            Log.e("NewsScreen", "fetchNewsPosts Supabase FAILED: ${it.message}")
-            // v8.0.23: Fallback to GitHub JSON
+            Log.i("NewsScreen", "fetchNewsPosts GitHub OK: ${parsed.size} posts")
+        }.onFailure { e ->
+            Log.e("NewsScreen", "fetchNewsPosts GitHub FAILED: ${e.message}")
+            // v324: Fallback to GitHub API endpoint
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val ghUrl = java.net.URL("https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/news_posts.json?t=${System.currentTimeMillis()}")
-                    val ghConn = (ghUrl.openConnection() as java.net.HttpURLConnection).apply {
-                        connectTimeout = 8000; readTimeout = 10000; connect()
+                    val apiUrl = java.net.URL("https://api.github.com/repos/drmacze/DLavie-Launcher-Data/contents/news_posts.json?ref=main")
+                    val apiConn = (apiUrl.openConnection() as java.net.HttpURLConnection).apply {
+                        connectTimeout = 8000; readTimeout = 10000
+                        setRequestProperty("Accept", "application/vnd.github+json")
+                        setRequestProperty("User-Agent", "DLavie-Launcher")
+                        connect()
                     }
-                    if (ghConn.responseCode in 200..299) {
-                        val body = ghConn.inputStream.bufferedReader().use { it.readText() }
-                        if (body.isNotBlank() && body.startsWith("[")) {
-                            val arr = org.json.JSONArray(body)
+                    if (apiConn.responseCode in 200..299) {
+                        val body = apiConn.inputStream.bufferedReader().use { it.readText() }
+                        val obj = org.json.JSONObject(body)
+                        val content = obj.getString("content").replace("\n", "")
+                        val decoded = java.util.Base64.getDecoder().decode(content).toString(Charsets.UTF_8)
+                        if (decoded.isNotBlank() && decoded.trim().startsWith("[")) {
+                            val arr = org.json.JSONArray(decoded)
                             parseNewsPosts(arr)
                         }
                     }
@@ -172,8 +185,8 @@ fun NewsScreen(api: CommunityApi) {
                 @Suppress("UNCHECKED_CAST")
                 val list = parsed as? List<NewsPost> ?: emptyList()
                 if (list.isNotEmpty()) officialNews = list
-                Log.i("NewsScreen", "fetchNewsPosts GitHub fallback OK: ${list.size} posts")
-            }.onFailure { Log.e("NewsScreen", "fetchNewsPosts GitHub fallback FAILED", it) }
+                Log.i("NewsScreen", "fetchNewsPosts GitHub API OK: ${list.size} posts")
+            }.onFailure { Log.e("NewsScreen", "fetchNewsPosts GitHub API FAILED", it) }
         }
         loading = false
     }
