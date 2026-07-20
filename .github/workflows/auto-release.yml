@@ -158,27 +158,95 @@ jobs:
 
       - name: Create GitHub Release in F16-Launcher
         if: steps.check_existing.outputs.exists != 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag_name }}
-          name: DLavie 26 Launcher ${{ steps.version.outputs.version_name }}
-          body: |
-            # DLavie 26 Launcher ${{ steps.version.outputs.version_name }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.version.outputs.tag_name }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          APK_NAME: ${{ steps.version.outputs.apk_name }}
+        run: |
+          set -uo pipefail
+          # v324: Replace softprops/action-gh-release with direct curl + retries
+          # The action was failing on GitHub API 503s during outages.
+          # Direct curl lets us retry transient errors.
 
-            **versionCode:** ${{ steps.version.outputs.version_code }}
-            **versionName:** ${{ steps.version.outputs.version_name }}
+          BODY=$(cat <<EOF
+          # DLavie 26 Launcher ${VERSION_NAME}
 
-            ## Auto-release
-            Built and published automatically by GitHub Actions on push to main.
+          **versionCode:** ${VERSION_CODE}
+          **versionName:** ${VERSION_NAME}
 
-            ## Download
-            - APK: `${{ steps.version.outputs.apk_name }}`
-            - Direct URL: https://github.com/drmacze/F16-Launcher/releases/download/${{ steps.version.outputs.tag_name }}/${{ steps.version.outputs.apk_name }}
+          ## Auto-release
+          Built and published automatically by GitHub Actions on push to main.
 
-            ---
-            *All launcher users will receive update popup on next launch.*
-          prerelease: false
-          files: release/${{ steps.version.outputs.apk_name }}
+          ## Download
+          - APK: \`${APK_NAME}\`
+          - Direct URL: https://github.com/drmacze/F16-Launcher/releases/download/${TAG_NAME}/${APK_NAME}
+
+          ---
+          *All launcher users will receive update popup on next launch.*
+          EOF
+          )
+
+          PAYLOAD=$(python3 -c "
+          import json
+          print(json.dumps({
+              'tag_name': '${TAG_NAME}',
+              'name': 'DLavie 26 Launcher ${VERSION_NAME}',
+              'body': '''${BODY}''',
+              'prerelease': False,
+              'draft': False
+          }))
+          ")
+
+          echo "Creating release ${TAG_NAME}..."
+          for i in 1 2 3 4 5; do
+            RESPONSE=$(curl -s -X POST \
+              -H "Authorization: token ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -d "${PAYLOAD}" \
+              "https://api.github.com/repos/drmacze/F16-Launcher/releases")
+            UPLOAD_URL=$(echo "$RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('upload_url','').split('{')[0])" 2>/dev/null)
+            RELEASE_ID=$(echo "$RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null)
+            if [ -n "$UPLOAD_URL" ] && [ -n "$RELEASE_ID" ]; then
+              echo "Release created (ID: $RELEASE_ID)"
+              echo "UPLOAD_URL=$UPLOAD_URL" >> $GITHUB_ENV
+              echo "RELEASE_ID=$RELEASE_ID" >> $GITHUB_ENV
+              break
+            fi
+            echo "Attempt $i failed, retrying in $((i*10))s..."
+            echo "Response: $RESPONSE" | head -c 500
+            sleep $((i*10))
+          done
+
+          if [ -z "${UPLOAD_URL:-}" ]; then
+            echo "ERROR: Failed to create release after 5 attempts"
+            exit 1
+          fi
+
+          # Upload APK asset with retries
+          echo "Uploading APK ${APK_NAME}..."
+          ASSET_UPLOAD_URL="${UPLOAD_URL}?name=${APK_NAME}"
+          for i in 1 2 3 4 5; do
+            RESPONSE=$(curl -s -X POST \
+              -H "Authorization: token ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/vnd.android.package-archive" \
+              --data-binary @"release/${APK_NAME}" \
+              "${ASSET_UPLOAD_URL}")
+            ASSET_URL=$(echo "$RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('browser_download_url',''))" 2>/dev/null)
+            if [ -n "$ASSET_URL" ]; then
+              echo "APK uploaded: $ASSET_URL"
+              echo "ASSET_URL=$ASSET_URL" >> $GITHUB_ENV
+              exit 0
+            fi
+            echo "Upload attempt $i failed, retrying in $((i*10))s..."
+            echo "Response: $RESPONSE" | head -c 500
+            sleep $((i*10))
+          done
+          echo "ERROR: Failed to upload APK after 5 attempts"
+          exit 1
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
