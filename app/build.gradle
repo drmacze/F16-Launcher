@@ -15,10 +15,16 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 36
-        versionCode 324
-        versionName "8.0.26-fix-news-beranda"
+        versionCode 325
+        versionName "8.0.27-github-data-migration"
+
+        // v325: public/read-only data is served from GitHub without credentials.
+        buildConfigField "String", "GITHUB_PUBLIC_DATA_BASE", '"https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/"'
+
+        // Supabase remains temporarily available only for legacy auth/community calls.
+        // Public config, news, banners and launcher versions must not use these values.
         buildConfigField "String", "SUPABASE_URL", '"https://lvmucsxbmadtsgrxuwmo.supabase.co"'
-        buildConfigField "String", "SUPABASE_ANON_KEY", '"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2bXVjc3hibWFkdHNncnh1d21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODUyODksImV4cCI6MjA5ODU2MTI4OX0.y-1sE6uYTn4Wbter6g6NozY6uojzD5x9YVeYif-5nJs"'
+        buildConfigField "String", "SUPABASE_ANON_KEY", '"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFkdHNncnh1d21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODUyODksImV4cCI6MjA5ODU2MTI4OX0.y-1sE6uYTn4Wbter6g6NozY6uojzD5x9YVeYif-5nJs"'
         buildConfigField "String", "SUPABASE_PUB_KEY", '"sb_publishable_aYFlbWVJMErOHwPsli33QQ_INJD9mhx"'
     }
 
@@ -62,32 +68,22 @@ dependencies {
     // Catatan: versi dipilih yang compatible dengan Kotlin 1.9.24 (project's
     // kotlin plugin version). Versi terbaru (Coil 2.7+, Lottie 6.4+, Shimmer
     // 1.3+) compiled with Kotlin 2.x → incompatible.
-    // Coil — image loading (replaces manual image loading)
     implementation 'io.coil-kt:coil-compose:2.5.0'
     implementation 'io.coil-kt:coil-gif:2.5.0'
-    // Lottie — micro-animations (ready for Phase 2)
     implementation 'com.airbnb.android:lottie-compose:6.3.0'
-    // Shimmer — skeleton loading
     implementation 'com.valentinilk.shimmer:compose-shimmer:1.2.0'
-    // v6.8.3: AndroidX Custom Tabs — for Google OAuth in-app browser
     implementation 'androidx.browser:browser:1.8.0'
 
-    // ─── v7.9.78: Banner Slider — video player (Media3/ExoPlayer) ───────────
-    // Coil (image + gif) already in deps above. Media3 needed for MP4 video banners.
+    // Banner Slider — video player (Media3/ExoPlayer)
     implementation 'androidx.media3:media3-exoplayer:1.4.1'
     implementation 'androidx.media3:media3-ui:1.4.1'
     implementation 'androidx.media3:media3-common:1.4.1'
 
-    // ─── Firebase ────────────────────────────────────────────────────────────
-    // BOM (Bill of Materials) — auto-pins compatible versions of all Firebase libs
+    // Firebase
     implementation platform('com.google.firebase:firebase-bom:33.5.1')
-    // FCM — push notifications (Dev Dashboard → user devices)
     implementation 'com.google.firebase:firebase-messaging:24.0.3'
-    // Analytics — event tracking (optional, used by Dev Dashboard stats)
     implementation 'com.google.firebase:firebase-analytics:22.1.2'
-    // Crashlytics — crash reporting (replaces manual GameCrashReporter)
     implementation 'com.google.firebase:firebase-crashlytics:19.2.1'
-    // Play Services Coroutines — for Task.await() on Firebase APIs
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1'
 
     debugImplementation 'androidx.compose.ui:ui-tooling'
