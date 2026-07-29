@@ -26,8 +26,44 @@ portal = portal.replace(
     "",
 )
 portal = portal.replace("URL(SSO_ENDPOINT)", "URL(BuildConfig.PORTAL_SSO_ENDPOINT)")
+portal = portal.replace(
+    '        val capability = uri.getQueryParameter("cap")\n',
+    '        val capability = uri.getQueryParameter("cap").orEmpty()\n',
+)
+portal = portal.replace(
+    '''        val authCode = uri.getQueryParameter("code")
+        val returnedState = uri.getQueryParameter("state")
+        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val verifier = prefs.getString(KEY_VERIFIER, null)
+        val expectedState = prefs.getString(KEY_STATE, null)
+        val startedAt = prefs.getLong(KEY_STARTED_AT, 0L)
+
+        if (!isBase64Url(authCode, 32, 128) ||
+            !isBase64Url(returnedState, 32, 128) ||
+            verifier.isNullOrBlank() || expectedState.isNullOrBlank() ||
+            System.currentTimeMillis() - startedAt !in 0..MAX_FLOW_AGE_MS ||
+            !constantTimeEquals(expectedState, returnedState)
+        ) {''',
+    '''        val authCode = uri.getQueryParameter("code").orEmpty()
+        val returnedState = uri.getQueryParameter("state").orEmpty()
+        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val verifier = prefs.getString(KEY_VERIFIER, null).orEmpty()
+        val expectedState = prefs.getString(KEY_STATE, null).orEmpty()
+        val startedAt = prefs.getLong(KEY_STARTED_AT, 0L)
+
+        if (!isBase64Url(authCode, 32, 128) ||
+            !isBase64Url(returnedState, 32, 128) ||
+            verifier.isBlank() || expectedState.isBlank() ||
+            System.currentTimeMillis() - startedAt !in 0..MAX_FLOW_AGE_MS ||
+            !constantTimeEquals(expectedState, returnedState)
+        ) {''',
+)
 if "BuildConfig.PORTAL_SSO_ENDPOINT" not in portal:
     raise SystemExit("Portal SSO endpoint was not moved to BuildConfig")
+if 'val capability = uri.getQueryParameter("cap").orEmpty()' not in portal:
+    raise SystemExit("capability parsing was not hardened")
+if 'val authCode = uri.getQueryParameter("code").orEmpty()' not in portal:
+    raise SystemExit("auth code parsing was not hardened")
 PORTAL.write_text(portal, encoding="utf-8")
 
 print("v326 auth interoperability patch applied")
