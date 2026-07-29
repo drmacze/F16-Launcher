@@ -1,0 +1,55 @@
+name: Apply v326 Auth Upgrade
+
+on:
+  push:
+    branches:
+      - feat/v326-portal-sso
+      - main
+    paths:
+      - '.github/scripts/apply_v326_auth_upgrade.py'
+      - '.github/workflows/apply-v326-auth-upgrade.yml'
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt'
+      - 'app/build.gradle'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v326-auth-upgrade-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply deterministic auth patch
+        run: python3 .github/scripts/apply_v326_auth_upgrade.py
+
+      - name: Validate auth invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F '&code_challenge_method=S256' app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
+          grep -F '&prompt=select_account' app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
+          grep -F 'BuildConfig.PORTAL_SSO_ENDPOINT' app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt
+          ! grep -F '&code_challenge_method=s256' app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
+
+      - name: Commit materialized source
+        shell: bash
+        run: |
+          if git diff --quiet -- \
+            app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt \
+            app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt \
+            app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt
+          git commit -m 'fix(v326): enforce standards-compliant Google PKCE'
+          git push
