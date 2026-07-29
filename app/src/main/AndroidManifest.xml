@@ -84,27 +84,19 @@
             android:name=".CommunityActivity"
             android:exported="false" />
 
-
-
-
         <activity
             android:name=".ModernLauncherActivity"
-            android:exported="true"
+            android:exported="false"
             android:label="DLavie 26"
             android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
-            android:theme="@style/AppTheme.Splash">
-            <!-- Deep link for DLavie Portal Connect (dlavie://connect) -->
-            <!-- Triggered from web FAQ page when user clicks "Connect to DLavie" -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="dlavie" android:host="connect" />
-            </intent-filter>
-        </activity>
+            android:theme="@style/AppTheme.Splash" />
 
-        <!-- Shiny splash screen — true launcher entry point -->
+        <!--
+          v325 SECURITY: ShinySplashActivity is the only exported handler for dlavie://
+          links. ModernLauncherActivity is internal-only so an external app cannot invoke
+          the legacy callback flow and request session data to be forwarded.
+        -->
         <activity
             android:name=".ShinySplashActivity"
             android:exported="true"
