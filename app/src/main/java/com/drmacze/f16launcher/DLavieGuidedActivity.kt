@@ -1525,7 +1525,8 @@ private fun startGoogleOAuth(context: Context): String {
             "?provider=google" +
             "&redirect_to=${java.net.URLEncoder.encode(redirect, "UTF-8")}" +
             "&code_challenge=${java.net.URLEncoder.encode(codeChallenge, "UTF-8")}" +
-            "&code_challenge_method=s256"
+            "&code_challenge_method=S256" +
+            "&prompt=select_account"
         val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }

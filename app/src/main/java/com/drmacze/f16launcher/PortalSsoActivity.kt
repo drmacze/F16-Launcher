@@ -60,7 +60,6 @@ class PortalSsoActivity : ComponentActivity() {
         private const val KEY_STARTED_AT = "started_at"
         private const val MAX_FLOW_AGE_MS = 3 * 60 * 1000L
         private const val PORTAL_URL = "https://drmacze.github.io/dlavie-web/"
-        private const val SSO_ENDPOINT = "https://lvmucsxbmadtsgrxuwmo.supabase.co/functions/v1/launcher-sso"
     }
 
     private val status = mutableStateOf("Menyiapkan koneksi aman…")
@@ -177,7 +176,7 @@ class PortalSsoActivity : ComponentActivity() {
     }
 
     private fun exchange(authCode: String, verifier: String, state: String): PortalSession {
-        val connection = (URL(SSO_ENDPOINT).openConnection() as HttpURLConnection).apply {
+        val connection = (URL(BuildConfig.PORTAL_SSO_ENDPOINT).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 12_000
