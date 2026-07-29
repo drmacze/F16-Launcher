@@ -172,63 +172,52 @@ class DLavieGuidedActivity : ComponentActivity() {
             return
         }
 
-        if (!PortalAuthSecurity.consumeOAuthAttempt(this)) {
+        if (PortalAuthSecurity.containsLegacyPortalSecrets(data)) {
             PortalAuthSecurity.clearSession(this)
-            deepLinkResult = "Error: Permintaan login tidak dikenali atau sudah kedaluwarsa. Mulai login lagi dari launcher."
+            deepLinkResult = "Error: Callback lama yang membawa token ditolak. Mulai login lagi dari launcher."
             setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
             return
         }
 
-        val fragment = data?.fragment.orEmpty()
-        val query = data?.query.orEmpty()
-        val params = mutableMapOf<String, String>()
-        (fragment + "&" + query)
-            .split("&")
-            .filter { it.contains("=") }
-            .forEach { pair ->
-                val index = pair.indexOf('=')
-                if (index > 0) {
-                    val key = pair.substring(0, index)
-                    val value = java.net.URLDecoder.decode(pair.substring(index + 1), "UTF-8")
-                    params[key] = value
-                }
-            }
-
-        val accessToken = params["access_token"]
-        val refreshToken = params["refresh_token"]
-        val error = params["error"]
-
+        val error = data?.getQueryParameter("error")
         if (!error.isNullOrBlank()) {
+            PortalAuthSecurity.consumeOAuthVerifier(this)
             PortalAuthSecurity.clearSession(this)
-            val description = params["error_description"] ?: error
+            val description = data.getQueryParameter("error_description") ?: error
             deepLinkResult = "Error: Google login gagal — $description"
             setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
             return
         }
 
-        if (accessToken.isNullOrBlank() || refreshToken.isNullOrBlank()) {
+        val authCode = data?.getQueryParameter("code")
+        val verifier = PortalAuthSecurity.consumeOAuthVerifier(this)
+        if (authCode.isNullOrBlank() || verifier.isNullOrBlank()) {
             PortalAuthSecurity.clearSession(this)
-            deepLinkResult = "Error: Sesi login tidak lengkap. Mulai login lagi dari launcher."
+            deepLinkResult = "Error: Kode login tidak lengkap atau sudah kedaluwarsa. Mulai login lagi dari launcher."
             setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
             return
         }
 
-        deepLinkResult = "Memverifikasi sesi login…"
+        deepLinkResult = "Memverifikasi kode login…"
         setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
 
         lifecycleScope.launch {
-            val verified = withContext(Dispatchers.IO) {
-                PortalAuthSecurity.verifySession(accessToken)
+            val verifiedSession = withContext(Dispatchers.IO) {
+                PortalAuthSecurity.exchangePkceCode(authCode, verifier)
             }
 
-            if (verified == null) {
+            if (verifiedSession == null) {
                 PortalAuthSecurity.clearSession(this@DLavieGuidedActivity)
-                deepLinkResult = "Error: Sesi tidak dapat diverifikasi. Silakan login kembali."
+                deepLinkResult = "Error: Kode login tidak dapat diverifikasi. Silakan login kembali."
                 setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
                 return@launch
             }
 
-            val session = AuthSession(accessToken, refreshToken, verified.email)
+            val session = AuthSession(
+                verifiedSession.accessToken,
+                verifiedSession.refreshToken,
+                verifiedSession.user.email
+            )
             saveSession(this@DLavieGuidedActivity, session)
             syncToCommunityPrefs(this@DLavieGuidedActivity, session)
             CommunityApi(this@DLavieGuidedActivity).clearGuest()
@@ -240,7 +229,7 @@ class DLavieGuidedActivity : ComponentActivity() {
                 Telemetry.track(
                     this@DLavieGuidedActivity,
                     Telemetry.EVT_LOGIN,
-                    mapOf("method" to "google_oauth_verified")
+                    mapOf("method" to "google_oauth_pkce")
                 )
             }
 
@@ -1530,9 +1519,13 @@ private fun GoogleIcon() {
 private fun startGoogleOAuth(context: Context): String {
     return try {
         // v6.8.4: redirect ke deep link dlavie://auth-callback (bukan /auth/v1/callback)
-        PortalAuthSecurity.markOAuthAttempt(context)
+        val codeChallenge = PortalAuthSecurity.beginOAuthAttempt(context)
         val redirect = "dlavie://auth-callback"
-        val url = "${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${java.net.URLEncoder.encode(redirect, "UTF-8")}"
+        val url = "${SUPABASE_URL}/auth/v1/authorize" +
+            "?provider=google" +
+            "&redirect_to=${java.net.URLEncoder.encode(redirect, "UTF-8")}" +
+            "&code_challenge=${java.net.URLEncoder.encode(codeChallenge, "UTF-8")}" +
+            "&code_challenge_method=s256"
         val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
