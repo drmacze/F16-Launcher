@@ -17,6 +17,7 @@ android {
         targetSdk 36
         versionCode 325
         versionName "8.1.0"
+        // v325 UX: build pipeline applies the focused launcher update dialog.
 
         // v325: public/read-only data is served from GitHub without credentials.
         buildConfigField "String", "GITHUB_PUBLIC_DATA_BASE", '"https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/"'
