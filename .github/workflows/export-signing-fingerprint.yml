@@ -1,0 +1,42 @@
+name: Export Signing Fingerprint
+
+on:
+  push:
+    branches: [feat/v326-portal-sso]
+    paths:
+      - '.github/workflows/export-signing-fingerprint.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fingerprint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.DLAVIE_DATA_TOKEN }}
+          fetch-depth: 0
+
+      - name: Export SHA-256 certificate fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > /tmp/dlavie.keystore
+          keytool -list -v \
+            -keystore /tmp/dlavie.keystore \
+            -alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
+            -storepass "${{ secrets.SIGNING_KEYSTORE_PASSWORD }}" \
+            | awk -F': ' '/SHA256:/{print $2; exit}' > signing-fingerprint.txt
+          test -s signing-fingerprint.txt
+          rm -f /tmp/dlavie.keystore
+
+      - name: Commit public fingerprint
+        shell: bash
+        run: |
+          if git diff --quiet -- signing-fingerprint.txt; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add signing-fingerprint.txt
+          git commit -m 'chore(v326): record release signing fingerprint'
+          git push

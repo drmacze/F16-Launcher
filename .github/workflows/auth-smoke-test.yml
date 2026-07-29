@@ -1,0 +1,94 @@
+name: Auth Smoke Test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/auth-smoke-test.yml'
+  push:
+    branches: [feat/v326-portal-sso]
+    paths:
+      - 'app/**'
+      - '.github/workflows/auth-smoke-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  auth-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read public Auth configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          SUPABASE_URL=$(grep 'buildConfigField "String", "SUPABASE_URL"' app/build.gradle | sed -E "s/.*'\"([^\"]+)\"'.*/\1/")
+          ANON_KEY=$(grep 'buildConfigField "String", "SUPABASE_ANON_KEY"' app/build.gradle | sed -E "s/.*'\"([^\"]+)\"'.*/\1/")
+          test -n "$SUPABASE_URL"
+          test -n "$ANON_KEY"
+          echo "SUPABASE_URL=$SUPABASE_URL" >> "$GITHUB_ENV"
+          echo "ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+
+      - name: Verify Google provider is enabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "apikey: ${ANON_KEY}" \
+            -H "Cache-Control: no-cache" \
+            "${SUPABASE_URL}/auth/v1/settings" > /tmp/auth-settings.json
+          python3 - <<'PY'
+          import json
+          with open('/tmp/auth-settings.json', encoding='utf-8') as handle:
+              settings = json.load(handle)
+          external = settings.get('external') or {}
+          if external.get('google') is not True:
+              raise SystemExit('Google provider is not enabled')
+          print('Google provider enabled')
+          PY
+
+      - name: Verify Android Google PKCE redirect
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHALLENGE='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+          REDIRECT=$(python3 -c "import urllib.parse; print(urllib.parse.quote('dlavie://auth-callback', safe=''))")
+          AUTH_URL="${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${REDIRECT}&code_challenge=${CHALLENGE}&code_challenge_method=S256&prompt=select_account"
+          STATUS=$(curl --silent --show-error --max-redirs 0 \
+            -D /tmp/google-headers.txt -o /tmp/google-body.txt \
+            -H "apikey: ${ANON_KEY}" \
+            -w '%{http_code}' "$AUTH_URL" || true)
+          if [ "$STATUS" != '302' ] && [ "$STATUS" != '303' ]; then
+            echo "Unexpected status: $STATUS"
+            cat /tmp/google-body.txt
+            exit 1
+          fi
+          LOCATION=$(awk 'BEGIN{IGNORECASE=1}/^location:/{sub(/^[^:]+:[[:space:]]*/,"");gsub(/\r/,"");print;exit}' /tmp/google-headers.txt)
+          echo "OAuth redirect host: $(python3 -c "import urllib.parse; print(urllib.parse.urlparse('${LOCATION}').netloc)")"
+          echo "$LOCATION" | grep -Ei 'google\.com|accounts\.google'
+
+      - name: Verify SSO endpoint rejects forged exchange
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATUS=$(curl --silent --show-error \
+            -o /tmp/sso-body.json \
+            -w '%{http_code}' \
+            -X POST "${SUPABASE_URL}/functions/v1/launcher-sso" \
+            -H "apikey: ${ANON_KEY}" \
+            -H "Authorization: Bearer ${ANON_KEY}" \
+            -H 'Content-Type: application/json' \
+            -d '{"action":"exchange","auth_code":"invalid","code_verifier":"invalid","state":"invalid"}')
+          test "$STATUS" = '400'
+          python3 - <<'PY'
+          import json
+          with open('/tmp/sso-body.json', encoding='utf-8') as handle:
+              body = json.load(handle)
+          if body.get('error') != 'invalid_request':
+              raise SystemExit(f'Unexpected SSO error: {body}')
+          print('SSO forged exchange rejected')
+          PY
