@@ -10,7 +10,6 @@
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
-    <!-- v7.9.59: GET_ACCOUNTS untuk cek Google account sebelum install FIFA 16 -->
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
 
     <queries>
@@ -36,7 +35,6 @@
             android:name="moe.shizuku.client.V3_SUPPORT"
             android:value="true" />
 
-        <!-- Firebase Cloud Messaging — handles push notifications from Dev Dashboard -->
         <service
             android:name=".DLavieFirebaseMessagingService"
             android:exported="false">
@@ -45,17 +43,12 @@
             </intent-filter>
         </service>
 
-        <!-- Firebase Crashlytics — auto-init enabled (crash reporting) -->
         <meta-data
             android:name="firebase_crashlytics_collection_enabled"
             android:value="true" />
-
-        <!-- Firebase Analytics — auto-init enabled -->
         <meta-data
             android:name="firebase_analytics_collection_enabled"
             android:value="true" />
-
-        <!-- Default notification icon for FCM (used when app is in background) -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/dlavie_launcher_icon" />
@@ -94,10 +87,32 @@
             android:theme="@style/AppTheme.Splash" />
 
         <!--
-          v325 SECURITY: ShinySplashActivity is the only exported handler for dlavie://
-          links. ModernLauncherActivity is internal-only so an external app cannot invoke
-          the legacy callback flow and request session data to be forwarded.
+          v326: the Portal handoff has a dedicated, minimal exported surface. It accepts
+          only a short-lived capability or one-time authorization code; session tokens
+          are exchanged directly with the backend over HTTPS.
         -->
+        <activity
+            android:name=".PortalSsoActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:icon="@mipmap/dlavie_launcher_icon"
+            android:label="DLavie Secure Connect"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dlavie" android:host="connect" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dlavie" android:host="portal-complete" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".ShinySplashActivity"
             android:exported="true"
@@ -109,14 +124,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Secure Portal entry: opens launcher login without carrying credentials. -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="dlavie" android:host="connect" />
-            </intent-filter>
-            <!-- v7.9.95: Deep link for game sharing (dlavie://game?pkg=PACKAGE_NAME) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -132,7 +139,6 @@
             android:label="DLavie 26"
             android:launchMode="singleTop"
             android:theme="@style/AppTheme.Splash">
-            <!-- OAuth callback; runtime verifies origin shape, pending login window and token. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -141,14 +147,12 @@
             </intent-filter>
         </activity>
 
-        <!-- Internal recovery shell only. Do not expose this as the public launcher entry. -->
         <activity
             android:name=".DevLauncherActivity"
             android:exported="false"
             android:label="DLavie Recovery Console"
             android:theme="@style/AppTheme.Splash" />
 
-        <!-- PIN lock activity (unlock / setup / change / disable) -->
         <activity
             android:name=".PinLockActivity"
             android:exported="false"
