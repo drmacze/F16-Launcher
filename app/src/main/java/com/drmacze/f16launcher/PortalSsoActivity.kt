@@ -91,7 +91,7 @@ class PortalSsoActivity : ComponentActivity() {
     }
 
     private fun beginPortalHandoff(uri: Uri) {
-        val capability = uri.getQueryParameter("cap")
+        val capability = uri.getQueryParameter("cap").orEmpty()
         if (!isBase64Url(capability, 32, 128)) {
             showFailure("Capability Portal tidak tersedia atau sudah tidak valid.")
             return
@@ -135,16 +135,16 @@ class PortalSsoActivity : ComponentActivity() {
     }
 
     private fun completePortalHandoff(uri: Uri) {
-        val authCode = uri.getQueryParameter("code")
-        val returnedState = uri.getQueryParameter("state")
+        val authCode = uri.getQueryParameter("code").orEmpty()
+        val returnedState = uri.getQueryParameter("state").orEmpty()
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val verifier = prefs.getString(KEY_VERIFIER, null)
-        val expectedState = prefs.getString(KEY_STATE, null)
+        val verifier = prefs.getString(KEY_VERIFIER, null).orEmpty()
+        val expectedState = prefs.getString(KEY_STATE, null).orEmpty()
         val startedAt = prefs.getLong(KEY_STARTED_AT, 0L)
 
         if (!isBase64Url(authCode, 32, 128) ||
             !isBase64Url(returnedState, 32, 128) ||
-            verifier.isNullOrBlank() || expectedState.isNullOrBlank() ||
+            verifier.isBlank() || expectedState.isBlank() ||
             System.currentTimeMillis() - startedAt !in 0..MAX_FLOW_AGE_MS ||
             !constantTimeEquals(expectedState, returnedState)
         ) {
