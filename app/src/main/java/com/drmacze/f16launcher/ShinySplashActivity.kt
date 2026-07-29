@@ -72,113 +72,27 @@ class ShinySplashActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // ── DLavie Portal Connect: check for deep link ──
+        // ── v325 SECURITY: Portal links never carry session credentials ──
         val portalData = intent?.data
         if (portalData != null && portalData.scheme == "dlavie" && portalData.host == "connect") {
-            // v8.0: RECEIVE token FROM web portal (not send TO web)
-            // Web sends: dlavie://connect?token=JWT&uid=USER_ID&refresh=REFRESH_TOKEN
-            val webToken = portalData.getQueryParameter("token")
-            val webUid = portalData.getQueryParameter("uid")
-            val webRefresh = portalData.getQueryParameter("refresh") ?: ""
-
-            if (!webToken.isNullOrBlank() && !webUid.isNullOrBlank()) {
-                // v7.9.60 FIX: Proper account connection (sama dengan ModernLauncherActivity)
-                // Sebelumnya: loadMyProfile() gagal silently → profile kosong
-                // Sekarang: clear old data → save new token → decode JWT → load OR create profile
-                
-                // Step 1: Decode JWT untuk dapat email
-                var email = ""
-                try {
-                    val parts = webToken.split(".")
-                    if (parts.size >= 2) {
-                        val payload = parts[1]
-                        val padded = payload + "=".repeat((4 - payload.length % 4) % 4)
-                        val decoded = android.util.Base64.decode(padded, android.util.Base64.URL_SAFE)
-                        val jwt = org.json.JSONObject(String(decoded))
-                        email = jwt.optString("email", "")
-                    }
-                } catch (_: Exception) {}
-
-                // Step 2: Clear prefs lama (preserve accounts list untuk multi-account switcher)
-                val communityPrefs = getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
-                val authPrefs = getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
-                val savedAccounts = communityPrefs.getString("accounts", "[]")
-                val savedActiveId = communityPrefs.getString("active_user_id", "")
-                communityPrefs.edit().clear().apply()
-                authPrefs.edit().clear().apply()
-                communityPrefs.edit().putString("accounts", savedAccounts).putString("active_user_id", savedActiveId).apply()
-
-                // Step 3: Default display_name + username dari email
-                val defaultDisplayName = if (email.isNotEmpty()) {
-                    email.substringBefore("@").replace(".", " ").replaceFirstChar {
-                        if (it.isLowerCase()) it.titlecase() else it.toString()
-                    }
-                } else "DLavie Player"
-                val defaultUsername = if (email.isNotEmpty()) {
-                    email.substringBefore("@").lowercase().replace(Regex("[^a-z0-9_]"), "_").take(20)
-                } else "user_${webUid.take(6)}"
-
-                // Save token + uid + email + defaults
-                authPrefs.edit()
-                    .putString("access_token", webToken)
-                    .putString("refresh_token", webRefresh)
-                    .apply()
-                communityPrefs.edit()
-                    .putString("access_token", webToken)
-                    .putString("refresh_token", webRefresh)
-                    .putString("user_id", webUid)
-                    .putString("email", email)
-                    .putString("display_name", defaultDisplayName)
-                    .putString("username", defaultUsername)
-                    .putString("role", "member")
-                    .putBoolean("portal_connected", true)
-                    .putString("portal_connected_at", System.currentTimeMillis().toString())
-                    .putBoolean("is_guest", false)
-                    .apply()
-
-                // Step 4: Load profile dengan fallback ke ensureMyProfile
-                val api = CommunityApi(this)
-                var displayName = defaultDisplayName
-                try {
-                    api.loadMyProfile()
-                    displayName = api.displayName().ifEmpty { defaultDisplayName }
-                } catch (e: Exception) {
-                    android.util.Log.w("DLavieConnect", "loadMyProfile failed: ${e.message}")
-                    // Fallback: create profile kalau belum ada
-                    if (e.message?.contains("Profile community belum tersedia") == true ||
-                        e.message?.contains("belum ada") == true) {
-                        try {
-                            api.ensureMyProfile(defaultUsername, defaultDisplayName, null)
-                            api.loadMyProfile()
-                            displayName = api.displayName().ifEmpty { defaultDisplayName }
-                        } catch (e2: Exception) {
-                            android.util.Log.e("DLavieConnect", "ensureMyProfile failed: ${e2.message}")
-                        }
-                    }
-                }
-
-                android.widget.Toast.makeText(this,
-                    "✓ DLavie Portal Connected! Welcome, $displayName.",
-                    android.widget.Toast.LENGTH_LONG).show()
-
-                // Navigate to launcher main screen
-                val target = android.content.Intent(this, ModernLauncherActivity::class.java)
-                target.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                startActivity(target)
-                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
-                finish()
-                return
-            } else {
-                // Missing token/uid — show error
-                android.widget.Toast.makeText(this,
-                    "Connect gagal: token tidak ditemukan. Coba lagi dari web portal.",
-                    android.widget.Toast.LENGTH_LONG).show()
-                val target = android.content.Intent(this, DLavieGuidedActivity::class.java)
-                target.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                startActivity(target)
-                finish()
-                return
+            val legacySecrets = PortalAuthSecurity.containsLegacyPortalSecrets(portalData)
+            if (legacySecrets) {
+                android.util.Log.w("DLaviePortal", "Rejected legacy connect link containing credentials")
+                android.widget.Toast.makeText(
+                    this,
+                    "Tautan login lama ditolak demi keamanan. Silakan login langsung di launcher.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
             }
+
+            val target = Intent(this, DLavieGuidedActivity::class.java).apply {
+                putExtra("portal_login_requested", true)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            }
+            startActivity(target)
+            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+            finish()
+            return
         }
 
         // ── v7.9.95: Game sharing deep link (dlavie://game?pkg=PACKAGE_NAME) ──
@@ -209,8 +123,8 @@ class ShinySplashActivity : ComponentActivity() {
                             // v6.8.3: Guest mode check — if is_guest=true in dlavie_community prefs, skip login
                             val communityPrefs = getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
                             val isGuest = communityPrefs.getBoolean("is_guest", false)
-                            val target = if (!token.isNullOrBlank()) {
-                                // Sync to community prefs
+                            val target = if (!token.isNullOrBlank() && PortalAuthSecurity.isJwtUsable(token)) {
+                                // Sync only a locally valid Supabase session to community state.
                                 val refresh = prefs.getString("refresh_token", "") ?: ""
                                 val userId = try {
                                     val payload = token.split(".").getOrNull(1) ?: ""
@@ -224,11 +138,13 @@ class ShinySplashActivity : ComponentActivity() {
                                     .putString("user_id", userId)
                                     .apply()
                                 Intent(this, ModernLauncherActivity::class.java)
-                            } else if (isGuest) {
-                                // v6.8.3: Guest mode — bypass login, go straight to launcher
-                                Intent(this, ModernLauncherActivity::class.java)
                             } else {
-                                Intent(this, DLavieGuidedActivity::class.java)
+                                if (!token.isNullOrBlank()) PortalAuthSecurity.clearSession(this)
+                                if (isGuest) {
+                                    Intent(this, ModernLauncherActivity::class.java)
+                                } else {
+                                    Intent(this, DLavieGuidedActivity::class.java)
+                                }
                             }
                             target.addFlags(
                                 Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK
