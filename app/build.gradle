@@ -2,7 +2,7 @@ plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
     id 'com.google.gms.google-services'
-    id 'com.google.firebase.crashlytics'
+    id 'com.firebase.crashlytics'
 }
 
 android {
@@ -18,7 +18,8 @@ android {
 
         buildConfigField "String", "GITHUB_PUBLIC_DATA_BASE", '"https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/"'
         buildConfigField "String", "SUPABASE_URL", '"https://lvmucsxbmadtsgrxuwmo.supabase.co"'
-        buildConfigField "String", "SUPABASE_ANON_KEY", '"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJIUzI1NiIsInJlZiI6Imx2bXVjc3hibWFkdHNncnh1d21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODUyODksImV4cCI6MjA5ODU2MTI4OX0.y-1sE6uYTn4Wbter6g6NozY6uojzD5x9YVeYif-5nJs"'
+        // Compatibility name retained; value uses the active modern publishable key.
+        buildConfigField "String", "SUPABASE_ANON_KEY", '"sb_publishable_aYFlbWVJMErOHwPsli33QQ_INJD9mhx"'
         buildConfigField "String", "SUPABASE_PUB_KEY", '"sb_publishable_aYFlbWVJMErOHwPsli33QQ_INJD9mhx"'
         buildConfigField "String", "PORTAL_SSO_ENDPOINT", '"https://lvmucsxbmadtsgrxuwmo.supabase.co/functions/v1/launcher-sso"'
     }
