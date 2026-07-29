@@ -27,7 +27,17 @@ jobs:
           fetch-depth: 0
 
       - name: Remove credential bridges
-        run: python3 .github/scripts/harden_portal_auth.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -Fq 'PortalAuthSecurity.containsLegacyPortalSecrets(portalData)' \
+              app/src/main/java/com/drmacze/f16launcher/ShinySplashActivity.kt \
+             && ! grep -Fq 'val webToken = portalData.getQueryParameter("token")' \
+              app/src/main/java/com/drmacze/f16launcher/ShinySplashActivity.kt; then
+            echo 'Credential bridge removal already materialized.'
+          else
+            python3 .github/scripts/harden_portal_auth.py
+          fi
 
       - name: Upgrade OAuth to PKCE
         run: python3 .github/scripts/upgrade_portal_oauth_pkce.py
