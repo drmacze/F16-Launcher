@@ -6,18 +6,22 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
+import java.security.SecureRandom
 
 /**
  * Security boundary for Portal and OAuth login flows.
  *
- * Important rules:
- * - Never accept access or refresh tokens from dlavie://connect links.
- * - OAuth callbacks are accepted only shortly after the launcher starts OAuth.
- * - A JWT is never trusted from its payload alone; it must also pass /auth/v1/user.
+ * Rules:
+ * - dlavie://connect never accepts credentials.
+ * - Google OAuth uses Authorization Code + PKCE; the callback only carries a
+ *   short-lived code and cannot be exchanged without the device-held verifier.
+ * - Every new access token must also pass Supabase /auth/v1/user verification.
  */
 object PortalAuthSecurity {
     private const val OAUTH_PREFS = "dlavie_portal_security"
     private const val OAUTH_STARTED_AT = "oauth_started_at"
+    private const val OAUTH_CODE_VERIFIER = "oauth_code_verifier"
     private const val OAUTH_WINDOW_MS = 10 * 60 * 1000L
     private const val CLOCK_SKEW_SECONDS = 60L
 
@@ -27,23 +31,47 @@ object PortalAuthSecurity {
         val expiresAtSeconds: Long
     )
 
-    fun markOAuthAttempt(context: Context) {
+    data class VerifiedSession(
+        val accessToken: String,
+        val refreshToken: String,
+        val user: VerifiedUser
+    )
+
+    /**
+     * Starts a single PKCE transaction and returns the S256 code challenge.
+     */
+    fun beginOAuthAttempt(context: Context): String {
+        val verifierBytes = ByteArray(64).also { SecureRandom().nextBytes(it) }
+        val verifier = Base64.encodeToString(
+            verifierBytes,
+            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+        )
+        val challengeBytes = MessageDigest.getInstance("SHA-256")
+            .digest(verifier.toByteArray(Charsets.US_ASCII))
+        val challenge = Base64.encodeToString(
+            challengeBytes,
+            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+        )
+
         context.getSharedPreferences(OAUTH_PREFS, Context.MODE_PRIVATE)
             .edit()
             .putLong(OAUTH_STARTED_AT, System.currentTimeMillis())
+            .putString(OAUTH_CODE_VERIFIER, verifier)
             .apply()
+        return challenge
     }
 
     /**
-     * Consumes the pending OAuth marker so the same callback cannot be replayed.
+     * Returns and removes the verifier. The same callback therefore cannot be replayed.
      */
-    fun consumeOAuthAttempt(context: Context): Boolean {
+    fun consumeOAuthVerifier(context: Context): String? {
         val prefs = context.getSharedPreferences(OAUTH_PREFS, Context.MODE_PRIVATE)
         val startedAt = prefs.getLong(OAUTH_STARTED_AT, 0L)
-        prefs.edit().remove(OAUTH_STARTED_AT).apply()
-        if (startedAt <= 0L) return false
+        val verifier = prefs.getString(OAUTH_CODE_VERIFIER, null)
+        prefs.edit().remove(OAUTH_STARTED_AT).remove(OAUTH_CODE_VERIFIER).apply()
+        if (startedAt <= 0L || verifier.isNullOrBlank()) return null
         val age = System.currentTimeMillis() - startedAt
-        return age in 0..OAUTH_WINDOW_MS
+        return verifier.takeIf { age in 0..OAUTH_WINDOW_MS }
     }
 
     fun isTrustedAuthCallback(uri: android.net.Uri?): Boolean =
@@ -54,12 +82,53 @@ object PortalAuthSecurity {
     fun containsLegacyPortalSecrets(uri: android.net.Uri?): Boolean {
         if (uri == null) return false
         val secretKeys = listOf("token", "uid", "refresh", "access_token", "refresh_token")
-        return secretKeys.any { !uri.getQueryParameter(it).isNullOrBlank() }
+        return secretKeys.any { !uri.getQueryParameter(it).isNullOrBlank() } ||
+            uri.fragment.orEmpty().contains("access_token=") ||
+            uri.fragment.orEmpty().contains("refresh_token=")
+    }
+
+    /**
+     * Exchanges the one-time OAuth code using the locally held verifier, then
+     * independently verifies the returned session against Supabase Auth.
+     */
+    fun exchangePkceCode(authCode: String, codeVerifier: String): VerifiedSession? {
+        if (authCode.isBlank() || codeVerifier.length < 43) return null
+        val connection = (URL(
+            BuildConfig.SUPABASE_URL.trimEnd('/') + "/auth/v1/token?grant_type=pkce"
+        ).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = 10_000
+            readTimeout = 20_000
+            setRequestProperty("apikey", BuildConfig.SUPABASE_ANON_KEY)
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", "DLavie-Launcher/${BuildConfig.VERSION_NAME}")
+        }
+
+        return try {
+            val requestBody = JSONObject()
+                .put("auth_code", authCode)
+                .put("code_verifier", codeVerifier)
+                .toString()
+            connection.outputStream.use { it.write(requestBody.toByteArray(Charsets.UTF_8)) }
+            if (connection.responseCode !in 200..299) return null
+            val response = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            val accessToken = response.optString("access_token", "")
+            val refreshToken = response.optString("refresh_token", "")
+            if (accessToken.isBlank() || refreshToken.isBlank()) return null
+            val verified = verifySession(accessToken) ?: return null
+            VerifiedSession(accessToken, refreshToken, verified)
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection.disconnect()
+        }
     }
 
     /**
      * Local checks are only an early rejection layer. verifySession() remains mandatory
-     * before persisting a newly received OAuth session.
+     * before persisting a newly received OAuth/password session.
      */
     fun isJwtUsable(accessToken: String, nowSeconds: Long = System.currentTimeMillis() / 1000L): Boolean {
         val claims = decodeClaims(accessToken) ?: return false
@@ -86,7 +155,7 @@ object PortalAuthSecurity {
 
     /**
      * Verifies the token against Supabase Auth and cross-checks the returned user ID
-     * with the signed JWT subject. Returns null for every invalid or failed response.
+     * with the signed JWT subject.
      */
     fun verifySession(accessToken: String): VerifiedUser? {
         if (!isJwtUsable(accessToken)) return null
@@ -106,10 +175,8 @@ object PortalAuthSecurity {
         }
 
         return try {
-            val status = connection.responseCode
-            if (status !in 200..299) return null
-            val body = connection.inputStream.bufferedReader().use { it.readText() }
-            val user = JSONObject(body)
+            if (connection.responseCode !in 200..299) return null
+            val user = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
             val userId = user.optString("id", "")
             if (userId.isBlank() || userId != expectedUserId) return null
             VerifiedUser(
@@ -125,10 +192,10 @@ object PortalAuthSecurity {
     }
 
     fun clearSession(context: Context) {
+        context.getSharedPreferences(OAUTH_PREFS, Context.MODE_PRIVATE)
+            .edit().clear().apply()
         context.getSharedPreferences("dlavie_auth_session", Context.MODE_PRIVATE)
-            .edit()
-            .clear()
-            .apply()
+            .edit().clear().apply()
         context.getSharedPreferences("dlavie_community", Context.MODE_PRIVATE)
             .edit()
             .remove("access_token")
