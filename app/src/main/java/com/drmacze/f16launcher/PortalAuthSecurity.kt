@@ -37,9 +37,7 @@ object PortalAuthSecurity {
         val user: VerifiedUser
     )
 
-    /**
-     * Starts a single PKCE transaction and returns the S256 code challenge.
-     */
+    /** Starts a single PKCE transaction and returns the S256 code challenge. */
     fun beginOAuthAttempt(context: Context): String {
         val verifierBytes = ByteArray(64).also { SecureRandom().nextBytes(it) }
         val verifier = Base64.encodeToString(
@@ -61,9 +59,7 @@ object PortalAuthSecurity {
         return challenge
     }
 
-    /**
-     * Returns and removes the verifier. The same callback therefore cannot be replayed.
-     */
+    /** Returns and removes the verifier, preventing callback replay. */
     fun consumeOAuthVerifier(context: Context): String? {
         val prefs = context.getSharedPreferences(OAUTH_PREFS, Context.MODE_PRIVATE)
         val startedAt = prefs.getLong(OAUTH_STARTED_AT, 0L)
@@ -87,10 +83,7 @@ object PortalAuthSecurity {
             uri.fragment.orEmpty().contains("refresh_token=")
     }
 
-    /**
-     * Exchanges the one-time OAuth code using the locally held verifier, then
-     * independently verifies the returned session against Supabase Auth.
-     */
+    /** Exchanges the one-time OAuth code, then verifies the returned session. */
     fun exchangePkceCode(authCode: String, codeVerifier: String): VerifiedSession? {
         if (authCode.isBlank() || codeVerifier.length < 43) return null
         val connection = (URL(
@@ -126,11 +119,11 @@ object PortalAuthSecurity {
         }
     }
 
-    /**
-     * Local checks are only an early rejection layer. verifySession() remains mandatory
-     * before persisting a newly received OAuth/password session.
-     */
-    fun isJwtUsable(accessToken: String, nowSeconds: Long = System.currentTimeMillis() / 1000L): Boolean {
+    /** Local rejection layer; server verification remains mandatory for new sessions. */
+    fun isJwtUsable(
+        accessToken: String,
+        nowSeconds: Long = System.currentTimeMillis() / 1000L
+    ): Boolean {
         val claims = decodeClaims(accessToken) ?: return false
         val issuer = claims.optString("iss", "")
         val subject = claims.optString("sub", "")
@@ -153,10 +146,7 @@ object PortalAuthSecurity {
         return audienceValid
     }
 
-    /**
-     * Verifies the token against Supabase Auth and cross-checks the returned user ID
-     * with the signed JWT subject.
-     */
+    /** Verifies the token with Supabase and cross-checks the returned user ID. */
     fun verifySession(accessToken: String): VerifiedUser? {
         if (!isJwtUsable(accessToken)) return null
         val claims = decodeClaims(accessToken) ?: return null
@@ -206,12 +196,14 @@ object PortalAuthSecurity {
             .apply()
     }
 
-    private fun decodeClaims(token: String): JSONObject? = try {
-        val payload = token.split('.').getOrNull(1) ?: return null
-        val padded = payload + "=".repeat((4 - payload.length % 4) % 4)
-        val decoded = Base64.decode(padded, Base64.URL_SAFE or Base64.NO_WRAP)
-        JSONObject(String(decoded, Charsets.UTF_8))
-    } catch (_: Exception) {
-        null
+    private fun decodeClaims(token: String): JSONObject? {
+        return try {
+            val payload = token.split('.').getOrNull(1) ?: return null
+            val padded = payload + "=".repeat((4 - payload.length % 4) % 4)
+            val decoded = Base64.decode(padded, Base64.URL_SAFE or Base64.NO_WRAP)
+            JSONObject(String(decoded, Charsets.UTF_8))
+        } catch (_: Exception) {
+            null
+        }
     }
 }
