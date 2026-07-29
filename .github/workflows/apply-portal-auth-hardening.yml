@@ -3,7 +3,6 @@ name: Apply Portal Auth Hardening
 on:
   push:
     branches:
-      - main
       - fix/v325-portal-auth-hardening
     paths:
       - '.github/scripts/harden_portal_auth.py'
