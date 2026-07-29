@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 
 source = Path("app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt")
 if not source.exists():
@@ -7,13 +6,25 @@ if not source.exists():
 
 text = source.read_text(encoding="utf-8")
 
+# Already materialized: validate and exit cleanly.
+if (
+    "PortalAuthSecurity.exchangePkceCode(authCode, verifier)" in text
+    and "PortalAuthSecurity.beginOAuthAttempt(context)" in text
+    and 'getQueryParameter("code")' in text
+):
+    if 'params["access_token"]' in text or "PortalAuthSecurity.markOAuthAttempt" in text:
+        raise SystemExit("Mixed implicit-token and PKCE OAuth code detected")
+    print("Launcher OAuth PKCE already materialized")
+    raise SystemExit(0)
+
 method_start = "    private fun handleDeepLink(intent: Intent?) {"
-method_end_marker = "\n    }\n}\n\n// ─── Maintenance config"
-if method_start not in text or method_end_marker not in text:
+class_end_marker = "\n}\n\n// ─── Maintenance config"
+if method_start not in text or class_end_marker not in text:
     raise SystemExit("Secure OAuth callback markers not found")
 
 start = text.index(method_start)
-end = text.index(method_end_marker, start) + len("\n    }")
+# Keep the activity class closing brace and everything after it.
+end = text.index(class_end_marker, start)
 
 pkce_method = r'''    private fun handleDeepLink(intent: Intent?) {
         val data = intent?.data
@@ -95,22 +106,19 @@ pkce_method = r'''    private fun handleDeepLink(intent: Intent?) {
 
 text = text[:start] + pkce_method + text[end:]
 
-old_oauth = re.compile(
-    r'\s*PortalAuthSecurity\.markOAuthAttempt\(context\)\n'
-    r'\s*val redirect = "dlavie://auth-callback"\n'
-    r'\s*val url = "\$\{SUPABASE_URL\}/auth/v1/authorize\?provider=google&redirect_to=\$\{java\.net\.URLEncoder\.encode\(redirect, "UTF-8"\)\}"'
-)
-new_oauth = '''
-        val codeChallenge = PortalAuthSecurity.beginOAuthAttempt(context)
+old_oauth = '''        PortalAuthSecurity.markOAuthAttempt(context)
+        val redirect = "dlavie://auth-callback"
+        val url = "${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${java.net.URLEncoder.encode(redirect, "UTF-8")}"'''
+new_oauth = '''        val codeChallenge = PortalAuthSecurity.beginOAuthAttempt(context)
         val redirect = "dlavie://auth-callback"
         val url = "${SUPABASE_URL}/auth/v1/authorize" +
             "?provider=google" +
             "&redirect_to=${java.net.URLEncoder.encode(redirect, "UTF-8")}" +
             "&code_challenge=${java.net.URLEncoder.encode(codeChallenge, "UTF-8")}" +
             "&code_challenge_method=s256"'''
-text, count = old_oauth.subn(new_oauth, text, count=1)
-if count != 1:
+if old_oauth not in text:
     raise SystemExit("Google OAuth launcher block could not be upgraded to PKCE")
+text = text.replace(old_oauth, new_oauth, 1)
 
 for forbidden in (
     'params["access_token"]',
@@ -121,12 +129,11 @@ for forbidden in (
     if forbidden in text:
         raise SystemExit(f"Implicit OAuth fragment remains: {forbidden}")
 
-required = (
+for marker in (
     'PortalAuthSecurity.beginOAuthAttempt(context)',
     'PortalAuthSecurity.exchangePkceCode(authCode, verifier)',
     'getQueryParameter("code")',
-)
-for marker in required:
+):
     if marker not in text:
         raise SystemExit(f"PKCE marker missing: {marker}")
 
