@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -135,6 +136,13 @@ class DLavieGuidedActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // OAuth callbacks must be processed before an existing session can redirect away.
+        if (intent?.action == Intent.ACTION_VIEW && PortalAuthSecurity.isTrustedAuthCallback(intent?.data)) {
+            handleDeepLink(intent)
+            return
+        }
+
         val existing = loadSession(this)
         if (existing != null) {
             syncToCommunityPrefs(this, existing)
@@ -142,84 +150,98 @@ class DLavieGuidedActivity : ComponentActivity() {
             finish()
             return
         }
-        // v6.8.4: Cek apakah activity dibuka via deep link (Google OAuth callback)
-        handleDeepLink(intent)
-        setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
+
+        setContent { DLavieGuidedApp() }
     }
 
-    // v6.8.4: singleTop launch mode → deep link redirect datang via onNewIntent
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleDeepLink(intent)
-        // Re-render composable dengan result baru
-        setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
+        if (intent.action == Intent.ACTION_VIEW && PortalAuthSecurity.isTrustedAuthCallback(intent.data)) {
+            handleDeepLink(intent)
+        }
     }
 
     /**
-     * v6.8.4: Parse deep link callback dari Supabase OAuth.
-     * Format: dlavie://auth-callback#access_token=...&refresh_token=...&expires_in=...
-     * Atau error: dlavie://auth-callback#error=...&error_description=...
-     *
-     * Token dikirim di URL fragment (#) bukan query (?), jadi pakai uri.fragment.
+     * Accepts OAuth only after the launcher initiated the flow, then verifies the
+     * returned access token with Supabase Auth before storing any session data.
      */
     private fun handleDeepLink(intent: Intent?) {
-        if (intent == null) return
-        val action = intent.action
-        val data = intent.data ?: return
-        if (action != Intent.ACTION_VIEW) return
-
-        val fragment = data.fragment ?: ""
-        val query = data.query ?: ""
-
-        // Parse key=value pairs dari fragment (token) dan query (error)
-        val params = mutableMapOf<String, String>()
-        val pairs = (fragment + "&" + query).split("&").filter { it.contains("=") }
-        for (pair in pairs) {
-            val idx = pair.indexOf("=")
-            if (idx > 0) {
-                val key = pair.substring(0, idx)
-                val value = java.net.URLDecoder.decode(pair.substring(idx + 1), "UTF-8")
-                params[key] = value
-            }
+        val data = intent?.data
+        if (intent?.action != Intent.ACTION_VIEW || !PortalAuthSecurity.isTrustedAuthCallback(data)) {
+            return
         }
 
-        val accessToken = params["access_token"]
-        val refreshToken = params["refresh_token"]
-        val error = params["error"]
+        if (PortalAuthSecurity.containsLegacyPortalSecrets(data)) {
+            PortalAuthSecurity.clearSession(this)
+            deepLinkResult = "Error: Callback lama yang membawa token ditolak. Mulai login lagi dari launcher."
+            setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
+            return
+        }
 
-        if (!accessToken.isNullOrBlank() && !refreshToken.isNullOrBlank()) {
-            // v6.8.4: Success — save session & navigate to launcher
-            val email = params["user_email"] ?: ""
-            val session = AuthSession(accessToken, refreshToken, email)
-            saveSession(this, session)
-            syncToCommunityPrefs(this, session)
-            // Clear guest flag (auto-upgrade dari guest ke user penuh)
-            val api = CommunityApi(this)
-            api.clearGuest()
-            // Sync profile dari Supabase (retry 3x — trigger handle_new_user async)
+        val error = data?.getQueryParameter("error")
+        if (!error.isNullOrBlank()) {
+            PortalAuthSecurity.consumeOAuthVerifier(this)
+            PortalAuthSecurity.clearSession(this)
+            val description = data.getQueryParameter("error_description") ?: error
+            deepLinkResult = "Error: Google login gagal — $description"
+            setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
+            return
+        }
+
+        val authCode = data?.getQueryParameter("code")
+        val verifier = PortalAuthSecurity.consumeOAuthVerifier(this)
+        if (authCode.isNullOrBlank() || verifier.isNullOrBlank()) {
+            PortalAuthSecurity.clearSession(this)
+            deepLinkResult = "Error: Kode login tidak lengkap atau sudah kedaluwarsa. Mulai login lagi dari launcher."
+            setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
+            return
+        }
+
+        deepLinkResult = "Memverifikasi kode login…"
+        setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
+
+        lifecycleScope.launch {
+            val verifiedSession = withContext(Dispatchers.IO) {
+                PortalAuthSecurity.exchangePkceCode(authCode, verifier)
+            }
+
+            if (verifiedSession == null) {
+                PortalAuthSecurity.clearSession(this@DLavieGuidedActivity)
+                deepLinkResult = "Error: Kode login tidak dapat diverifikasi. Silakan login kembali."
+                setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
+                return@launch
+            }
+
+            val session = AuthSession(
+                verifiedSession.accessToken,
+                verifiedSession.refreshToken,
+                verifiedSession.user.email
+            )
+            saveSession(this@DLavieGuidedActivity, session)
+            syncToCommunityPrefs(this@DLavieGuidedActivity, session)
+            CommunityApi(this@DLavieGuidedActivity).clearGuest()
+
+            withContext(Dispatchers.IO) {
+                runCatching { CommunityApi(this@DLavieGuidedActivity).loadMyProfile() }
+            }
             runCatching {
-                val ca = CommunityApi(this)
-                for (attempt in 1..3) {
-                    try { ca.loadMyProfile(); break } catch (_: Exception) {
-                        if (attempt < 3) Thread.sleep(500L)
-                    }
-                }
+                Telemetry.track(
+                    this@DLavieGuidedActivity,
+                    Telemetry.EVT_LOGIN,
+                    mapOf("method" to "google_oauth_pkce")
+                )
             }
-            // Fire telemetry
-            runCatching { Telemetry.track(this, Telemetry.EVT_LOGIN, mapOf("method" to "google_oauth")) }
-            deepLinkResult = "OK: Login Google berhasil. Memuat launcher..."
-            // Navigate setelah delay singkat supaya UI bisa show success message
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                startActivity(Intent(this, ModernLauncherActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK))
-                finish()
-            }, 1500)
-        } else if (!error.isNullOrBlank()) {
-            val desc = params["error_description"] ?: error
-            deepLinkResult = "Error: Google login gagal — $desc"
+
+            deepLinkResult = "OK: Login Google terverifikasi. Memuat launcher…"
+            setContent { DLavieGuidedApp(deepLinkResult = deepLinkResult) }
+            delay(900)
+            startActivity(
+                Intent(this@DLavieGuidedActivity, ModernLauncherActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            finish()
         }
-        // else: not a deep link callback → ignore (normal launch)
     }
 }
 
@@ -936,7 +958,7 @@ private fun GuidedLoginScreen(
 
                 // Info text
                 Text(
-                    "Sign in or register your DLavie account via the portal website.",
+                    "Login aman dilakukan langsung di launcher. Portal web tidak mengirim token ke aplikasi.",
                     color = Color.White.copy(alpha = 0.5f),
                     fontSize = 13.sp,
                     fontFamily = GuideFont,
@@ -947,7 +969,7 @@ private fun GuidedLoginScreen(
 
                 // 1. Connect via DLavie Portal (primary, white bg)
                 AuthProviderButton(
-                    label = "Connect to Portal",
+                    label = "Buka Portal DLavie",
                     icon = {
                         Icon(
                             Icons.Rounded.Public,
@@ -973,7 +995,7 @@ private fun GuidedLoginScreen(
 
                 // 2. Already connected? Check token
                 Text(
-                    "Already connected? The launcher will auto-login if your token is still valid.",
+                    "Gunakan email/password atau Google di launcher. Jangan pernah membagikan token login.",
                     color = Color.White.copy(alpha = 0.3f),
                     fontSize = 11.sp,
                     fontFamily = GuideFont,
@@ -981,155 +1003,26 @@ private fun GuidedLoginScreen(
                     modifier = Modifier.padding(horizontal = 32.dp)
                 )
 
-                // ── v7.9.54: Connect Manual — SELALU VISIBLE (bukan toggle) ──
-                // Untuk launcher versi lama yang tidak ada deep link handler,
-                // user bisa copy URL connect dari web dan paste di sini.
-                Spacer(Modifier.height(24.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(Modifier.weight(1f).height(1.dp).background(Color.White.copy(0.1f)))
-                    Text(
-                        "OR CONNECT MANUALLY",
-                        color = Color.White.copy(alpha = 0.4f),
-                        fontSize = 10.sp,
-                        fontFamily = GuideFont,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 12.dp)
-                    )
-                    Box(Modifier.weight(1f).height(1.dp).background(Color.White.copy(0.1f)))
-                }
-                Spacer(Modifier.height(16.dp))
-
-                var pasteUrl by remember { mutableStateOf("") }
-                var pasteError by remember { mutableStateOf("") }
-
+                Spacer(Modifier.height(18.dp))
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = Color(0xF0111111),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(0.08f))
+                    color = Color.White.copy(alpha = 0.035f),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
                 ) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Rounded.ContentPaste,
-                                contentDescription = null,
-                                tint = Color(0xFFFFAA00),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "Connect Manual (for older versions)",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontFamily = GuideFont,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Rounded.Lock, contentDescription = null, tint = GuideGreen, modifier = Modifier.size(17.dp))
                         Text(
-                            "For launcher v218 and earlier without automatic deep link handling.\n\n" +
-                            "How to use:\n" +
-                            "1. Sign in at DLavie web\n" +
-                            "2. Click \"Connect to DLavie\"\n" +
-                            "3. After 2.5 seconds, the web will show a connect URL\n" +
-                            "4. Copy that URL and paste it below\n" +
-                            "5. Tap \"Connect Manual\"",
-                            color = Color.White.copy(alpha = 0.5f),
-                            fontSize = 10.sp,
-                            fontFamily = GuideFont,
-                            lineHeight = 14.sp
+                            "Login dilakukan langsung di launcher. DLavie tidak pernah meminta Anda menyalin token atau URL sesi.",
+                            color = GuideMuted,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                            modifier = Modifier.weight(1f)
                         )
-                        OutlinedTextField(
-                            value = pasteUrl,
-                            onValueChange = { pasteUrl = it; pasteError = "" },
-                            placeholder = { Text("dlavie://connect?token=...&uid=...", fontSize = 11.sp) },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = false,
-                            minLines = 2,
-                            maxLines = 4,
-                            textStyle = androidx.compose.ui.text.TextStyle(
-                                fontSize = 11.sp,
-                                fontFamily = GuideFont,
-                                color = Color.White
-                            ),
-                            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                cursorColor = Color.White,
-                                focusedBorderColor = Color.White.copy(0.5f),
-                                unfocusedBorderColor = Color.White.copy(0.2f),
-                                focusedContainerColor = Color(0xFF1A1A1A),
-                                unfocusedContainerColor = Color(0xFF1A1A1A)
-                            )
-                        )
-                        if (pasteError.isNotEmpty()) {
-                            Text(pasteError, color = Color(0xFFFF5252), fontSize = 11.sp, fontFamily = GuideFont)
-                        }
-                        Button(
-                            onClick = {
-                                val url = pasteUrl.trim()
-                                if (url.isBlank()) {
-                                    pasteError = "URL cannot be empty"
-                                    return@Button
-                                }
-                                val uri = try { android.net.Uri.parse(url) } catch (e: Exception) {
-                                    pasteError = "Invalid URL: ${e.message}"
-                                    return@Button
-                                }
-                                val token = uri.getQueryParameter("token")
-                                val uid = uri.getQueryParameter("uid")
-                                val refresh = uri.getQueryParameter("refresh") ?: ""
-
-                                if (token.isNullOrBlank() || uid.isNullOrBlank()) {
-                                    pasteError = "URL does not contain valid token and uid"
-                                    return@Button
-                                }
-
-                                context.getSharedPreferences("dlavie_auth_session", android.content.Context.MODE_PRIVATE)
-                                    .edit()
-                                    .putString("access_token", token)
-                                    .putString("refresh_token", refresh)
-                                    .apply()
-                                context.getSharedPreferences("dlavie_community", android.content.Context.MODE_PRIVATE)
-                                    .edit()
-                                    .putString("access_token", token)
-                                    .putString("refresh_token", refresh)
-                                    .putString("user_id", uid)
-                                    .putBoolean("portal_connected", true)
-                                    .putString("portal_connected_at", System.currentTimeMillis().toString())
-                                    .apply()
-
-                                try { CommunityApi(context).loadMyProfile() } catch (_: Exception) {}
-
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "✓ DLavie Portal Connected! Welcome.",
-                                    android.widget.Toast.LENGTH_LONG
-                                ).show()
-
-                                val intent = android.content.Intent(
-                                    context,
-                                    ModernLauncherActivity::class.java
-                                ).addFlags(
-                                    android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK or
-                                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                                )
-                                context.startActivity(intent)
-                                (context as? android.app.Activity)?.finish()
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFFFAA00),
-                                contentColor = Color.Black
-                            )
-                        ) {
-                            Icon(Icons.Rounded.Link, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Connect Manual", fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = GuideFont)
-                        }
                     }
                 }
             }
@@ -1626,8 +1519,13 @@ private fun GoogleIcon() {
 private fun startGoogleOAuth(context: Context): String {
     return try {
         // v6.8.4: redirect ke deep link dlavie://auth-callback (bukan /auth/v1/callback)
+        val codeChallenge = PortalAuthSecurity.beginOAuthAttempt(context)
         val redirect = "dlavie://auth-callback"
-        val url = "${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${java.net.URLEncoder.encode(redirect, "UTF-8")}"
+        val url = "${SUPABASE_URL}/auth/v1/authorize" +
+            "?provider=google" +
+            "&redirect_to=${java.net.URLEncoder.encode(redirect, "UTF-8")}" +
+            "&code_challenge=${java.net.URLEncoder.encode(codeChallenge, "UTF-8")}" +
+            "&code_challenge_method=s256"
         val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -1930,7 +1828,17 @@ private fun GuidedProfileScreen(session: AuthSession, onLogout: () -> Unit) {
 @Composable private fun GuidedFaqPanel(onClose: () -> Unit, modifier: Modifier) { Surface(modifier = modifier.fillMaxWidth(), color = Color(0xF00D0F0E), shape = RoundedCornerShape(28.dp), border = BorderStroke(1.dp, GuideBorder), shadowElevation = 20.dp) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { Text("Asisten DLavie", color = GuideWhite, fontSize = 18.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f), fontFamily = GuideFont); GuidedSmallAction("Tutup", GuideRed, onClose, true, Modifier.width(86.dp)) }; GuidedFaqFullCard() } } }
 @Composable private fun GuidedBottomNav(selected: GuidedTab, onSelect: (GuidedTab) -> Unit, modifier: Modifier) { Surface(modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp), color = Color(0xF00B0C0C), shape = RoundedCornerShape(34.dp), border = BorderStroke(1.dp, GuideBorder), shadowElevation = 18.dp) { Row(Modifier.padding(7.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) { GuidedTab.values().forEach { item -> val active = item == selected; Button(onClick = { onSelect(item) }, modifier = Modifier.weight(1f).height(58.dp), shape = RoundedCornerShape(26.dp), colors = ButtonDefaults.buttonColors(containerColor = if (active) Color(0xFF0E3A22) else Color.Transparent, contentColor = if (active) GuideGreen else GuideMuted), contentPadding = PaddingValues(0.dp)) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(item.icon, fontSize = 19.sp); Text(item.label, fontSize = 10.sp, fontWeight = FontWeight.Black, maxLines = 1, fontFamily = GuideFont) } } } } } }
 
-private fun loadSession(context: Context): AuthSession? { val p = context.getSharedPreferences(PREF_AUTH, Context.MODE_PRIVATE); val token = p.getString(PREF_TOKEN, null) ?: return null; val refresh = p.getString(PREF_REFRESH, "") ?: ""; val email = p.getString(PREF_EMAIL, "") ?: ""; return AuthSession(token, refresh, email) }
+private fun loadSession(context: Context): AuthSession? {
+    val prefs = context.getSharedPreferences(PREF_AUTH, Context.MODE_PRIVATE)
+    val token = prefs.getString(PREF_TOKEN, null) ?: return null
+    if (!PortalAuthSecurity.isJwtUsable(token)) {
+        PortalAuthSecurity.clearSession(context)
+        return null
+    }
+    val refresh = prefs.getString(PREF_REFRESH, "") ?: ""
+    val email = prefs.getString(PREF_EMAIL, "") ?: ""
+    return AuthSession(token, refresh, email)
+}
 private fun saveSession(context: Context, s: AuthSession) { context.getSharedPreferences(PREF_AUTH, Context.MODE_PRIVATE).edit().putString(PREF_TOKEN, s.accessToken).putString(PREF_REFRESH, s.refreshToken).putString(PREF_EMAIL, s.email).apply() }
 private fun clearSession(context: Context) { context.getSharedPreferences(PREF_AUTH, Context.MODE_PRIVATE).edit().clear().apply() }
 private fun userIdFromJwt(token: String): String { return try { val payload = token.split(".").getOrNull(1) ?: return ""; val padded = payload + "=".repeat((4 - payload.length % 4) % 4); val decoded = android.util.Base64.decode(padded, android.util.Base64.URL_SAFE); JSONObject(String(decoded)).optString("sub", "") } catch (_: Exception) { "" } }
@@ -1945,8 +1853,13 @@ private fun registerWithUsernamePassword(context: Context, email: String, passwo
     val token = json.optString("access_token", "")
     val refresh = json.optString("refresh_token", "")
     val userObj = json.optJSONObject("user")
-    val userEmail = userObj?.optString("email", email) ?: email
-    val userId = userObj?.optString("id", "") ?: ""
+    val verifiedUser = if (token.isNotBlank()) PortalAuthSecurity.verifySession(token) else null
+    if (token.isNotBlank() && verifiedUser == null) {
+        throw IllegalStateException("Sesi pendaftaran tidak dapat diverifikasi. Silakan login kembali.")
+    }
+    val userEmail = verifiedUser?.email?.ifBlank { userObj?.optString("email", email) ?: email }
+        ?: (userObj?.optString("email", email) ?: email)
+    val userId = verifiedUser?.id ?: (userObj?.optString("id", "") ?: "")
     if (token.isBlank()) {
         AuthResult(null, "Akun dibuat! Cek email untuk verifikasi, lalu Login.")
     } else {
@@ -2024,8 +1937,13 @@ private fun authPassword(context: Context, path: String, email: String, password
     val json = httpPost(path, null, JSONObject().put("email", email).put("password", password))
     val token = json.optString("access_token", "")
     val refresh = json.optString("refresh_token", "")
-    val userEmail = json.optJSONObject("user")?.optString("email", email) ?: email
-    val userId = json.optJSONObject("user")?.optString("id", "") ?: ""
+    val verifiedUser = if (token.isNotBlank()) PortalAuthSecurity.verifySession(token) else null
+    if (token.isNotBlank() && verifiedUser == null) {
+        throw IllegalStateException("Sesi login tidak dapat diverifikasi. Silakan coba lagi.")
+    }
+    val userEmail = verifiedUser?.email?.ifBlank { json.optJSONObject("user")?.optString("email", email) ?: email }
+        ?: (json.optJSONObject("user")?.optString("email", email) ?: email)
+    val userId = verifiedUser?.id ?: (json.optJSONObject("user")?.optString("id", "") ?: "")
     if (token.isBlank()) AuthResult(null, "Akun dibuat. Cek email lalu login.") else {
         val session = AuthSession(token, refresh, userEmail)
         saveSession(context, session)

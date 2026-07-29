@@ -1,0 +1,71 @@
+name: Apply Portal Auth Hardening
+
+on:
+  push:
+    branches:
+      - fix/v325-portal-auth-hardening
+    paths:
+      - '.github/scripts/harden_portal_auth.py'
+      - '.github/scripts/upgrade_portal_oauth_pkce.py'
+      - '.github/workflows/apply-portal-auth-hardening.yml'
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalAuthSecurity.kt'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: portal-auth-hardening-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove credential bridges
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -Fq 'PortalAuthSecurity.containsLegacyPortalSecrets(portalData)' \
+              app/src/main/java/com/drmacze/f16launcher/ShinySplashActivity.kt \
+             && ! grep -Fq 'val webToken = portalData.getQueryParameter("token")' \
+              app/src/main/java/com/drmacze/f16launcher/ShinySplashActivity.kt; then
+            echo 'Credential bridge removal already materialized.'
+          else
+            python3 .github/scripts/harden_portal_auth.py
+          fi
+
+      - name: Upgrade OAuth to PKCE
+        run: python3 .github/scripts/upgrade_portal_oauth_pkce.py
+
+      - name: Validate secure login flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -F 'dlavie://connect?token=' app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
+          ! grep -F 'val webToken = portalData.getQueryParameter("token")' app/src/main/java/com/drmacze/f16launcher/ShinySplashActivity.kt
+          ! grep -F 'params["access_token"]' app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
+          grep -F 'PortalAuthSecurity.exchangePkceCode(authCode, verifier)' app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
+          grep -F 'PortalAuthSecurity.beginOAuthAttempt(context)' app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
+          grep -F 'PortalAuthSecurity.containsLegacyPortalSecrets(portalData)' app/src/main/java/com/drmacze/f16launcher/ShinySplashActivity.kt
+
+      - name: Commit generated source hardening
+        shell: bash
+        run: |
+          if git diff --quiet -- \
+            app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt \
+            app/src/main/java/com/drmacze/f16launcher/ShinySplashActivity.kt; then
+            echo 'Source already hardened.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt \
+            app/src/main/java/com/drmacze/f16launcher/ShinySplashActivity.kt
+          git commit -m 'fix(v325): materialize PKCE portal login flow'
+          git push
