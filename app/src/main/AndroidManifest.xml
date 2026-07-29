@@ -86,7 +86,7 @@
 
         <activity
             android:name=".ModernLauncherActivity"
-            android:exported="true"
+            android:exported="false"
             android:label="DLavie 26"
             android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
@@ -94,8 +94,8 @@
 
         <!--
           v325 SECURITY: ShinySplashActivity is the only exported handler for dlavie://
-          links. ModernLauncherActivity no longer receives arbitrary callback URLs from
-          external apps, preventing the legacy callback flow from forwarding session data.
+          links. ModernLauncherActivity is internal-only so an external app cannot invoke
+          the legacy callback flow and request session data to be forwarded.
         -->
         <activity
             android:name=".ShinySplashActivity"
