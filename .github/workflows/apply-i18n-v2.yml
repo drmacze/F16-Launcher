@@ -16,6 +16,7 @@ on:
       - 'app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt'
       - 'app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt'
       - '.github/scripts/apply_i18n_v2.py'
+      - '.github/scripts/fix_i18n_coroutine_context.py'
       - '.github/workflows/apply-i18n-v2.yml'
   push:
     branches:
@@ -34,6 +35,7 @@ on:
       - 'app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt'
       - 'app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt'
       - '.github/scripts/apply_i18n_v2.py'
+      - '.github/scripts/fix_i18n_coroutine_context.py'
       - '.github/workflows/apply-i18n-v2.yml'
 
 permissions:
@@ -79,6 +81,7 @@ jobs:
           else
             python3 .github/scripts/apply_i18n_v2.py
           fi
+          python3 .github/scripts/fix_i18n_coroutine_context.py
 
       - name: Validate localization contract
         shell: bash
@@ -93,6 +96,7 @@ jobs:
           grep -F 'LocaleText.get(context, "startup.check_session")' app/src/main/java/com/drmacze/f16launcher/ShinySplashActivity.kt
           grep -F 'LocaleText.get(context, "portal.start")' app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt
           grep -F 'LocaleText.get(this, "portal.verify_code")' app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt
+          grep -F 'LocaleText.get(this@PortalSsoActivity, "portal.sync_profile")' app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt
           grep -F 'LocalePreferenceSync.pushAsync(context)' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
           ! grep -F 'prefs.edit().putString(KEY_LANGUAGE, detected)' app/src/main/java/com/drmacze/f16launcher/LanguageManager.kt
 
