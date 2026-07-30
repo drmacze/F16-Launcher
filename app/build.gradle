@@ -13,8 +13,8 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 36
-        versionCode 330
-        versionName "8.5.0"
+        versionCode 331
+        versionName "8.5.1"
 
         buildConfigField "String", "GITHUB_PUBLIC_DATA_BASE", '"https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/"'
         buildConfigField "String", "SUPABASE_URL", '"https://lvmucsxbmadtsgrxuwmo.supabase.co"'
@@ -77,8 +77,4 @@ dependencies {
     implementation 'com.google.firebase:firebase-analytics:22.1.2'
     implementation 'com.google.firebase:firebase-crashlytics:19.2.1'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1'
-
-    debugImplementation 'androidx.compose.ui:ui-tooling'
 }
-
-apply plugin: 'com.google.gms.google-services'
