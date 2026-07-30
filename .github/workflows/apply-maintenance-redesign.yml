@@ -1,0 +1,109 @@
+name: Apply Maintenance Redesign
+# Final validation marker: v328 maintenance source is materialized and compile-ready.
+
+on:
+  push:
+    branches:
+      - feat/v328-maintenance-system
+      - main
+    paths:
+      - 'app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt'
+      - 'app/build.gradle'
+      - '.github/scripts/apply_maintenance_redesign.py'
+      - '.github/scripts/fix_maintenance_system_source.py'
+      - '.github/workflows/apply-maintenance-redesign.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt'
+      - 'app/build.gradle'
+      - '.github/scripts/apply_maintenance_redesign.py'
+      - '.github/scripts/fix_maintenance_system_source.py'
+      - '.github/workflows/apply-maintenance-redesign.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: maintenance-redesign-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply deterministic maintenance patch
+        run: |
+          python3 .github/scripts/apply_maintenance_redesign.py
+          python3 .github/scripts/fix_maintenance_system_source.py
+
+      - name: Validate maintenance invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODERN='app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt'
+          MAINTENANCE='app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt'
+          grep -F 'versionCode 328' app/build.gradle
+          grep -F 'versionName "8.4.0"' app/build.gradle
+          grep -F 'MAINTENANCE_CONTROL_ENDPOINT' app/build.gradle
+          grep -F 'object MaintenanceRepository' "$MAINTENANCE"
+          ! grep -F 'import androidx.compose.foundation.layout.weight' "$MAINTENANCE"
+          grep -F 'ProfessionalMaintenanceScreen' "$MAINTENANCE"
+          grep -F 'MaintenanceStatusBanner' "$MODERN"
+          grep -F 'MaintenanceRepository.fetch(context)' "$MODERN"
+          grep -F 'allowStaffLogin = true' app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
+          test "$(grep -Fc 'val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial" && !maintenanceInfo.staffBypass' "$MODERN")" = '2'
+          ! grep -F '!maintenanceInfo.staffBypass && !maintenanceInfo.staffBypass' "$MODERN"
+          ! grep -F 'fetchMaintenanceInfo(api)' "$MODERN"
+          ! grep -F 'fetchMaintenanceConfig()' app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
+
+      - name: Verify live maintenance endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENDPOINT='https://lvmucsxbmadtsgrxuwmo.supabase.co/functions/v1/maintenance-control'
+          API_KEY='sb_publishable_aYFlbWVJMErOHwPsli33QQ_INJD9mhx'
+          STATUS=$(curl --silent --show-error -o /tmp/maintenance.json -w '%{http_code}' \
+            -X POST "$ENDPOINT" \
+            -H "apikey: ${API_KEY}" \
+            -H "Authorization: Bearer ${API_KEY}" \
+            -H 'Content-Type: application/json' \
+            -d '{"action":"get"}')
+          test "$STATUS" = '200'
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/maintenance.json',encoding='utf-8'))
+          config=data['config']
+          assert config['scope'] in ('none','partial','full')
+          assert isinstance(config['enabled'],bool)
+          assert int(config['schema_version']) >= 2
+          assert 'revision' in config
+          PY
+
+      - name: Commit materialized Android source
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          if git diff --quiet -- \
+            app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt \
+            app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt \
+            app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt; then
+            echo 'Android source already materialized.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt \
+            app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt \
+            app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
+          git commit -m 'feat(v328): apply professional maintenance experience'
+          git push

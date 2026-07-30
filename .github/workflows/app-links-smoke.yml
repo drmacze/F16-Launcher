@@ -78,8 +78,10 @@ jobs:
           assert len(matching_filters) == 1, 'exactly one verified HTTPS filter is required'
 
           gradle = Path('app/build.gradle').read_text(encoding='utf-8')
-          assert re.search(r'\bversionCode\s+327\b', gradle)
-          assert 'versionName "8.3.0"' in gradle
+          version_code_match = re.search(r'\bversionCode\s+(\d+)\b', gradle)
+          version_name_match = re.search(r'\bversionName\s+"([^"]+)"', gradle)
+          assert version_code_match and int(version_code_match.group(1)) >= 327
+          assert version_name_match and version_name_match.group(1).strip()
           assert f'PORTAL_SSO_CALLBACK_URL", \'"{os.environ["EXPECTED_CALLBACK"]}"\'' in gradle
 
           source = Path('app/src/main/java/com/drmacze/f16launcher/PortalAppLinkActivities.kt').read_text(encoding='utf-8')
@@ -94,7 +96,7 @@ jobs:
           assert 'intent://connect?token=' not in source
           assert 'access_token' not in source
           assert 'refresh_token' not in source
-          print('Android verified App Link contract is valid.')
+          print('Android verified App Link contract is valid for current and future launcher versions.')
           PY
 
       - name: Verify live assetlinks without redirect

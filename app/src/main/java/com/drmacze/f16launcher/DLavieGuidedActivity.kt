@@ -245,15 +245,7 @@ class DLavieGuidedActivity : ComponentActivity() {
     }
 }
 
-// ─── Maintenance config (fetched at startup) ────────────────────────────────────
-private data class MaintenanceState(
-    val enabled: Boolean = false,
-    val title: String = "",
-    val message: String = "",
-    val allowOffline: Boolean = false,
-    val loaded: Boolean = false
-)
-
+// MaintenanceInfo is shared from MaintenanceSystem.kt.
 // ─── Country picker list (21 entries per spec) ──────────────────────────────────
 // v7.9.17: Made public supaya OnboardingModal bisa akses
 val COUNTRY_LIST: List<String> = listOf(
@@ -336,15 +328,18 @@ private val GuideBorder = GuideGlassStroke
 @Composable
 private fun DLavieGuidedApp(deepLinkResult: String? = null) {
     val context = LocalContext.current
-    // Maintenance state fetched at app startup BEFORE the login screen is shown.
-    var maintenance by remember { mutableStateOf(MaintenanceState()) }
-    var showLogin  by remember { mutableStateOf(false) }
+    val maintenanceScope = rememberCoroutineScope()
+    var maintenance by remember { mutableStateOf<MaintenanceInfo?>(null) }
+    var maintenanceLoaded by remember { mutableStateOf(false) }
+    var maintenanceRefreshing by remember { mutableStateOf(false) }
+    var showLogin by remember { mutableStateOf(false) }
     // v6.8.4: Deep link result dari Google OAuth callback
     var deepLinkMsg by remember { mutableStateOf(deepLinkResult ?: "") }
 
     LaunchedEffect(Unit) {
-        maintenance = withContext(Dispatchers.IO) { fetchMaintenanceConfig() }
-        if (!maintenance.enabled) showLogin = true
+        maintenance = MaintenanceRepository.fetch(context)
+        maintenanceLoaded = true
+        showLogin = maintenance?.isFull != true
     }
 
     MaterialTheme(darkColorScheme(background = GuideDark, surface = GuideCard, primary = GuideGreen, secondary = GuideCyan, onBackground = GuideWhite, onSurface = GuideWhite)) {
@@ -358,21 +353,25 @@ private fun DLavieGuidedApp(deepLinkResult: String? = null) {
                     baseColor = HalftoneBright,
                     alpha = 0.6f
                 )
-                if (maintenance.enabled && !showLogin) {
-                    MaintenanceOverlay(
-                        title        = maintenance.title,
-                        message      = maintenance.message,
-                        allowOffline = maintenance.allowOffline,
-                        onContinueOffline = {
-                            // User opted to play offline — show login screen anyway so they can still log in if they want.
-                            showLogin = true
+                if (maintenanceLoaded && maintenance?.isFull == true && !showLogin) {
+                    FullScreenMaintenance(
+                        maintenance = maintenance!!,
+                        allowStaffLogin = true,
+                        refreshing = maintenanceRefreshing,
+                        onRetry = {
+                            if (!maintenanceRefreshing) {
+                                maintenanceRefreshing = true
+                                maintenanceScope.launch {
+                                    MaintenanceRepository.clearMemoryCache()
+                                    maintenance = MaintenanceRepository.fetch(context, forceRefresh = true)
+                                    maintenanceRefreshing = false
+                                    if (maintenance?.isFull != true) showLogin = true
+                                }
+                            }
                         },
-                        onClose = {
-                            // Close the app
-                            (context as? android.app.Activity)?.finishAffinity()
-                        }
+                        onEnter = { showLogin = true },
                     )
-                } else if (showLogin || maintenance.loaded) {
+                } else if (showLogin || maintenanceLoaded) {
                     GuidedLoginScreen(
                         deepLinkMessage = deepLinkMsg,
                         onLoggedIn = { session ->
@@ -2114,37 +2113,6 @@ private fun parseError(text: String): String {
     }
 }
 
-/**
- * Fetch maintenance config from app_config (key = 'maintenance').
- * Returns MaintenanceState(loaded = true) on success.
- * On any failure, returns a non-maintenance state so users can still log in.
- *
- * Expected shape:
- *   { "enabled": true, "scope": "all", "title": "...", "message": "...", "allow_offline_play": true }
- */
-private fun fetchMaintenanceConfig(): MaintenanceState {
-    return try {
-        val arr = httpGetArray("/rest/v1/app_config?key=eq.maintenance&select=key,value")
-        if (arr.length() == 0) return MaintenanceState(loaded = true)
-        val row = arr.getJSONObject(0)
-        val value = row.opt("value")
-        val cfg = when (value) {
-            is JSONObject -> value
-            is org.json.JSONArray -> if (value.length() > 0) value.optJSONObject(0) else JSONObject()
-            else -> JSONObject()
-        }
-        MaintenanceState(
-            enabled      = cfg.optBoolean("enabled", false),
-            title        = cfg.optString("title", ""),
-            message      = cfg.optString("message", ""),
-            allowOffline = cfg.optBoolean("allow_offline_play", cfg.optBoolean("allowOffline", false)),
-            loaded       = true
-        )
-    } catch (_: Exception) {
-        // Network/parse failure — don't block login.
-        MaintenanceState(loaded = true)
-    }
-}
 private fun jsonArrayObjectsToTitles(arr: JSONArray?): List<String> { if (arr == null) return emptyList(); val out = mutableListOf<String>(); for (i in 0 until arr.length()) { val o = arr.optJSONObject(i); if (o != null) out += (o.optString("title", "Notice") + ": " + o.optString("body", "")) }; return out }
 private fun guidedShizukuState(): String = try { when { !Shizuku.pingBinder() -> "Start"; Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED -> "Ready"; else -> "Permission" } } catch (_: Exception) { "Start" }
 private fun guidedRequestShizuku() { runCatching { if (Shizuku.pingBinder() && Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) Shizuku.requestPermission(SHIZUKU_REQUEST) } }

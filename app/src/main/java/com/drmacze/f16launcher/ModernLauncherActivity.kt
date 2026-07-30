@@ -329,22 +329,7 @@ data class UpdateInfo(
     val source: String = "manifest"
 )
 
-/**
- * Maintenance mode info — dibaca dari Supabase app_config key="maintenance".
- * value jsonb shape: { enabled, title, message, scope, allow_offline_play }
- *
- * scope:
- *   - "none"    → maintenance disabled (default)
- *   - "partial" → launcher bisa dibuka, tapi download/apply/launch diblokir
- *   - "full"    → full-screen maintenance page, user tidak bisa masuk launcher
- */
-data class MaintenanceInfo(
-    val enabled: Boolean,
-    val title: String,
-    val message: String,
-    val scope: String = "none",
-    val allowOfflinePlay: Boolean = true
-)
+// MaintenanceInfo is defined in MaintenanceSystem.kt.
 
 /**
  * Latest notification campaign — untuk inline banner di HomeScreen.
@@ -658,10 +643,11 @@ fun DLavieModernApp(initialPostId: String? = null) {
     val api     = remember { CommunityApi(context) }
     var pinVerified by remember { mutableStateOf(!PinManager.hasPin(context)) }
 
-    // ── Maintenance state (Bug 1-3: full/partial scope + staff bypass) ──
+    // ── Unified maintenance state from DLavie Dev Hub ──
     var maintenanceState by remember { mutableStateOf<MaintenanceInfo?>(null) }
     var maintenanceChecked by remember { mutableStateOf(false) }
-    var partialBypassed by remember { mutableStateOf(false) } // user tekan "Masuk Launcher" saat scope=partial
+    var maintenanceRefreshing by remember { mutableStateOf(false) }
+    var partialBypassed by remember { mutableStateOf(false) } // staff bypass for full maintenance
 
     // ── App update state ──
     var updateInfo by remember { mutableStateOf<AppUpdateChecker.UpdateInfo?>(null) }
@@ -691,17 +677,9 @@ fun DLavieModernApp(initialPostId: String? = null) {
         }
     }
 
-    // ── Fetch maintenance untuk SEMUA user (termasuk staff) ──
-    // Staff tetap lihat maintenance screen, tapi bisa bypass (tap "Masuk" untuk partial,
-    // atau langsung masuk untuk full dengan tombol bypass khusus staff).
-    // v7.9.78: BYPASS maintenance untuk APK dengan signature BARU (v243+).
-    // v7.9.78-v248: TEST MODE — disable bypass supaya popup modern muncul untuk SEMUA user.
-    // Setelah verify popup modern bagus, re-enable bypass.
+    // Fetch the same live state managed by the Portal Dev Hub.
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            // v248 TEST: always fetch maintenance (ignore signature bypass)
-            runCatching { maintenanceState = fetchMaintenanceInfo(api) }
-        }
+        maintenanceState = MaintenanceRepository.fetch(context)
         maintenanceChecked = true
     }
 
@@ -910,38 +888,24 @@ fun DLavieModernApp(initialPostId: String? = null) {
                         }
                     }
 
-                    // ── Staff bypass: skip maintenance entirely (Bug 3) ──
-                    isStaff -> {
-                        if (!pinVerified && PinManager.hasPin(context)) {
-                            PinLockPlaceholder(context)
-                        } else {
-                            MainShell(api, maintenanceInfo = null, onLogout = logoutAction, initialPostId = initialPostId, onTriggerUpdate = { info -> updateInfo = info; showUpdatePopup = true })
-                        }
-                    }
-
-                    // ── scope=full → full-screen maintenance ──
-                    // Non-staff: NO button (blocked total)
-                    // Staff: show "Masuk sebagai Admin" bypass button
-                    maintenanceChecked && maintenanceState?.enabled == true
-                            && maintenanceState?.scope == "full" -> {
-                        FullScreenMaintenance(
-                            maintenance = maintenanceState!!,
-                            isStaff = isStaff,
-                            onEnter = {
-                                // Staff only: bypass full maintenance
-                                partialBypassed = true
-                            }
-                        )
-                    }
-
-                    // ── scope=partial → full-screen maintenance WITH "Masuk Launcher" ──
-                    maintenanceChecked && maintenanceState?.enabled == true
-                            && maintenanceState?.scope == "partial"
+                    // Full maintenance blocks normal users. Staff can bypass explicitly.
+                    maintenanceChecked && maintenanceState?.isFull == true
                             && !partialBypassed -> {
                         FullScreenMaintenance(
                             maintenance = maintenanceState!!,
                             isStaff = isStaff,
-                            onEnter = { partialBypassed = true }
+                            refreshing = maintenanceRefreshing,
+                            onRetry = {
+                                if (!maintenanceRefreshing) {
+                                    maintenanceRefreshing = true
+                                    updateScope.launch {
+                                        MaintenanceRepository.clearMemoryCache()
+                                        maintenanceState = MaintenanceRepository.fetch(context, forceRefresh = true)
+                                        maintenanceRefreshing = false
+                                    }
+                                }
+                            },
+                            onEnter = { partialBypassed = true },
                         )
                     }
 
@@ -952,7 +916,7 @@ fun DLavieModernApp(initialPostId: String? = null) {
 
                     // ── Default: masuk launcher dengan maintenance info (untuk blur overlay Bug 2) ──
                     else -> {
-                        MainShell(api, maintenanceInfo = maintenanceState, onLogout = logoutAction, initialPostId = initialPostId, onTriggerUpdate = { info -> updateInfo = info; showUpdatePopup = true })
+                        MainShell(api, maintenanceInfo = maintenanceState?.copy(staffBypass = isStaff), onLogout = logoutAction, initialPostId = initialPostId, onTriggerUpdate = { info -> updateInfo = info; showUpdatePopup = true })
                     }
                 }
             }
@@ -982,111 +946,24 @@ private fun PinLockPlaceholder(context: android.content.Context) {
     }
 }
 
-// ─── Full-screen maintenance (Bug 1: scope = "full" | "partial") ──────────────
-// scope=full    → TIDAK ADA button "Masuk". User tidak bisa masuk launcher.
-// scope=partial → ADA button "Masuk Launcher" (always enabled). Tap → onEnter.
-// scope=full → Non-staff: NO button. Staff: "Masuk sebagai Admin" bypass button.
+// ─── Professional full-screen maintenance ───────────────────────────────────
 @Composable
 fun FullScreenMaintenance(
     maintenance: MaintenanceInfo,
     isStaff: Boolean = false,
-    onEnter: () -> Unit
+    allowStaffLogin: Boolean = false,
+    refreshing: Boolean = false,
+    onRetry: () -> Unit = {},
+    onEnter: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val scrollState = rememberScrollState()
-
-    Box(
-        Modifier.fillMaxSize().background(Color(0xFF000000)),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 32.dp, vertical = 48.dp),
-            verticalArrangement = Arrangement.Center
-        ) {
-            // ── Minimal warning indicator (no icon, just a thin line) ──
-            Box(
-                Modifier
-                    .width(48.dp)
-                    .height(3.dp)
-                    .background(
-                        Color.White.copy(alpha = 0.8f),
-                        RoundedCornerShape(2.dp)
-                    )
-            )
-
-            Spacer(Modifier.height(32.dp))
-
-            // ── Shiny title (gradient sweep animation) ──
-            ShinyText(
-                text = maintenance.title.ifEmpty { "Update Required" },
-                fontSize = 32,
-                fontWeight = FontWeight.Black
-            )
-
-            Spacer(Modifier.height(24.dp))
-
-            // ── Typing animation description ──
-            if (maintenance.message.isNotEmpty()) {
-                TypingText(
-                    text = maintenance.message,
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 14,
-                    lineHeight = 22
-                )
-            }
-
-            Spacer(Modifier.height(36.dp))
-
-            // ── Download button (always show for scope=full migration) ──
-            // Opens DLavie website in browser
-            Button(
-                onClick = {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://drmacze.github.io/dlavie-web/"))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        context.startActivity(intent)
-                    } catch (_: Exception) { }
-                },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color.Black
-                )
-            ) {
-                Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(10.dp))
-                Text("Download Latest Version", fontWeight = FontWeight.Black, fontSize = 15.sp)
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            // ── Secondary: staff bypass (only for staff) ──
-            if (isStaff) {
-                TextButton(
-                    onClick = onEnter,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Enter as Admin", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
-                }
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            // ── Footer ──
-            Text(
-                "DLavie Launcher",
-                color = Color.White.copy(alpha = 0.2f),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 2.sp
-            )
-        }
-    }
+    ProfessionalMaintenanceScreen(
+        maintenance = maintenance,
+        refreshing = refreshing,
+        isStaff = isStaff,
+        allowStaffLogin = allowStaffLogin,
+        onRetry = onRetry,
+        onStaffEnter = onEnter,
+    )
 }
 
 // ─── Shiny Text (gradient sweep animation on title) ─────────────────────────
@@ -2716,7 +2593,7 @@ fun HomeScreen(
 
     // ── Bug 2: Partial maintenance blocking ──
     // Kalau scope=partial, block download/apply/launch tapi allow komunitas & profile.
-    val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"
+    val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial" && !maintenanceInfo.staffBypass
 
     // ── Pull-to-refresh state ──
     val pullState    = rememberPullToRefreshState()
@@ -2738,7 +2615,7 @@ fun HomeScreen(
             runCatching { updateInfo = fetchUpdateInfo(api) }
             runCatching { feed       = parseFeed(api.feedPosts()) }
             // Banner data — fail-open, tidak pernah crash launcher.
-            runCatching { maintenanceState = fetchMaintenanceInfo(api) }
+            runCatching { maintenanceState = MaintenanceRepository.fetch(context, forceRefresh = true) }
             // Hanya fetch notif campaign kalau banner sebelumnya sudah di-dismiss
             // (latestNotif == null) supaya tidak menimpa dismiss user saat refresh.
             if (latestNotif == null) {
@@ -2803,40 +2680,11 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
 
-        // ── Maintenance banner (cek app_config.maintenance via Supabase) ──
-        // Hanya tampil kalau Dev Dashboard mengaktifkan maintenance mode.
-        maintenanceState?.let { m ->
-            if (m.enabled) {
-                GlassCard(borderColor = AmberWarn.copy(alpha = 0.6f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(
-                            Icons.Rounded.Warning, null,
-                            tint = AmberWarn, modifier = Modifier.size(22.dp)
-                        )
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                m.title.ifEmpty { "Maintenance Mode" },
-                                color = AmberWarn, fontSize = 14.sp, fontWeight = FontWeight.Black
-                            )
-                            if (m.message.isNotEmpty()) {
-                                Text(
-                                    m.message,
-                                    color = SoftText, fontSize = 11.sp, lineHeight = 14.sp
-                                )
-                            }
-                            if (m.scope == "partial") {
-                                Text(
-                                    "Mode partial: download/apply/launch diblokir. Komunitas & Profil tetap bisa diakses.",
-                                    color = AmberWarn, fontSize = 10.sp, lineHeight = 13.sp
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+        // Compact maintenance status from the same Dev Hub state.
+        maintenanceState?.takeIf { it.enabled }?.let { maintenance ->
+            MaintenanceStatusBanner(
+                maintenance = maintenance.copy(staffBypass = maintenanceInfo?.staffBypass == true),
+            )
         }
 
         // ── Notification banner (dari notification_campaigns, latest sent) ──
@@ -3504,7 +3352,7 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
     val context       = LocalContext.current
     val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     // ── Bug 2: Partial maintenance blocking ──
-    val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"
+    val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial" && !maintenanceInfo.staffBypass
     // NOTE: All I/O moved to LaunchedEffect below — don't block main thread during composition.
     // Initialize with safe defaults; real values populate from background.
     var gameInstalled   by remember { mutableStateOf(false) }
@@ -9220,26 +9068,6 @@ fun fetchUpdateInfo(api: CommunityApi? = null): UpdateInfo {
     val notesArr   = json.optJSONArray("releaseNotes")
     val notes      = if (notesArr != null) List(notesArr.length()) { i -> notesArr.optString(i) } else emptyList()
     return UpdateInfo(latestCode, latestName, latestCode <= LOCAL_VER, notes, source = "manifest")
-}
-
-/**
- * Fetch maintenance info dari Supabase app_config (key="maintenance").
- * Mengembalikan MaintenanceInfo(enabled=false) kalau gagal / belum ada row,
- * supaya launcher tetap jalan (fail-open).
- */
-fun fetchMaintenanceInfo(api: CommunityApi): MaintenanceInfo {
-    return try {
-        val obj = api.getAppConfig("maintenance")
-        MaintenanceInfo(
-            enabled         = obj.optBoolean("enabled", false),
-            title           = obj.optString("title", ""),
-            message         = obj.optString("message", ""),
-            scope           = obj.optString("scope", "none"),
-            allowOfflinePlay = obj.optBoolean("allow_offline_play", true)
-        )
-    } catch (_: Throwable) {
-        MaintenanceInfo(enabled = false, title = "", message = "", scope = "none", allowOfflinePlay = true)
-    }
 }
 
 /**
