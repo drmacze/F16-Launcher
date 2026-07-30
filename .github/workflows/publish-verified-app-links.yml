@@ -5,7 +5,7 @@ on:
     paths:
       - '.github/workflows/publish-verified-app-links.yml'
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
       - '.github/workflows/publish-verified-app-links.yml'
   workflow_dispatch:
@@ -22,7 +22,8 @@ env:
   PAGES_REPO: drmacze.github.io
   PACKAGE_NAME: com.drmacze.f16launcher
   APP_LINK_HOST: drmacze.github.io
-  APP_LINK_PATH: /launcher/auth/callback
+  APP_LINK_PATH: /launcher/auth/callback/
+  CALLBACK_SCRIPT_HASH: sha256-cjpoJjtwqTrJrUtR+XQOjVCFD1Z/3BUfMwqr/lMpvpk=
 
 jobs:
   validate:
@@ -39,6 +40,7 @@ jobs:
           grep -F 'com.drmacze.f16launcher' "$FILE"
           grep -F '/.well-known/assetlinks.json' "$FILE"
           grep -F 'keytool -list -v' "$FILE"
+          grep -F "script-src 'sha256-cjpoJjtwqTrJrUtR+XQOjVCFD1Z/3BUfMwqr/lMpvpk='" "$FILE"
           ! grep -E 'echo .*SIGNING_KEY|print\(.*SIGNING_KEY' "$FILE"
           python3 - <<'PY'
           import json
@@ -51,8 +53,7 @@ jobs:
                   'sha256_cert_fingerprints': [fingerprint],
               },
           }]
-          encoded = json.dumps(payload, separators=(',', ':'))
-          parsed = json.loads(encoded)
+          parsed = json.loads(json.dumps(payload, separators=(',', ':')))
           assert parsed[0]['target']['package_name'] == 'com.drmacze.f16launcher'
           assert len(parsed[0]['target']['sha256_cert_fingerprints'][0].split(':')) == 32
           print('Verified App Links templates valid')
@@ -143,7 +144,6 @@ jobs:
 
           try:
               request('GET', f'/repos/{owner}/{repo}')
-              print('Root Pages repository already exists.')
           except RuntimeError as error:
               if 'HTTP 404' not in str(error):
                   raise
@@ -156,7 +156,6 @@ jobs:
                   'has_projects': False,
                   'has_wiki': False,
               })
-              print('Root Pages repository created.')
               time.sleep(3)
 
           assetlinks = json.dumps([{
@@ -173,7 +172,7 @@ jobs:
           <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width,initial-scale=1">
-            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-cjpoJjtwqTrJrUtR+XQOjVCFD1Z/3BUfMwqr/lMpvpk='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
             <meta name="referrer" content="no-referrer">
             <title>DLavie Secure Connect</title>
             <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#070807;color:#fff;font:16px system-ui,sans-serif}.card{width:min(430px,calc(100% - 40px));padding:32px;border:1px solid #292b29;border-radius:24px;background:#101210;text-align:center}p{color:#aaa;line-height:1.6}a{color:#fff}</style>
@@ -202,7 +201,6 @@ jobs:
               if sha:
                   payload['sha'] = sha
               request('PUT', f'/repos/{owner}/{repo}/contents/{path}', payload)
-              print(f'Published {path}.')
 
           upsert('.well-known/assetlinks.json', assetlinks, 'security: publish DLavie Android asset links')
           upsert('launcher/auth/callback/index.html', callback_html, 'security: publish verified launcher callback fallback')
@@ -215,7 +213,6 @@ jobs:
                   'build_type': 'legacy',
                   'source': {'branch': 'main', 'path': '/'},
               }, expected=(204,))
-              print('GitHub Pages source refreshed.')
           except RuntimeError as error:
               if 'HTTP 404' not in str(error):
                   raise
@@ -223,7 +220,6 @@ jobs:
                   'build_type': 'legacy',
                   'source': {'branch': 'main', 'path': '/'},
               })
-              print('GitHub Pages enabled.')
           PY
 
       - name: Verify live association and callback
@@ -235,12 +231,13 @@ jobs:
           ASSETLINKS='https://drmacze.github.io/.well-known/assetlinks.json'
           CALLBACK='https://drmacze.github.io/launcher/auth/callback/'
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error --location --max-time 15 \
+            if curl --fail --silent --show-error --max-redirs 0 --max-time 15 \
               -H 'Cache-Control: no-cache' "$ASSETLINKS?run=${GITHUB_RUN_ID}-${attempt}" > /tmp/assetlinks.json && \
-              curl --fail --silent --show-error --location --max-time 15 \
+              curl --fail --silent --show-error --max-redirs 0 --max-time 15 \
               -H 'Cache-Control: no-cache' "$CALLBACK?run=${GITHUB_RUN_ID}-${attempt}" > /tmp/callback.html; then
               if python3 - <<'PY'
-          import json, os
+          import json
+          import os
           with open('/tmp/assetlinks.json', encoding='utf-8') as handle:
               data = json.load(handle)
           target = data[0]['target']
@@ -250,7 +247,9 @@ jobs:
           with open('/tmp/callback.html', encoding='utf-8') as handle:
               html = handle.read()
           assert 'DLavie Secure Connect' in html
-          print('Live App Links association is correct.')
+          assert "script-src 'sha256-cjpoJjtwqTrJrUtR+XQOjVCFD1Z/3BUfMwqr/lMpvpk='" in html
+          assert 'history.replaceState({},document.title,location.pathname);' in html
+          print('Live App Links association and callback are correct.')
           PY
               then
                 exit 0
