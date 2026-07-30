@@ -48,8 +48,11 @@ jobs:
           GUIDED='app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt'
           SCREEN='app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt'
           SSO='app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt'
-          grep -F 'versionCode 330' app/build.gradle
-          grep -F 'versionName "8.5.0"' app/build.gradle
+          VERSION_CODE=$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*/\1/p' app/build.gradle | head -1)
+          VERSION_NAME=$(sed -nE 's/^[[:space:]]*versionName[[:space:]]+"([^"]+)".*/\1/p' app/build.gradle | head -1)
+          test -n "$VERSION_CODE"
+          test "$VERSION_CODE" -ge 330
+          test -n "$VERSION_NAME"
           grep -F 'ProfessionalPortalConnectContent(' "$GUIDED"
           grep -F 'Hubungkan akun DLavie Anda dengan aman.' "$GUIDED"
           grep -F 'AppUpdateChecker.checkForUpdate(context = context)' "$SCREEN"
@@ -79,5 +82,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
-          git commit -m 'feat(v330): apply guided Portal connection experience'
+          git commit -m 'feat: apply guided Portal connection experience'
           git push
