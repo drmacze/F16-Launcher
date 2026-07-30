@@ -1,4 +1,5 @@
 name: Publish Current Launcher
+# Publication trigger for v328 after the legacy auto-release tag race.
 
 on:
   pull_request:
@@ -155,7 +156,7 @@ jobs:
           launcher['latest_version_code'] = version_code
           launcher['latest_version_name'] = version_name
           launcher['apk_url'] = f'https://github.com/drmacze/DLavie-Launcher-Data/releases/download/v26/{apk_name}'
-          note = f'v{version_name}: Portal account SSO and reliable Google login (v{version_code})'
+          note = f'v{version_name}: Professional maintenance control and clean launcher experience (v{version_code})'
           notes = [note] + [item for item in launcher.get('release_notes', []) if item != note]
           launcher['release_notes'] = notes[:8]
           json.dump(manifest, open('/tmp/manifest.json', 'w'), indent=2, ensure_ascii=False)
