@@ -1,7 +1,10 @@
 package com.drmacze.f16launcher
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -11,6 +14,12 @@ import java.net.URL
 object LocalePreferenceSync {
     private const val AUTH_PREFS = "dlavie_auth_session"
     private const val TOKEN_KEY = "access_token"
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    fun pushAsync(context: Context) {
+        val applicationContext = context.applicationContext
+        applicationScope.launch { runCatching { push(applicationContext) } }
+    }
 
     suspend fun push(context: Context): Boolean = withContext(Dispatchers.IO) {
         val token = context.getSharedPreferences(AUTH_PREFS, Context.MODE_PRIVATE)
