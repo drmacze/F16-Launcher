@@ -1,5 +1,5 @@
 name: Apply Maintenance Redesign
-# Final validation marker: v328 maintenance source is materialized and compile-ready.
+# Maintenance UX invariants remain valid for v328 and later launcher releases.
 
 on:
   push:
@@ -51,8 +51,9 @@ jobs:
           set -euo pipefail
           MODERN='app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt'
           MAINTENANCE='app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt'
-          grep -F 'versionCode 328' app/build.gradle
-          grep -F 'versionName "8.4.0"' app/build.gradle
+          VERSION_CODE=$(grep -E '^\s*versionCode\s+' app/build.gradle | head -1 | sed -E 's/.*versionCode\s+([0-9]+).*/\1/')
+          test "$VERSION_CODE" -ge 328
+          grep -E '^\s*versionName\s+"[0-9]+\.[0-9]+\.[0-9]+"' app/build.gradle
           grep -F 'MAINTENANCE_CONTROL_ENDPOINT' app/build.gradle
           grep -F 'object MaintenanceRepository' "$MAINTENANCE"
           ! grep -F 'import androidx.compose.foundation.layout.weight' "$MAINTENANCE"
@@ -105,5 +106,5 @@ jobs:
             app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt \
             app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt \
             app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
-          git commit -m 'feat(v328): apply professional maintenance experience'
+          git commit -m 'chore: keep maintenance source materialized'
           git push
