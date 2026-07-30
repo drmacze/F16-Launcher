@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - feat/v329-clean-portal-connect
+      - feat/v330-guided-portal-connect
       - main
     paths:
       - 'app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt'
       - 'app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt'
       - 'app/build.gradle'
       - '.github/scripts/apply_portal_connect_redesign.py'
@@ -15,6 +17,7 @@ on:
     branches: [main]
     paths:
       - 'app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt'
       - 'app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt'
       - 'app/build.gradle'
       - '.github/scripts/apply_portal_connect_redesign.py'
@@ -38,24 +41,32 @@ jobs:
       - name: Apply deterministic Portal patch
         run: python3 .github/scripts/apply_portal_connect_redesign.py
 
-      - name: Validate focused Portal experience
+      - name: Validate guided Portal experience
         shell: bash
         run: |
           set -euo pipefail
           GUIDED='app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt'
           SCREEN='app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt'
-          grep -F 'versionCode 329' app/build.gradle
-          grep -F 'versionName "8.4.1"' app/build.gradle
+          SSO='app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt'
+          grep -F 'versionCode 330' app/build.gradle
+          grep -F 'versionName "8.5.0"' app/build.gradle
           grep -F 'ProfessionalPortalConnectContent(' "$GUIDED"
           grep -F 'Hubungkan akun DLavie Anda dengan aman.' "$GUIDED"
           grep -F 'AppUpdateChecker.checkForUpdate(context = context)' "$SCREEN"
-          grep -F 'Perbarui Launcher' "$SCREEN"
-          grep -F 'Hubungkan ke Portal' "$SCREEN"
-          grep -F 'Koneksi aman • tanpa menyalin token' "$SCREEN"
+          grep -F 'Masuk ke Portal' "$SCREEN"
+          grep -F 'Setujui koneksi' "$SCREEN"
+          grep -F 'Kembali otomatis' "$SCREEN"
+          grep -F 'Mulai Koneksi Aman' "$SCREEN"
+          grep -F 'PortalConnectStage.WAITING_PORTAL' "$SSO"
+          grep -F 'Memverifikasi koneksi' "$SSO"
+          grep -F 'Akun berhasil terhubung' "$SSO"
+          grep -F 'Buka Portal Lagi' "$SSO"
+          grep -F 'PORTAL_SSO_CALLBACK_URL' "$SSO"
           ! grep -F 'Update to Latest Version' "$GUIDED"
           ! grep -F 'Download & Install' "$GUIDED"
           ! grep -F 'v$latestVersionName' "$GUIDED"
           ! grep -F 'api.github.com/repos/drmacze/F16-Launcher/releases/latest' "$GUIDED"
+          ! grep -F 'Token Portal tidak pernah dikirim melalui tautan.' "$SSO"
 
       - name: Commit materialized source
         if: github.event_name == 'push'
@@ -68,5 +79,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
-          git commit -m 'feat(v329): apply focused Portal connection experience'
+          git commit -m 'feat(v330): apply guided Portal connection experience'
           git push
