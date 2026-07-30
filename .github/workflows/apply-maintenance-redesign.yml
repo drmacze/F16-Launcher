@@ -1,4 +1,5 @@
 name: Apply Maintenance Redesign
+# Final validation marker: v328 maintenance source is materialized and compile-ready.
 
 on:
   push:
