@@ -49,12 +49,13 @@ jobs:
         run: |
           set -euo pipefail
           MODERN='app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt'
+          MAINTENANCE='app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt'
           grep -F 'versionCode 328' app/build.gradle
           grep -F 'versionName "8.4.0"' app/build.gradle
           grep -F 'MAINTENANCE_CONTROL_ENDPOINT' app/build.gradle
-          grep -F 'object MaintenanceRepository' app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt
-          grep -F 'import androidx.compose.foundation.layout.weight' app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt
-          grep -F 'ProfessionalMaintenanceScreen' app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt
+          grep -F 'object MaintenanceRepository' "$MAINTENANCE"
+          ! grep -F 'import androidx.compose.foundation.layout.weight' "$MAINTENANCE"
+          grep -F 'ProfessionalMaintenanceScreen' "$MAINTENANCE"
           grep -F 'MaintenanceStatusBanner' "$MODERN"
           grep -F 'MaintenanceRepository.fetch(context)' "$MODERN"
           grep -F 'allowStaffLogin = true' app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
