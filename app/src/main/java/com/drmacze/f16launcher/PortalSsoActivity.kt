@@ -7,23 +7,34 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.OpenInBrowser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -43,6 +55,24 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.security.SecureRandom
+
+private enum class PortalConnectStage(val progressStep: Int) {
+    PREPARING(1),
+    WAITING_PORTAL(1),
+    VERIFYING(2),
+    SYNCING(3),
+    SUCCESS(3),
+    ERROR(0),
+}
+
+private data class PortalConnectUiState(
+    val stage: PortalConnectStage,
+    val title: String,
+    val message: String,
+    val detail: String = "",
+    val canReopenPortal: Boolean = false,
+    val accountEmail: String = "",
+)
 
 /**
  * Secure Portal-to-launcher account handoff.
@@ -62,12 +92,23 @@ class PortalSsoActivity : ComponentActivity() {
         private const val PORTAL_URL = "https://drmacze.github.io/dlavie-web/"
     }
 
-    private val status = mutableStateOf("Menyiapkan koneksi aman…")
-    private val failed = mutableStateOf(false)
+    private val uiState = mutableStateOf(
+        PortalConnectUiState(
+            stage = PortalConnectStage.PREPARING,
+            title = "Menyiapkan koneksi",
+            message = "Launcher sedang membuat permintaan yang aman untuk akun Portal Anda.",
+        ),
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { PortalSsoScreen(status.value, failed.value, ::returnToLogin) }
+        setContent {
+            PortalSsoScreen(
+                state = uiState.value,
+                onReopenPortal = ::reopenPortal,
+                onBackToLogin = ::returnToLogin,
+            )
+        }
         handleIntent(intent)
     }
 
@@ -80,26 +121,25 @@ class PortalSsoActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         val data = intent?.data
         if (intent?.action != Intent.ACTION_VIEW || data?.scheme != "dlavie") {
-            showFailure("Permintaan koneksi tidak valid.")
+            showFailure("Permintaan koneksi tidak dikenali. Mulai kembali dari halaman awal launcher.")
             return
         }
         when (data.host) {
             "connect" -> beginPortalHandoff(data)
             "portal-complete" -> completePortalHandoff(data)
-            else -> showFailure("Tujuan koneksi tidak dikenal.")
+            else -> showFailure("Tujuan koneksi tidak dikenali. Mulai kembali dari halaman awal launcher.")
         }
     }
 
     private fun beginPortalHandoff(uri: Uri) {
         val capability = uri.getQueryParameter("cap").orEmpty()
         if (!isBase64Url(capability, 32, 128)) {
-            showFailure("Capability Portal tidak tersedia atau sudah tidak valid.")
+            showFailure("Permintaan Portal sudah tidak berlaku. Kembali dan mulai koneksi sekali lagi.")
             return
         }
 
         val verifier = randomSecret(64)
         val state = randomSecret(32)
-        val challenge = sha256Base64Url(verifier)
         getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .clear()
@@ -109,29 +149,73 @@ class PortalSsoActivity : ComponentActivity() {
             .putLong(KEY_STARTED_AT, System.currentTimeMillis())
             .apply()
 
-        status.value = "Memverifikasi akun Portal…"
-        failed.value = false
+        uiState.value = PortalConnectUiState(
+            stage = PortalConnectStage.WAITING_PORTAL,
+            title = "Lanjutkan di Portal",
+            message = "Konfirmasi akun yang ingin digunakan di browser.",
+            detail = "Setelah disetujui, Anda akan kembali ke launcher secara otomatis.",
+            canReopenPortal = true,
+        )
+        openAuthorizationPage(capability, verifier, state)
+    }
 
-        val authorizationUrl = Uri.parse(PORTAL_URL).buildUpon()
+    private fun authorizationUrl(capability: String, verifier: String, state: String): String {
+        val challenge = sha256Base64Url(verifier)
+        return Uri.parse(PORTAL_URL).buildUpon()
             .appendQueryParameter("launcher_sso", "1")
             .appendQueryParameter("cap", capability)
             .appendQueryParameter("challenge", challenge)
             .appendQueryParameter("state", state)
+            .appendQueryParameter("callback_uri", BuildConfig.PORTAL_SSO_CALLBACK_URL)
             .build()
             .toString() + "#/portal"
+    }
 
+    private fun openAuthorizationPage(capability: String, verifier: String, state: String) {
+        val url = authorizationUrl(capability, verifier, state)
         try {
             CustomTabsIntent.Builder()
                 .setShowTitle(true)
                 .build()
-                .launchUrl(this, Uri.parse(authorizationUrl))
+                .launchUrl(this, Uri.parse(url))
         } catch (_: Exception) {
             runCatching {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authorizationUrl)))
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
             }.onFailure {
-                showFailure("Browser tidak dapat dibuka untuk menyelesaikan koneksi.")
+                showFailure(
+                    message = "Browser tidak dapat dibuka. Periksa browser default Anda lalu coba lagi.",
+                    canReopenPortal = true,
+                )
             }
         }
+    }
+
+    private fun reopenPortal() {
+        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val capability = prefs.getString(KEY_CAPABILITY, null).orEmpty()
+        val verifier = prefs.getString(KEY_VERIFIER, null).orEmpty()
+        val state = prefs.getString(KEY_STATE, null).orEmpty()
+        val startedAt = prefs.getLong(KEY_STARTED_AT, 0L)
+        val age = System.currentTimeMillis() - startedAt
+
+        if (!isBase64Url(capability, 32, 128) ||
+            !isBase64Url(verifier, 43, 128) ||
+            !isBase64Url(state, 32, 128) ||
+            age !in 0..MAX_FLOW_AGE_MS
+        ) {
+            clearPending()
+            showFailure("Sesi koneksi sudah berakhir. Kembali dan mulai koneksi baru.")
+            return
+        }
+
+        uiState.value = PortalConnectUiState(
+            stage = PortalConnectStage.WAITING_PORTAL,
+            title = "Lanjutkan di Portal",
+            message = "Konfirmasi akun yang ingin digunakan di browser.",
+            detail = "Kembali ke launcher setelah Portal menyelesaikan persetujuan.",
+            canReopenPortal = true,
+        )
+        openAuthorizationPage(capability, verifier, state)
     }
 
     private fun completePortalHandoff(uri: Uri) {
@@ -149,29 +233,60 @@ class PortalSsoActivity : ComponentActivity() {
             !constantTimeEquals(expectedState, returnedState)
         ) {
             clearPending()
-            showFailure("Kode koneksi tidak lengkap, tidak cocok, atau sudah kedaluwarsa.")
+            showFailure("Kode koneksi tidak cocok atau sudah kedaluwarsa. Mulai kembali dari halaman awal.")
             return
         }
 
-        status.value = "Menghubungkan akun yang sama ke launcher…"
-        failed.value = false
+        uiState.value = PortalConnectUiState(
+            stage = PortalConnectStage.VERIFYING,
+            title = "Memverifikasi koneksi",
+            message = "Launcher sedang memeriksa kode sekali pakai dari Portal.",
+            detail = "Jangan tutup aplikasi sampai verifikasi selesai.",
+        )
+
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { exchange(authCode, verifier, returnedState) }
             }
             result.onSuccess { session ->
+                uiState.value = PortalConnectUiState(
+                    stage = PortalConnectStage.SYNCING,
+                    title = "Menyiapkan akun",
+                    message = "Profil dan preferensi akun sedang disinkronkan ke launcher.",
+                    detail = session.email,
+                )
                 withContext(Dispatchers.IO) { persistAndLoadProfile(session) }
                 clearPending()
-                status.value = "Akun Portal berhasil terhubung. Membuka launcher…"
+                uiState.value = PortalConnectUiState(
+                    stage = PortalConnectStage.SUCCESS,
+                    title = "Akun berhasil terhubung",
+                    message = "Launcher sekarang menggunakan akun Portal yang sama.",
+                    detail = "Membuka halaman utama…",
+                    accountEmail = session.email,
+                )
+                delay(900)
                 startActivity(
                     Intent(this@PortalSsoActivity, ModernLauncherActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
                 )
                 finish()
             }.onFailure { error ->
                 clearPending()
-                showFailure(error.message ?: "Akun Portal tidak dapat dihubungkan.")
+                showFailure(friendlyError(error))
             }
+        }
+    }
+
+    private fun friendlyError(error: Throwable): String {
+        val raw = error.message.orEmpty().lowercase()
+        return when {
+            "expired" in raw || "kedaluwarsa" in raw ->
+                "Sesi koneksi sudah berakhir. Mulai kembali dari halaman awal launcher."
+            "identity" in raw || "identitas" in raw || "tidak cocok" in raw ->
+                "Akun yang dikembalikan Portal tidak cocok. Login kembali dan pilih akun yang benar."
+            "network" in raw || "unable to resolve" in raw || "timeout" in raw ->
+                "Koneksi internet terputus saat memverifikasi akun. Periksa jaringan lalu coba lagi."
+            else -> "Akun belum dapat dihubungkan. Kembali dan mulai koneksi sekali lagi."
         }
     }
 
@@ -259,9 +374,18 @@ class PortalSsoActivity : ComponentActivity() {
         }
     }
 
-    private fun showFailure(message: String) {
-        status.value = message
-        failed.value = true
+    private fun showFailure(message: String, canReopenPortal: Boolean = false) {
+        uiState.value = PortalConnectUiState(
+            stage = PortalConnectStage.ERROR,
+            title = "Koneksi belum selesai",
+            message = message,
+            detail = if (canReopenPortal) {
+                "Permintaan Anda masih aktif dan Portal dapat dibuka kembali."
+            } else {
+                "Tidak ada akun atau token yang disimpan dari proses yang gagal."
+            },
+            canReopenPortal = canReopenPortal,
+        )
     }
 
     private fun clearPending() {
@@ -272,7 +396,7 @@ class PortalSsoActivity : ComponentActivity() {
         clearPending()
         startActivity(
             Intent(this, DLavieGuidedActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
         )
         finish()
     }
@@ -311,21 +435,25 @@ private fun constantTimeEquals(left: String, right: String): Boolean =
     MessageDigest.isEqual(left.toByteArray(Charsets.UTF_8), right.toByteArray(Charsets.UTF_8))
 
 @Composable
-private fun PortalSsoScreen(status: String, failed: Boolean, onBackToLogin: () -> Unit) {
+private fun PortalSsoScreen(
+    state: PortalConnectUiState,
+    onReopenPortal: () -> Unit,
+    onBackToLogin: () -> Unit,
+) {
     MaterialTheme(
         colorScheme = darkColorScheme(
             background = Color.Black,
             surface = Color(0xFF0D0F0E),
             onBackground = Color.White,
             onSurface = Color.White,
-        )
+        ),
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black)
-                    .padding(24.dp),
+                    .padding(horizontal = 22.dp, vertical = 28.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Column(
@@ -334,60 +462,264 @@ private fun PortalSsoScreen(status: String, failed: Boolean, onBackToLogin: () -
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Surface(
-                        modifier = Modifier.size(76.dp),
-                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.size(62.dp),
+                        shape = RoundedCornerShape(19.dp),
                         color = Color(0xFF151716),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text("DL", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black)
+                            Text("DL", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black)
                         }
                     }
+
                     Spacer(Modifier.height(22.dp))
+
                     Text(
-                        "DLavie Secure Connect",
+                        text = state.title,
                         color = Color.White,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(9.dp))
                     Text(
-                        status,
-                        color = if (failed) Color(0xFFFF6B6B) else Color(0xFFB8C0BC),
+                        text = state.message,
+                        color = if (state.stage == PortalConnectStage.ERROR) {
+                            Color(0xFFFF8A8A)
+                        } else {
+                            Color(0xFFB8C0BC)
+                        },
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
                         textAlign = TextAlign.Center,
                     )
-                    Spacer(Modifier.height(24.dp))
-                    if (!failed) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(28.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp,
+                    if (state.detail.isNotBlank()) {
+                        Spacer(Modifier.height(7.dp))
+                        Text(
+                            text = state.detail,
+                            color = Color.White.copy(alpha = 0.42f),
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                            textAlign = TextAlign.Center,
                         )
-                    } else {
-                        Button(
-                            onClick = onBackToLogin,
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color.White,
-                                contentColor = Color.Black,
-                            ),
-                        ) {
-                            Text("Kembali ke Login", fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(Modifier.height(24.dp))
+                    PortalConnectProgress(state)
+                    Spacer(Modifier.height(24.dp))
+
+                    when (state.stage) {
+                        PortalConnectStage.ERROR -> {
+                            if (state.canReopenPortal) {
+                                Button(
+                                    onClick = onReopenPortal,
+                                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color.White,
+                                        contentColor = Color.Black,
+                                    ),
+                                ) {
+                                    Icon(Icons.Rounded.OpenInBrowser, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.size(8.dp))
+                                    Text("Buka Portal Lagi", fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(Modifier.height(8.dp))
+                            }
+                            OutlinedButton(
+                                onClick = onBackToLogin,
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                            ) {
+                                Text("Kembali ke Halaman Awal", color = Color.White, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        PortalConnectStage.WAITING_PORTAL -> {
+                            Button(
+                                onClick = onReopenPortal,
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color.White,
+                                    contentColor = Color.Black,
+                                ),
+                            ) {
+                                Icon(Icons.Rounded.OpenInBrowser, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(8.dp))
+                                Text("Buka Portal Lagi", fontWeight = FontWeight.Bold)
+                            }
+                            TextButton(onClick = onBackToLogin) {
+                                Text("Batalkan koneksi", color = Color.White.copy(alpha = 0.48f), fontSize = 12.sp)
+                            }
+                        }
+                        PortalConnectStage.SUCCESS -> {
+                            Icon(
+                                Icons.Rounded.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF35D07F),
+                                modifier = Modifier.size(32.dp),
+                            )
+                            if (state.accountEmail.isNotBlank()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    state.accountEmail,
+                                    color = Color.White.copy(alpha = 0.62f),
+                                    fontSize = 11.sp,
+                                )
+                            }
+                        }
+                        else -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(28.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp,
+                            )
                         }
                     }
-                    Spacer(Modifier.height(24.dp))
-                    Text(
-                        "Token Portal tidak pernah dikirim melalui tautan. Koneksi memakai kode sekali pakai, PKCE, state, dan verifikasi sesi server.",
-                        color = Color.White.copy(alpha = 0.38f),
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp,
-                        textAlign = TextAlign.Center,
-                    )
+
+                    Spacer(Modifier.height(22.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Lock,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.30f),
+                            modifier = Modifier.size(13.dp),
+                        )
+                        Spacer(Modifier.size(6.dp))
+                        Text(
+                            "Kode sekali pakai • tanpa membagikan password atau token",
+                            color = Color.White.copy(alpha = 0.34f),
+                            fontSize = 10.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun PortalConnectProgress(state: PortalConnectUiState) {
+    val activeStep = state.stage.progressStep
+    val error = state.stage == PortalConnectStage.ERROR
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(0xFF0D0F0E),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
+            verticalArrangement = Arrangement.spacedBy(13.dp),
+        ) {
+            PortalProgressRow(
+                number = 1,
+                label = "Akun Portal",
+                detail = "Masuk dan pilih akun",
+                completed = activeStep > 1 || state.stage == PortalConnectStage.SUCCESS,
+                active = activeStep == 1 && !error,
+            )
+            PortalProgressRow(
+                number = 2,
+                label = "Verifikasi aman",
+                detail = "Kode sekali pakai diperiksa",
+                completed = activeStep > 2 || state.stage == PortalConnectStage.SUCCESS,
+                active = activeStep == 2 && !error,
+            )
+            PortalProgressRow(
+                number = 3,
+                label = "Launcher terhubung",
+                detail = "Profil akun disiapkan",
+                completed = state.stage == PortalConnectStage.SUCCESS,
+                active = activeStep == 3 && state.stage != PortalConnectStage.SUCCESS && !error,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PortalProgressRow(
+    number: Int,
+    label: String,
+    detail: String,
+    completed: Boolean,
+    active: Boolean,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
+    ) {
+        Surface(
+            modifier = Modifier.size(28.dp),
+            shape = CircleShape,
+            color = when {
+                completed -> Color(0xFF35D07F).copy(alpha = 0.16f)
+                active -> Color.White.copy(alpha = 0.10f)
+                else -> Color.White.copy(alpha = 0.04f)
+            },
+            border = BorderStroke(
+                1.dp,
+                when {
+                    completed -> Color(0xFF35D07F).copy(alpha = 0.45f)
+                    active -> Color.White.copy(alpha = 0.28f)
+                    else -> Color.White.copy(alpha = 0.08f)
+                },
+            ),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                if (completed) {
+                    Icon(
+                        Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        tint = Color(0xFF35D07F),
+                        modifier = Modifier.size(16.dp),
+                    )
+                } else {
+                    Text(
+                        number.toString(),
+                        color = if (active) Color.White else Color.White.copy(alpha = 0.38f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                label,
+                color = if (completed || active) Color.White else Color.White.copy(alpha = 0.46f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                detail,
+                color = Color.White.copy(alpha = if (completed || active) 0.42f else 0.25f),
+                fontSize = 10.sp,
+            )
+        }
+        if (stateIconVisible(completed, active)) {
+            if (completed) {
+                Icon(
+                    Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = Color(0xFF35D07F).copy(alpha = 0.7f),
+                    modifier = Modifier.size(15.dp),
+                )
+            } else {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    color = Color.White.copy(alpha = 0.72f),
+                    strokeWidth = 1.6.dp,
+                )
+            }
+        }
+    }
+}
+
+private fun stateIconVisible(completed: Boolean, active: Boolean): Boolean = completed || active
