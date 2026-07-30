@@ -13,8 +13,8 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 36
-        versionCode 329
-        versionName "8.4.1"
+        versionCode 330
+        versionName "8.5.0"
 
         buildConfigField "String", "GITHUB_PUBLIC_DATA_BASE", '"https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/"'
         buildConfigField "String", "SUPABASE_URL", '"https://lvmucsxbmadtsgrxuwmo.supabase.co"'
