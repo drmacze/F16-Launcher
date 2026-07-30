@@ -48,16 +48,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          MODERN='app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt'
           grep -F 'versionCode 328' app/build.gradle
           grep -F 'versionName "8.4.0"' app/build.gradle
           grep -F 'MAINTENANCE_CONTROL_ENDPOINT' app/build.gradle
           grep -F 'object MaintenanceRepository' app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt
           grep -F 'import androidx.compose.foundation.layout.weight' app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt
           grep -F 'ProfessionalMaintenanceScreen' app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt
-          grep -F 'MaintenanceStatusBanner' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
-          grep -F 'MaintenanceRepository.fetch(context)' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
+          grep -F 'MaintenanceStatusBanner' "$MODERN"
+          grep -F 'MaintenanceRepository.fetch(context)' "$MODERN"
           grep -F 'allowStaffLogin = true' app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
-          ! grep -F 'fetchMaintenanceInfo(api)' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
+          test "$(grep -Fc 'val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial" && !maintenanceInfo.staffBypass' "$MODERN")" = '2'
+          ! grep -F '!maintenanceInfo.staffBypass && !maintenanceInfo.staffBypass' "$MODERN"
+          ! grep -F 'fetchMaintenanceInfo(api)' "$MODERN"
           ! grep -F 'fetchMaintenanceConfig()' app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
 
       - name: Verify live maintenance endpoint
