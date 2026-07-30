@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -53,6 +54,10 @@ import kotlinx.coroutines.launch
  * are complete.
  */
 class ShinySplashActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(LanguageManager.applyLocale(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -162,10 +167,11 @@ private val StartupAccent = Color(0xFFE5484D)
 
 @Composable
 private fun DLavieStartupScreen(onFinished: () -> Unit) {
+    val context = LocalContext.current
     val contentAlpha = remember { Animatable(0f) }
     val contentScale = remember { Animatable(0.975f) }
     val progress = remember { Animatable(0f) }
-    var status by remember { mutableStateOf("Memeriksa sesi") }
+    var status by remember { mutableStateOf(LocaleText.get(context, "startup.check_session")) }
 
     LaunchedEffect(Unit) {
         coroutineScope {
@@ -174,11 +180,11 @@ private fun DLavieStartupScreen(onFinished: () -> Unit) {
         }
 
         progress.animateTo(0.28f, tween(260, easing = FastOutSlowInEasing))
-        status = "Menyiapkan layanan"
+        status = LocaleText.get(context, "startup.prepare_services")
         progress.animateTo(0.72f, tween(420, easing = FastOutSlowInEasing))
-        status = "Menyiapkan antarmuka"
+        status = LocaleText.get(context, "startup.prepare_interface")
         progress.animateTo(0.94f, tween(300, easing = FastOutSlowInEasing))
-        status = "Siap"
+        status = LocaleText.get(context, "startup.ready")
         progress.animateTo(1f, tween(150, easing = FastOutSlowInEasing))
         delay(120)
         contentAlpha.animateTo(0f, tween(170, easing = FastOutSlowInEasing))
@@ -240,7 +246,7 @@ private fun DLavieStartupScreen(onFinished: () -> Unit) {
             )
             Spacer(Modifier.height(5.dp))
             Text(
-                text = "MOBILE LAUNCHER",
+                text = LocaleText.get(context, "startup.product"),
                 color = Color.White.copy(alpha = 0.42f),
                 fontSize = 9.sp,
                 fontWeight = FontWeight.SemiBold,

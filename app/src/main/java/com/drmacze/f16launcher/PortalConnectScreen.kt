@@ -129,7 +129,7 @@ internal fun ProfessionalPortalConnectContent(
                         if (apk == null || !apk.exists() || apk.length() <= 1_000_000L) {
                             updatePhase = PortalUpdatePhase.ERROR
                             updateError = result.exceptionOrNull()?.message
-                                ?: "Unduhan tidak dapat diselesaikan."
+                                ?: LocaleText.get(context, "portal.download_failed")
                             return@launch
                         }
 
@@ -138,7 +138,7 @@ internal fun ProfessionalPortalConnectContent(
                         delay(350)
                         if (!AppUpdateChecker.installApk(context, apk)) {
                             updatePhase = PortalUpdatePhase.ERROR
-                            updateError = "Installer Android tidak dapat dibuka."
+                            updateError = LocaleText.get(context, "portal.installer_failed")
                         }
                     }
                 },
@@ -159,6 +159,7 @@ internal fun ProfessionalPortalConnectContent(
 
 @Composable
 private fun PortalVersionStatus(checking: Boolean) {
+    val context = LocalContext.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color.Transparent,
@@ -184,14 +185,14 @@ private fun PortalVersionStatus(checking: Boolean) {
             }
             Column {
                 Text(
-                    text = if (checking) "Memeriksa launcher" else "Launcher siap digunakan",
+                    text = if (checking) LocaleText.get(context, "portal.checking_launcher") else LocaleText.get(context, "portal.launcher_ready"),
                     color = PortalText.copy(alpha = 0.88f),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     text = if (checking) {
-                        "Mengambil status versi terbaru…"
+                        LocaleText.get(context, "portal.fetch_version")
                     } else {
                         "${BuildConfig.VERSION_NAME}  •  Build ${BuildConfig.VERSION_CODE}"
                     },
@@ -212,6 +213,7 @@ private fun PortalUpdateCard(
     onUpdate: () -> Unit,
     onOpenWebsite: () -> Unit,
 ) {
+    val context = LocalContext.current
     val busy = phase == PortalUpdatePhase.DOWNLOADING || phase == PortalUpdatePhase.INSTALLING
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -243,7 +245,7 @@ private fun PortalUpdateCard(
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "PEMBARUAN DIPERLUKAN",
+                        text = LocaleText.get(context, "portal.update_required"),
                         color = PortalRed.copy(alpha = 0.92f),
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
@@ -270,7 +272,7 @@ private fun PortalUpdateCard(
             }
 
             Text(
-                text = "Perbarui launcher terlebih dahulu, lalu hubungkan akun Portal Anda.",
+                text = LocaleText.get(context, "portal.update_description"),
                 color = PortalMuted,
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
@@ -286,9 +288,9 @@ private fun PortalUpdateCard(
                     )
                     Text(
                         text = if (phase == PortalUpdatePhase.INSTALLING) {
-                            "Membuka installer…"
+                            LocaleText.get(context, "portal.opening_installer")
                         } else {
-                            "Mengunduh ${(progress * 100).toInt()}%"
+                            LocaleText.get(context, "portal.downloading", "percent" to (progress * 100).toInt())
                         },
                         color = PortalMuted,
                         fontSize = 10.sp,
@@ -327,10 +329,10 @@ private fun PortalUpdateCard(
                 }
                 Text(
                     text = when (phase) {
-                        PortalUpdatePhase.DOWNLOADING -> "Mengunduh…"
-                        PortalUpdatePhase.INSTALLING -> "Menyiapkan installer…"
-                        PortalUpdatePhase.ERROR -> "Coba Lagi"
-                        PortalUpdatePhase.IDLE -> "Perbarui Launcher"
+                        PortalUpdatePhase.DOWNLOADING -> LocaleText.get(context, "generic.loading")
+                        PortalUpdatePhase.INSTALLING -> LocaleText.get(context, "portal.preparing_installer")
+                        PortalUpdatePhase.ERROR -> LocaleText.get(context, "portal.retry")
+                        PortalUpdatePhase.IDLE -> LocaleText.get(context, "portal.update_launcher")
                     },
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
@@ -347,7 +349,7 @@ private fun PortalUpdateCard(
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     Text(
-                        "Buka halaman download",
+                        LocaleText.get(context, "portal.open_download"),
                         color = PortalMuted,
                         fontSize = 10.sp,
                         textDecoration = TextDecoration.Underline,
@@ -370,6 +372,7 @@ private fun PortalAccountCard(
     updateRequired: Boolean,
     onOpenPortal: () -> Unit,
 ) {
+    val context = LocalContext.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = PortalSurface,
@@ -410,7 +413,7 @@ private fun PortalAccountCard(
                                 .background(if (enabled) PortalGreen else PortalDim, CircleShape),
                         )
                         Text(
-                            text = if (updateRequired) "MENUNGGU PEMBARUAN" else "SIAP DIHUBUNGKAN",
+                            text = if (updateRequired) LocaleText.get(context, "portal.waiting_update") else LocaleText.get(context, "portal.ready_connect"),
                             color = if (enabled) PortalGreen else PortalDim,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
@@ -419,7 +422,7 @@ private fun PortalAccountCard(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "Gunakan akun Portal Anda",
+                        text = LocaleText.get(context, "portal.use_account"),
                         color = PortalText,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
@@ -429,9 +432,9 @@ private fun PortalAccountCard(
 
             Text(
                 text = if (updateRequired) {
-                    "Selesaikan pembaruan launcher untuk melanjutkan koneksi akun."
+                    LocaleText.get(context, "portal.complete_update")
                 } else {
-                    "Pilih akun di Portal, setujui koneksi, lalu launcher akan kembali dan masuk secara otomatis."
+                    LocaleText.get(context, "portal.connection_description")
                 },
                 color = PortalMuted,
                 fontSize = 12.sp,
@@ -442,18 +445,18 @@ private fun PortalAccountCard(
                 Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
                     PortalConnectionStep(
                         number = 1,
-                        title = "Masuk ke Portal",
-                        detail = "Gunakan email atau akun Google Anda.",
+                        title = LocaleText.get(context, "portal.step_login"),
+                        detail = LocaleText.get(context, "portal.step_login_detail"),
                     )
                     PortalConnectionStep(
                         number = 2,
-                        title = "Setujui koneksi",
-                        detail = "Pastikan akun yang aktif sudah benar.",
+                        title = LocaleText.get(context, "portal.step_approve"),
+                        detail = LocaleText.get(context, "portal.step_approve_detail"),
                     )
                     PortalConnectionStep(
                         number = 3,
-                        title = "Kembali otomatis",
-                        detail = "Launcher akan memakai akun Portal yang sama.",
+                        title = LocaleText.get(context, "portal.step_return"),
+                        detail = LocaleText.get(context, "portal.step_return_detail"),
                     )
                 }
             }
@@ -477,7 +480,7 @@ private fun PortalAccountCard(
                 )
                 Spacer(Modifier.size(9.dp))
                 Text(
-                    text = if (updateRequired) "Perbarui launcher terlebih dahulu" else "Mulai Koneksi Aman",
+                    text = if (updateRequired) LocaleText.get(context, "portal.update_first") else LocaleText.get(context, "portal.start"),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -497,9 +500,9 @@ private fun PortalAccountCard(
                 Spacer(Modifier.size(6.dp))
                 Text(
                     text = if (updateRequired) {
-                        "Koneksi tersedia setelah launcher diperbarui"
+                        LocaleText.get(context, "portal.available_after_update")
                     } else {
-                        "Sekitar satu menit • tanpa menyalin token"
+                        LocaleText.get(context, "portal.one_minute")
                     },
                     color = PortalDim,
                     fontSize = 10.sp,
