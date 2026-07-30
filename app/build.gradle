@@ -13,8 +13,8 @@ android {
         applicationId 'com.drmacze.f16launcher'
         minSdk 24
         targetSdk 36
-        versionCode 326
-        versionName "8.2.0"
+        versionCode 327
+        versionName "8.3.0"
 
         buildConfigField "String", "GITHUB_PUBLIC_DATA_BASE", '"https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/"'
         buildConfigField "String", "SUPABASE_URL", '"https://lvmucsxbmadtsgrxuwmo.supabase.co"'
@@ -22,6 +22,7 @@ android {
         buildConfigField "String", "SUPABASE_ANON_KEY", '"sb_publishable_aYFlbWVJMErOHwPsli33QQ_INJD9mhx"'
         buildConfigField "String", "SUPABASE_PUB_KEY", '"sb_publishable_aYFlbWVJMErOHwPsli33QQ_INJD9mhx"'
         buildConfigField "String", "PORTAL_SSO_ENDPOINT", '"https://lvmucsxbmadtsgrxuwmo.supabase.co/functions/v1/launcher-sso"'
+        buildConfigField "String", "PORTAL_SSO_CALLBACK_URL", '"https://drmacze.github.io/launcher/auth/callback/"'
     }
 
     compileOptions {
@@ -63,7 +64,7 @@ dependencies {
     implementation 'io.coil-kt:coil-compose:2.5.0'
     implementation 'io.coil-kt:coil-gif:2.5.0'
     implementation 'com.airbnb.android:lottie-compose:6.3.0'
-    implementation 'com.valentinilk.shimmer:compose-shimmer:1.2.0'
+    implementation 'com.valentinilk:shimmer:compose-shimmer:1.2.0'
     implementation 'androidx.browser:browser:1.8.0'
 
     implementation 'androidx.media3:media3-exoplayer:1.4.1'
