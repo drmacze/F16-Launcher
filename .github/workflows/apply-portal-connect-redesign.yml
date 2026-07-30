@@ -1,0 +1,72 @@
+name: Apply Portal Connect Redesign
+
+on:
+  push:
+    branches:
+      - feat/v329-clean-portal-connect
+      - main
+    paths:
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt'
+      - 'app/build.gradle'
+      - '.github/scripts/apply_portal_connect_redesign.py'
+      - '.github/workflows/apply-portal-connect-redesign.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt'
+      - 'app/build.gradle'
+      - '.github/scripts/apply_portal_connect_redesign.py'
+      - '.github/workflows/apply-portal-connect-redesign.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: portal-connect-redesign-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply deterministic Portal patch
+        run: python3 .github/scripts/apply_portal_connect_redesign.py
+
+      - name: Validate focused Portal experience
+        shell: bash
+        run: |
+          set -euo pipefail
+          GUIDED='app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt'
+          SCREEN='app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt'
+          grep -F 'versionCode 329' app/build.gradle
+          grep -F 'versionName "8.4.1"' app/build.gradle
+          grep -F 'ProfessionalPortalConnectContent(' "$GUIDED"
+          grep -F 'Hubungkan akun DLavie Anda dengan aman.' "$GUIDED"
+          grep -F 'AppUpdateChecker.checkForUpdate(context = context)' "$SCREEN"
+          grep -F 'Perbarui Launcher' "$SCREEN"
+          grep -F 'Hubungkan ke Portal' "$SCREEN"
+          grep -F 'Koneksi aman • tanpa menyalin token' "$SCREEN"
+          ! grep -F 'Update to Latest Version' "$GUIDED"
+          ! grep -F 'Download & Install' "$GUIDED"
+          ! grep -F 'v$latestVersionName' "$GUIDED"
+          ! grep -F 'api.github.com/repos/drmacze/F16-Launcher/releases/latest' "$GUIDED"
+
+      - name: Commit materialized source
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          if git diff --quiet -- app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt; then
+            echo 'Portal source already materialized.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
+          git commit -m 'feat(v329): apply focused Portal connection experience'
+          git push
