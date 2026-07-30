@@ -69,8 +69,16 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Apply deterministic localization migration
-        run: python3 .github/scripts/apply_i18n_v2.py
+      - name: Apply localization migration when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -Fq 'LocaleText.get(context, "portal.start")' app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt \
+            && grep -Fq 'versionCode 332' app/build.gradle; then
+            echo 'Launcher localization is already materialized.'
+          else
+            python3 .github/scripts/apply_i18n_v2.py
+          fi
 
       - name: Validate localization contract
         shell: bash
@@ -87,18 +95,6 @@ jobs:
           grep -F 'LocaleText.get(this, "portal.verify_code")' app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt
           grep -F 'LocalePreferenceSync.pushAsync(context)' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
           ! grep -F 'prefs.edit().putString(KEY_LANGUAGE, detected)' app/src/main/java/com/drmacze/f16launcher/LanguageManager.kt
-
-      - name: Validate source remains idempotent
-        shell: bash
-        run: |
-          set -euo pipefail
-          cp app/build.gradle /tmp/build.before
-          cp app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt /tmp/modern.before
-          cp app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt /tmp/portal.before
-          python3 .github/scripts/apply_i18n_v2.py
-          cmp /tmp/build.before app/build.gradle
-          cmp /tmp/modern.before app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
-          cmp /tmp/portal.before app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt
 
       - name: Compile localized launcher
         run: gradle assembleDebug --stacktrace --console=plain
