@@ -1,0 +1,262 @@
+name: Publish Verified App Links
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/publish-verified-app-links.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/publish-verified-app-links.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verified-app-links
+  cancel-in-progress: false
+
+env:
+  OWNER: drmacze
+  PAGES_REPO: drmacze.github.io
+  PACKAGE_NAME: com.drmacze.f16launcher
+  APP_LINK_HOST: drmacze.github.io
+  APP_LINK_PATH: /launcher/auth/callback
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate workflow invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/publish-verified-app-links.yml'
+          grep -F 'delegate_permission/common.handle_all_urls' "$FILE"
+          grep -F 'com.drmacze.f16launcher' "$FILE"
+          grep -F '/.well-known/assetlinks.json' "$FILE"
+          grep -F 'keytool -list -v' "$FILE"
+          ! grep -E 'echo .*SIGNING_KEY|print\(.*SIGNING_KEY' "$FILE"
+          python3 - <<'PY'
+          import json
+          fingerprint = ':'.join(['AA'] * 32)
+          payload = [{
+              'relation': ['delegate_permission/common.handle_all_urls'],
+              'target': {
+                  'namespace': 'android_app',
+                  'package_name': 'com.drmacze.f16launcher',
+                  'sha256_cert_fingerprints': [fingerprint],
+              },
+          }]
+          encoded = json.dumps(payload, separators=(',', ':'))
+          parsed = json.loads(encoded)
+          assert parsed[0]['target']['package_name'] == 'com.drmacze.f16launcher'
+          assert len(parsed[0]['target']['sha256_cert_fingerprints'][0].split(':')) == 32
+          print('Verified App Links templates valid')
+          PY
+
+  publish:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read release certificate fingerprint
+        id: cert
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_B64"
+          test -n "$KEY_ALIAS"
+          test -n "$KEYSTORE_PASSWORD"
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 -d > /tmp/dlavie-release.keystore
+          OUTPUT=$(keytool -list -v \
+            -keystore /tmp/dlavie-release.keystore \
+            -alias "$KEY_ALIAS" \
+            -storepass "$KEYSTORE_PASSWORD")
+          FINGERPRINT=$(printf '%s\n' "$OUTPUT" | sed -nE 's/^[[:space:]]*SHA256:[[:space:]]*//p' | head -1 | tr '[:lower:]' '[:upper:]')
+          rm -f /tmp/dlavie-release.keystore
+          if ! printf '%s' "$FINGERPRINT" | grep -Eq '^([0-9A-F]{2}:){31}[0-9A-F]{2}$'; then
+            echo 'Release certificate SHA-256 fingerprint could not be derived safely.' >&2
+            exit 1
+          fi
+          echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
+          echo "Certificate fingerprint derived (${#FINGERPRINT} characters)."
+
+      - name: Create or update root Pages repository
+        shell: bash
+        env:
+          GH_ADMIN_TOKEN: ${{ secrets.DLAVIE_DATA_TOKEN }}
+          CERT_FINGERPRINT: ${{ steps.cert.outputs.fingerprint }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_ADMIN_TOKEN"
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+
+          token = os.environ['GH_ADMIN_TOKEN']
+          owner = os.environ['OWNER']
+          repo = os.environ['PAGES_REPO']
+          package = os.environ['PACKAGE_NAME']
+          fingerprint = os.environ['CERT_FINGERPRINT']
+          api = 'https://api.github.com'
+
+          def request(method, path, payload=None, expected=(200, 201)):
+              data = None if payload is None else json.dumps(payload).encode('utf-8')
+              req = urllib.request.Request(
+                  api + path,
+                  data=data,
+                  method=method,
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Accept': 'application/vnd.github+json',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                      'User-Agent': 'DLavie-AppLinks-Publisher',
+                      'Content-Type': 'application/json',
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      body = response.read().decode('utf-8')
+                      if response.status not in expected:
+                          raise RuntimeError(f'GitHub API {method} {path}: HTTP {response.status}')
+                      return json.loads(body) if body else {}
+              except urllib.error.HTTPError as error:
+                  body = error.read().decode('utf-8', errors='replace')
+                  if error.code in expected:
+                      return json.loads(body) if body else {}
+                  raise RuntimeError(f'GitHub API {method} {path}: HTTP {error.code}: {body[:300]}') from error
+
+          try:
+              request('GET', f'/repos/{owner}/{repo}')
+              print('Root Pages repository already exists.')
+          except RuntimeError as error:
+              if 'HTTP 404' not in str(error):
+                  raise
+              request('POST', '/user/repos', {
+                  'name': repo,
+                  'description': 'DLavie verified Android App Links and secure launcher callback.',
+                  'private': False,
+                  'auto_init': True,
+                  'has_issues': False,
+                  'has_projects': False,
+                  'has_wiki': False,
+              })
+              print('Root Pages repository created.')
+              time.sleep(3)
+
+          assetlinks = json.dumps([{
+              'relation': ['delegate_permission/common.handle_all_urls'],
+              'target': {
+                  'namespace': 'android_app',
+                  'package_name': package,
+                  'sha256_cert_fingerprints': [fingerprint],
+              },
+          }], indent=2) + '\n'
+
+          callback_html = '''<!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+            <meta name="referrer" content="no-referrer">
+            <title>DLavie Secure Connect</title>
+            <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#070807;color:#fff;font:16px system-ui,sans-serif}.card{width:min(430px,calc(100% - 40px));padding:32px;border:1px solid #292b29;border-radius:24px;background:#101210;text-align:center}p{color:#aaa;line-height:1.6}a{color:#fff}</style>
+          </head>
+          <body>
+            <main class="card"><h1>DLavie Secure Connect</h1><p>The verified launcher did not open. Install or update the official DLavie Launcher, then start Connect again from the Portal.</p><p><a href="/dlavie-web/">Return to DLavie Portal</a></p></main>
+            <script>history.replaceState({},document.title,location.pathname);</script>
+          </body>
+          </html>'''
+
+          root_html = '''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=/dlavie-web/"><meta name="referrer" content="no-referrer"><title>DLavie</title></head><body><a href="/dlavie-web/">Open DLavie Portal</a></body></html>'''
+
+          def upsert(path, text, message):
+              sha = None
+              try:
+                  current = request('GET', f'/repos/{owner}/{repo}/contents/{path}')
+                  sha = current.get('sha')
+              except RuntimeError as error:
+                  if 'HTTP 404' not in str(error):
+                      raise
+              payload = {
+                  'message': message,
+                  'content': base64.b64encode(text.encode('utf-8')).decode('ascii'),
+                  'branch': 'main',
+              }
+              if sha:
+                  payload['sha'] = sha
+              request('PUT', f'/repos/{owner}/{repo}/contents/{path}', payload)
+              print(f'Published {path}.')
+
+          upsert('.well-known/assetlinks.json', assetlinks, 'security: publish DLavie Android asset links')
+          upsert('launcher/auth/callback/index.html', callback_html, 'security: publish verified launcher callback fallback')
+          upsert('index.html', root_html, 'chore: route root site to DLavie Portal')
+          upsert('.nojekyll', '', 'chore: disable Jekyll processing')
+
+          try:
+              request('GET', f'/repos/{owner}/{repo}/pages')
+              request('PUT', f'/repos/{owner}/{repo}/pages', {
+                  'build_type': 'legacy',
+                  'source': {'branch': 'main', 'path': '/'},
+              }, expected=(204,))
+              print('GitHub Pages source refreshed.')
+          except RuntimeError as error:
+              if 'HTTP 404' not in str(error):
+                  raise
+              request('POST', f'/repos/{owner}/{repo}/pages', {
+                  'build_type': 'legacy',
+                  'source': {'branch': 'main', 'path': '/'},
+              })
+              print('GitHub Pages enabled.')
+          PY
+
+      - name: Verify live association and callback
+        shell: bash
+        env:
+          CERT_FINGERPRINT: ${{ steps.cert.outputs.fingerprint }}
+        run: |
+          set -euo pipefail
+          ASSETLINKS='https://drmacze.github.io/.well-known/assetlinks.json'
+          CALLBACK='https://drmacze.github.io/launcher/auth/callback/'
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --location --max-time 15 \
+              -H 'Cache-Control: no-cache' "$ASSETLINKS?run=${GITHUB_RUN_ID}-${attempt}" > /tmp/assetlinks.json && \
+              curl --fail --silent --show-error --location --max-time 15 \
+              -H 'Cache-Control: no-cache' "$CALLBACK?run=${GITHUB_RUN_ID}-${attempt}" > /tmp/callback.html; then
+              if python3 - <<'PY'
+          import json, os
+          with open('/tmp/assetlinks.json', encoding='utf-8') as handle:
+              data = json.load(handle)
+          target = data[0]['target']
+          assert target['namespace'] == 'android_app'
+          assert target['package_name'] == 'com.drmacze.f16launcher'
+          assert os.environ['CERT_FINGERPRINT'] in target['sha256_cert_fingerprints']
+          with open('/tmp/callback.html', encoding='utf-8') as handle:
+              html = handle.read()
+          assert 'DLavie Secure Connect' in html
+          print('Live App Links association is correct.')
+          PY
+              then
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          echo 'GitHub Pages association did not become available in time.' >&2
+          exit 1
