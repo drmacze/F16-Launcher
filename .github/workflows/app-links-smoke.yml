@@ -1,0 +1,140 @@
+name: App Links Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - 'app/build.gradle'
+      - 'app/src/main/AndroidManifest.xml'
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalAppLinkActivities.kt'
+      - '.github/workflows/app-links-smoke.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/build.gradle'
+      - 'app/src/main/AndroidManifest.xml'
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalAppLinkActivities.kt'
+      - '.github/workflows/app-links-smoke.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-links-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_PACKAGE: com.drmacze.f16launcher
+  EXPECTED_HOST: drmacze.github.io
+  EXPECTED_PATH: /launcher/auth/callback/
+  EXPECTED_CALLBACK: https://drmacze.github.io/launcher/auth/callback/
+  EXPECTED_CERT_SHA256: 4F:6C:88:4E:E6:DF:76:4B:B5:CD:B2:B6:B6:C1:3A:FA:95:16:4B:A9:20:7E:E6:95:27:4F:51:FC:DA:DC:09:B0
+
+jobs:
+  app-links-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Android manifest and BuildConfig
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          android = '{http://schemas.android.com/apk/res/android}'
+          manifest = ET.parse('app/src/main/AndroidManifest.xml').getroot()
+          application = manifest.find('application')
+          assert application is not None
+
+          expected_activity = '.VerifiedPortalCallbackActivity'
+          verified = None
+          for activity in application.findall('activity'):
+              if activity.get(android + 'name') == expected_activity:
+                  verified = activity
+                  break
+          assert verified is not None, 'VerifiedPortalCallbackActivity missing'
+          assert verified.get(android + 'exported') == 'true'
+
+          matching_filters = []
+          for intent_filter in verified.findall('intent-filter'):
+              if intent_filter.get(android + 'autoVerify') != 'true':
+                  continue
+              actions = {node.get(android + 'name') for node in intent_filter.findall('action')}
+              categories = {node.get(android + 'name') for node in intent_filter.findall('category')}
+              for data in intent_filter.findall('data'):
+                  if (
+                      data.get(android + 'scheme') == 'https'
+                      and data.get(android + 'host') == os.environ['EXPECTED_HOST']
+                      and data.get(android + 'pathPrefix') == os.environ['EXPECTED_PATH']
+                      and 'android.intent.action.VIEW' in actions
+                      and 'android.intent.category.DEFAULT' in categories
+                      and 'android.intent.category.BROWSABLE' in categories
+                  ):
+                      matching_filters.append(intent_filter)
+          assert len(matching_filters) == 1, 'exactly one verified HTTPS filter is required'
+
+          gradle = Path('app/build.gradle').read_text(encoding='utf-8')
+          assert re.search(r'\bversionCode\s+327\b', gradle)
+          assert 'versionName "8.3.0"' in gradle
+          assert f'PORTAL_SSO_CALLBACK_URL", \'"{os.environ["EXPECTED_CALLBACK"]}"\'' in gradle
+
+          source = Path('app/src/main/java/com/drmacze/f16launcher/PortalAppLinkActivities.kt').read_text(encoding='utf-8')
+          required = [
+              'BuildConfig.PORTAL_SSO_CALLBACK_URL',
+              'isTrustedVerifiedCallback',
+              'uri.queryParameterNames == setOf("code", "state")',
+              'Intent(this, PortalSsoActivity::class.java)',
+          ]
+          for marker in required:
+              assert marker in source, f'missing security marker: {marker}'
+          assert 'intent://connect?token=' not in source
+          assert 'access_token' not in source
+          assert 'refresh_token' not in source
+          print('Android verified App Link contract is valid.')
+          PY
+
+      - name: Verify live assetlinks without redirect
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://${EXPECTED_HOST}/.well-known/assetlinks.json"
+          curl --fail --silent --show-error --max-redirs 0 \
+            -H 'Cache-Control: no-cache' \
+            "${URL}?run=${GITHUB_RUN_ID}" > /tmp/assetlinks.json
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open('/tmp/assetlinks.json', encoding='utf-8') as handle:
+              data = json.load(handle)
+          matches = []
+          for statement in data:
+              target = statement.get('target') or {}
+              relations = statement.get('relation') or []
+              if (
+                  'delegate_permission/common.handle_all_urls' in relations
+                  and target.get('namespace') == 'android_app'
+                  and target.get('package_name') == os.environ['EXPECTED_PACKAGE']
+                  and os.environ['EXPECTED_CERT_SHA256'] in (target.get('sha256_cert_fingerprints') or [])
+              ):
+                  matches.append(statement)
+          assert len(matches) == 1, 'live assetlinks association does not match the release app'
+          print('Live assetlinks association matches package and release certificate.')
+          PY
+
+      - name: Verify safe callback fallback page
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-redirs 0 \
+            -H 'Cache-Control: no-cache' \
+            "${EXPECTED_CALLBACK}?run=${GITHUB_RUN_ID}" > /tmp/callback.html
+          grep -F 'DLavie Secure Connect' /tmp/callback.html
+          grep -F "script-src 'sha256-cjpoJjtwqTrJrUtR+XQOjVCFD1Z/3BUfMwqr/lMpvpk='" /tmp/callback.html
+          grep -F 'history.replaceState({},document.title,location.pathname);' /tmp/callback.html
+          ! grep -E 'access_token|refresh_token|dlavie://portal-complete' /tmp/callback.html
+          echo 'Callback fallback page is live and does not forward credentials.'
