@@ -400,16 +400,26 @@ private fun PortalAccountCard(
                     }
                 }
                 Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Box(
+                            Modifier
+                                .size(6.dp)
+                                .background(if (enabled) PortalGreen else PortalDim, CircleShape),
+                        )
+                        Text(
+                            text = if (updateRequired) "MENUNGGU PEMBARUAN" else "SIAP DIHUBUNGKAN",
+                            color = if (enabled) PortalGreen else PortalDim,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.7.sp,
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "AKUN DLAVIE",
-                        color = PortalDim,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp,
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        text = "Hubungkan ke Portal",
+                        text = "Gunakan akun Portal Anda",
                         color = PortalText,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
@@ -421,12 +431,32 @@ private fun PortalAccountCard(
                 text = if (updateRequired) {
                     "Selesaikan pembaruan launcher untuk melanjutkan koneksi akun."
                 } else {
-                    "Masuk melalui browser. Setelah disetujui, akun yang sama akan terhubung otomatis ke launcher."
+                    "Pilih akun di Portal, setujui koneksi, lalu launcher akan kembali dan masuk secara otomatis."
                 },
                 color = PortalMuted,
                 fontSize = 12.sp,
                 lineHeight = 18.sp,
             )
+
+            if (!updateRequired) {
+                Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                    PortalConnectionStep(
+                        number = 1,
+                        title = "Masuk ke Portal",
+                        detail = "Gunakan email atau akun Google Anda.",
+                    )
+                    PortalConnectionStep(
+                        number = 2,
+                        title = "Setujui koneksi",
+                        detail = "Pastikan akun yang aktif sudah benar.",
+                    )
+                    PortalConnectionStep(
+                        number = 3,
+                        title = "Kembali otomatis",
+                        detail = "Launcher akan memakai akun Portal yang sama.",
+                    )
+                }
+            }
 
             Button(
                 onClick = onOpenPortal,
@@ -447,7 +477,7 @@ private fun PortalAccountCard(
                 )
                 Spacer(Modifier.size(9.dp))
                 Text(
-                    text = if (updateRequired) "Perbarui launcher terlebih dahulu" else "Hubungkan ke Portal",
+                    text = if (updateRequired) "Perbarui launcher terlebih dahulu" else "Mulai Koneksi Aman",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -466,13 +496,66 @@ private fun PortalAccountCard(
                 )
                 Spacer(Modifier.size(6.dp))
                 Text(
-                    text = "Koneksi aman • tanpa menyalin token",
+                    text = if (updateRequired) {
+                        "Koneksi tersedia setelah launcher diperbarui"
+                    } else {
+                        "Sekitar satu menit • tanpa menyalin token"
+                    },
                     color = PortalDim,
                     fontSize = 10.sp,
                     textAlign = TextAlign.Center,
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun PortalConnectionStep(
+    number: Int,
+    title: String,
+    detail: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
+    ) {
+        Surface(
+            modifier = Modifier.size(28.dp),
+            shape = CircleShape,
+            color = Color.White.copy(alpha = 0.06f),
+            border = BorderStroke(1.dp, PortalBorder),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = number.toString(),
+                    color = PortalText.copy(alpha = 0.86f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = PortalText.copy(alpha = 0.9f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = detail,
+                color = PortalDim,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+            )
+        }
+        Icon(
+            Icons.Rounded.CheckCircle,
+            contentDescription = null,
+            tint = PortalDim.copy(alpha = 0.32f),
+            modifier = Modifier.size(15.dp),
+        )
     }
 }
 
