@@ -1,0 +1,98 @@
+name: Apply Launcher I18N v2
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/build.gradle'
+      - 'app/src/main/AndroidManifest.xml'
+      - 'app/src/main/java/com/drmacze/f16launcher/LanguageManager.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/LocaleText.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/LocalePreferenceSync.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/ShinySplashActivity.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt'
+      - '.github/scripts/apply_i18n_v2.py'
+      - '.github/workflows/apply-i18n-v2.yml'
+  push:
+    branches:
+      - feat/v332-i18n-v2
+      - main
+    paths:
+      - 'app/build.gradle'
+      - 'app/src/main/AndroidManifest.xml'
+      - 'app/src/main/java/com/drmacze/f16launcher/LanguageManager.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/LocaleText.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/LocalePreferenceSync.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/ShinySplashActivity.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt'
+      - '.github/scripts/apply_i18n_v2.py'
+      - '.github/workflows/apply-i18n-v2.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: launcher-i18n-v2-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply deterministic localization migration
+        run: python3 .github/scripts/apply_i18n_v2.py
+
+      - name: Validate localization contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'versionCode 332' app/build.gradle
+          grep -F 'versionName "8.6.0"' app/build.gradle
+          grep -F 'android:supportsRtl="true"' app/src/main/AndroidManifest.xml
+          grep -F 'enum class PreferenceMode { AUTO, MANUAL }' app/src/main/java/com/drmacze/f16launcher/LanguageManager.kt
+          grep -F 'setLayoutDirection(locale)' app/src/main/java/com/drmacze/f16launcher/LanguageManager.kt
+          grep -F 'preferred_locale' app/src/main/java/com/drmacze/f16launcher/LocalePreferenceSync.kt
+          grep -F 'LocaleText.get(context, "startup.check_session")' app/src/main/java/com/drmacze/f16launcher/ShinySplashActivity.kt
+          grep -F 'LocaleText.get(context, "portal.start")' app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt
+          grep -F 'LocaleText.get(this, "portal.verify_code")' app/src/main/java/com/drmacze/f16launcher/PortalSsoActivity.kt
+          grep -F 'LocalePreferenceSync.pushAsync(context)' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
+          ! grep -F 'prefs.edit().putString(KEY_LANGUAGE, detected)' app/src/main/java/com/drmacze/f16launcher/LanguageManager.kt
+          ! grep -F 'Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt | grep -F 'getSupportedLanguages().forEach'
+
+      - name: Validate source remains idempotent
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp app/build.gradle /tmp/build.before
+          cp app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt /tmp/modern.before
+          cp app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt /tmp/portal.before
+          python3 .github/scripts/apply_i18n_v2.py
+          cmp /tmp/build.before app/build.gradle
+          cmp /tmp/modern.before app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
+          cmp /tmp/portal.before app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt
+
+      - name: Commit materialized source
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'Launcher localization already materialized.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle app/src/main/AndroidManifest.xml app/src/main/java/com/drmacze/f16launcher
+          git commit -m 'feat(v332): materialize shared localization system'
+          git push
