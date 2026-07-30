@@ -11,6 +11,7 @@ on:
       - 'app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt'
       - 'app/build.gradle'
       - '.github/scripts/apply_maintenance_redesign.py'
+      - '.github/scripts/fix_maintenance_system_source.py'
       - '.github/workflows/apply-maintenance-redesign.yml'
   pull_request:
     branches: [main]
@@ -20,6 +21,7 @@ on:
       - 'app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt'
       - 'app/build.gradle'
       - '.github/scripts/apply_maintenance_redesign.py'
+      - '.github/scripts/fix_maintenance_system_source.py'
       - '.github/workflows/apply-maintenance-redesign.yml'
 
 permissions:
@@ -38,7 +40,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply deterministic maintenance patch
-        run: python3 .github/scripts/apply_maintenance_redesign.py
+        run: |
+          python3 .github/scripts/apply_maintenance_redesign.py
+          python3 .github/scripts/fix_maintenance_system_source.py
 
       - name: Validate maintenance invariants
         shell: bash
@@ -48,6 +52,7 @@ jobs:
           grep -F 'versionName "8.4.0"' app/build.gradle
           grep -F 'MAINTENANCE_CONTROL_ENDPOINT' app/build.gradle
           grep -F 'object MaintenanceRepository' app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt
+          grep -F 'import androidx.compose.foundation.layout.weight' app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt
           grep -F 'ProfessionalMaintenanceScreen' app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt
           grep -F 'MaintenanceStatusBanner' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
           grep -F 'MaintenanceRepository.fetch(context)' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
@@ -83,6 +88,7 @@ jobs:
         shell: bash
         run: |
           if git diff --quiet -- \
+            app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt \
             app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt \
             app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt; then
             echo 'Android source already materialized.'
@@ -91,6 +97,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
+            app/src/main/java/com/drmacze/f16launcher/MaintenanceSystem.kt \
             app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt \
             app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt
           git commit -m 'feat(v328): apply professional maintenance experience'
