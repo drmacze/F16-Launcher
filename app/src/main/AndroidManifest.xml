@@ -87,9 +87,27 @@
             android:theme="@style/AppTheme.Splash" />
 
         <!--
-          v326: the Portal handoff has a dedicated, minimal exported surface. It accepts
-          only a short-lived capability or one-time authorization code; session tokens
-          are exchanged directly with the backend over HTTPS.
+          v327: the custom-scheme connect entry point only creates a launcher-bound PKCE
+          request. It never accepts a session or authorization code.
+        -->
+        <activity
+            android:name=".PortalConnectActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:label="DLavie Secure Connect"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dlavie" android:host="connect" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          v326 compatibility surface. New launchers return through the verified HTTPS
+          App Link below; this legacy one-time-code callback remains for installed v326.
         -->
         <activity
             android:name=".PortalSsoActivity"
@@ -103,13 +121,30 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="dlavie" android:host="connect" />
+                <data android:scheme="dlavie" android:host="portal-complete" />
             </intent-filter>
-            <intent-filter>
+        </activity>
+
+        <!--
+          Verified App Link callback. Android verifies drmacze.github.io against
+          /.well-known/assetlinks.json and the release certificate before auto-routing.
+        -->
+        <activity
+            android:name=".VerifiedPortalCallbackActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:label="DLavie Secure Connect"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="dlavie" android:host="portal-complete" />
+                <data
+                    android:scheme="https"
+                    android:host="drmacze.github.io"
+                    android:pathPrefix="/launcher/auth/callback/" />
             </intent-filter>
         </activity>
 
