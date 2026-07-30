@@ -372,13 +372,7 @@ enum class Page(val label: String, val navIcon: ImageVector) {
 // ─── Activity ─────────────────────────────────────────────────────────────────
 class ModernLauncherActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: android.content.Context) {
-        // Apply language locale before activity creates
-        val langCode = LanguageManager.getCurrentLanguage(newBase)
-        val locale = java.util.Locale(langCode)
-        java.util.Locale.setDefault(locale)
-        val config = android.content.res.Configuration(newBase.resources.configuration)
-        config.setLocale(locale)
-        super.attachBaseContext(newBase.createConfigurationContext(config))
+        super.attachBaseContext(LanguageManager.applyLocale(newBase))
     }
 
     // ── DLavie Portal Connect: deep link handler ──
@@ -9547,104 +9541,80 @@ fun FcmDiagnosticCard(api: CommunityApi, context: android.content.Context) {
  */
 @Composable
 fun LanguageSettingsCard(context: android.content.Context) {
-    var currentLang by remember { mutableStateOf(LanguageManager.getCurrentLanguage(context)) }
-    var isAuto by remember { mutableStateOf(LanguageManager.isAutoDetected(context)) }
+    var preference by remember { mutableStateOf(LanguageManager.getPreference(context)) }
     val haptic = LocalHapticFeedback.current
+    fun label(key: String) = LocaleText.get(context, key)
 
     GlassCard {
-        TTSectionHeader(title = "Bahasa", icon = Icons.Rounded.Language)
+        TTSectionHeader(title = label("language.title"), icon = Icons.Rounded.Language)
         Spacer(Modifier.height(TTSpacing.sm))
-
-        // Current language + mode
-        ProfRow("Bahasa Saat Ini", LanguageManager.getCurrentLanguageName(context))
-        ProfRow("Mode", if (isAuto) "Auto (mengikuti perangkat)" else "Manual")
+        ProfRow(label("language.current"), LanguageManager.getCurrentLanguageName(context))
+        ProfRow(
+            label("language.mode"),
+            if (preference.mode == LanguageManager.PreferenceMode.AUTO) label("language.auto_mode") else label("language.manual_mode"),
+        )
         Spacer(Modifier.height(TTSpacing.md))
-
-        // Language selection buttons — always visible
-        Text("Pilih Bahasa", color = SoftText, fontSize = 12.sp, fontWeight = FontWeight.Medium, fontFamily = InterFontFamily)
+        Text(label("language.select"), color = SoftText, fontSize = 12.sp, fontWeight = FontWeight.Medium, fontFamily = InterFontFamily)
         Spacer(Modifier.height(TTSpacing.xs))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)
+
+        val autoSelected = preference.mode == LanguageManager.PreferenceMode.AUTO
+        Surface(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                LanguageManager.resetToAutoDetect(context)
+                preference = LanguageManager.getPreference(context)
+                LocalePreferenceSync.pushAsync(context)
+                (context as? android.app.Activity)?.recreate()
+            },
+            color = if (autoSelected) TextWhite.copy(alpha = 0.15f) else Surface1,
+            border = BorderStroke(1.dp, if (autoSelected) TextWhite.copy(alpha = 0.5f) else GlassStroke),
+            shape = RoundedCornerShape(12.dp),
         ) {
-            LanguageManager.getSupportedLanguages().forEach { lang ->
-                val isSelected = currentLang == lang.code
-                Surface(
-                    Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
-                        .clickable {
+            Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("🌐", fontSize = 19.sp)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(label("language.use_device"), color = TextWhite, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text(label("language.auto_description"), color = SubText, fontSize = 10.sp, lineHeight = 14.sp)
+                }
+                if (autoSelected) Icon(Icons.Rounded.CheckCircle, null, tint = TextWhite, modifier = Modifier.size(18.dp))
+            }
+        }
+
+        Spacer(Modifier.height(TTSpacing.sm))
+        LanguageManager.getSupportedLanguages().chunked(2).forEach { rowLanguages ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(TTSpacing.sm)) {
+                rowLanguages.forEach { lang ->
+                    val selected = preference.mode == LanguageManager.PreferenceMode.MANUAL && preference.resolvedCode == lang.code
+                    Surface(
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             LanguageManager.setLanguage(context, lang.code)
-                            currentLang = lang.code
-                            isAuto = false
-                            // Recreate activity to apply language immediately
+                            preference = LanguageManager.getPreference(context)
+                            LocalePreferenceSync.pushAsync(context)
                             (context as? android.app.Activity)?.recreate()
                         },
-                    color = if (isSelected) TextWhite.copy(alpha = 0.15f) else Surface1,
-                    border = BorderStroke(
-                        1.dp,
-                        if (isSelected) TextWhite.copy(alpha = 0.5f) else GlassStroke
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(
-                        Modifier.padding(vertical = 12.dp, horizontal = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        color = if (selected) TextWhite.copy(alpha = 0.15f) else Surface1,
+                        border = BorderStroke(1.dp, if (selected) TextWhite.copy(alpha = 0.5f) else GlassStroke),
+                        shape = RoundedCornerShape(12.dp),
                     ) {
-                        Icon(
-                            Icons.Rounded.Language,
-                            contentDescription = null,
-                            tint = if (isSelected) TextWhite else SubText,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            lang.nativeName,
-                            color = if (isSelected) TextWhite else SoftText,
-                            fontSize = 11.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            fontFamily = InterFontFamily
-                        )
+                        Row(Modifier.padding(horizontal = 11.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(lang.flag, fontSize = 18.sp)
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(lang.nativeName, color = if (selected) TextWhite else SoftText, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
+                                Text(lang.displayName, color = SubText, fontSize = 9.sp, maxLines = 1)
+                            }
+                            if (selected) Icon(Icons.Rounded.CheckCircle, null, tint = TextWhite, modifier = Modifier.size(16.dp))
+                        }
                     }
                 }
+                if (rowLanguages.size == 1) Spacer(Modifier.weight(1f))
             }
-        }
-
-        // Auto-detect reset button (only show when user has manually selected)
-        if (!isAuto) {
             Spacer(Modifier.height(TTSpacing.sm))
-            Surface(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                    .clickable {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        LanguageManager.resetToAutoDetect(context)
-                        currentLang = LanguageManager.getCurrentLanguage(context)
-                        isAuto = true
-                        // Recreate activity to apply language immediately
-                        (context as? android.app.Activity)?.recreate()
-                    },
-                color = Surface1,
-                border = BorderStroke(1.dp, GlassStroke),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    Modifier.padding(12.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Rounded.Refresh, null, tint = SubText, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Gunakan bahasa perangkat (Auto)", color = SubText, fontSize = 12.sp, fontFamily = InterFontFamily)
-                }
-            }
         }
 
-        Spacer(Modifier.height(TTSpacing.xs))
-        Text(
-            "Restart aplikasi untuk menerapkan perubahan bahasa.",
-            color = SubText,
-            fontSize = 10.sp,
-            fontFamily = InterFontFamily
-        )
+        Text(label("language.applied"), color = SubText, fontSize = 10.sp, fontFamily = InterFontFamily)
     }
 }
 

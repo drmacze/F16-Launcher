@@ -404,7 +404,7 @@ fun ProfessionalMaintenanceScreen(
                 } else {
                     Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Coba Lagi", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(LocaleText.get(context, "maintenance.retry"), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
             }
 
@@ -419,7 +419,7 @@ fun ProfessionalMaintenanceScreen(
                 ) {
                     Icon(Icons.Rounded.SportsEsports, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Main Offline", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text(LocaleText.get(context, "maintenance.offline"), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 }
             }
 
@@ -433,7 +433,7 @@ fun ProfessionalMaintenanceScreen(
                     )
                     Spacer(Modifier.width(7.dp))
                     Text(
-                        if (isStaff) "Masuk dengan akses staff" else "Login staff",
+                        LocaleText.get(context, "maintenance.staff"),
                         color = Color(0xFF777777),
                         fontSize = 11.sp,
                     )
@@ -499,7 +499,7 @@ fun MaintenanceStatusBanner(maintenance: MaintenanceInfo) {
                     if (maintenance.staffBypass) {
                         Surface(shape = RoundedCornerShape(999.dp), color = Color(0x14FFFFFF)) {
                             Text(
-                                "STAFF ACCESS",
+                                LocaleText.get(LocalContext.current, "maintenance.staff").uppercase(Locale.getDefault()),
                                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                                 color = Color(0xFF999999),
                                 fontSize = 8.sp,
@@ -510,7 +510,7 @@ fun MaintenanceStatusBanner(maintenance: MaintenanceInfo) {
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    maintenance.title.ifBlank { "Pemeliharaan layanan" },
+                    maintenance.title.ifBlank { LocaleText.get(LocalContext.current, "maintenance.label") },
                     color = Color.White,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,

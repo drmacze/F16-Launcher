@@ -128,6 +128,10 @@ private const val SHIZUKU_REQUEST = 2026
 
 class DLavieGuidedActivity : ComponentActivity() {
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LanguageManager.applyLocale(newBase))
+    }
+
     // v6.8.4: Deep link callback state — saat Google OAuth redirect ke
     // dlavie://auth-callback#access_token=...&refresh_token=..., kita parse
     // token dan langsung save session → navigate ke launcher.

@@ -82,6 +82,10 @@ private data class PortalConnectUiState(
  * one-time authorization code directly with the backend over HTTPS.
  */
 class PortalSsoActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LanguageManager.applyLocale(newBase))
+    }
+
     companion object {
         private const val PREFS = "dlavie_portal_sso_pending"
         private const val KEY_CAPABILITY = "capability"
@@ -102,6 +106,11 @@ class PortalSsoActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        uiState.value = PortalConnectUiState(
+            stage = PortalConnectStage.PREPARING,
+            title = LocaleText.get(this, "portal.preparing"),
+            message = LocaleText.get(this, "portal.preparing_request"),
+        )
         setContent {
             PortalSsoScreen(
                 state = uiState.value,
@@ -151,9 +160,9 @@ class PortalSsoActivity : ComponentActivity() {
 
         uiState.value = PortalConnectUiState(
             stage = PortalConnectStage.WAITING_PORTAL,
-            title = "Lanjutkan di Portal",
-            message = "Konfirmasi akun yang ingin digunakan di browser.",
-            detail = "Setelah disetujui, Anda akan kembali ke launcher secara otomatis.",
+            title = LocaleText.get(this, "portal.continue_in_portal"),
+            message = LocaleText.get(this, "portal.confirm_account"),
+            detail = LocaleText.get(this, "portal.return_after_approval"),
             canReopenPortal = true,
         )
         openAuthorizationPage(capability, verifier, state)
@@ -183,7 +192,7 @@ class PortalSsoActivity : ComponentActivity() {
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
             }.onFailure {
                 showFailure(
-                    message = "Browser tidak dapat dibuka. Periksa browser default Anda lalu coba lagi.",
+                    message = LocaleText.get(this, "portal.browser_failed"),
                     canReopenPortal = true,
                 )
             }
@@ -204,14 +213,14 @@ class PortalSsoActivity : ComponentActivity() {
             age !in 0..MAX_FLOW_AGE_MS
         ) {
             clearPending()
-            showFailure("Sesi koneksi sudah berakhir. Kembali dan mulai koneksi baru.")
+            showFailure(LocaleText.get(this, "portal.session_ended"))
             return
         }
 
         uiState.value = PortalConnectUiState(
             stage = PortalConnectStage.WAITING_PORTAL,
-            title = "Lanjutkan di Portal",
-            message = "Konfirmasi akun yang ingin digunakan di browser.",
+            title = LocaleText.get(this, "portal.continue_in_portal"),
+            message = LocaleText.get(this, "portal.confirm_account"),
             detail = "Kembali ke launcher setelah Portal menyelesaikan persetujuan.",
             canReopenPortal = true,
         )
@@ -239,9 +248,9 @@ class PortalSsoActivity : ComponentActivity() {
 
         uiState.value = PortalConnectUiState(
             stage = PortalConnectStage.VERIFYING,
-            title = "Memverifikasi koneksi",
-            message = "Launcher sedang memeriksa kode sekali pakai dari Portal.",
-            detail = "Jangan tutup aplikasi sampai verifikasi selesai.",
+            title = LocaleText.get(this, "portal.verify_code"),
+            message = LocaleText.get(this, "portal.verify_message"),
+            detail = LocaleText.get(this, "portal.keep_open"),
         )
 
         lifecycleScope.launch {
@@ -251,17 +260,17 @@ class PortalSsoActivity : ComponentActivity() {
             result.onSuccess { session ->
                 uiState.value = PortalConnectUiState(
                     stage = PortalConnectStage.SYNCING,
-                    title = "Menyiapkan akun",
-                    message = "Profil dan preferensi akun sedang disinkronkan ke launcher.",
+                    title = LocaleText.get(this@PortalSsoActivity, "portal.sync_profile"),
+                    message = LocaleText.get(this@PortalSsoActivity, "portal.sync_message"),
                     detail = session.email,
                 )
                 withContext(Dispatchers.IO) { persistAndLoadProfile(session) }
                 clearPending()
                 uiState.value = PortalConnectUiState(
                     stage = PortalConnectStage.SUCCESS,
-                    title = "Akun berhasil terhubung",
-                    message = "Launcher sekarang menggunakan akun Portal yang sama.",
-                    detail = "Membuka halaman utama…",
+                    title = LocaleText.get(this@PortalSsoActivity, "portal.connected"),
+                    message = LocaleText.get(this@PortalSsoActivity, "portal.same_account"),
+                    detail = LocaleText.get(this@PortalSsoActivity, "portal.opening_home"),
                     accountEmail = session.email,
                 )
                 delay(900)
@@ -281,12 +290,12 @@ class PortalSsoActivity : ComponentActivity() {
         val raw = error.message.orEmpty().lowercase()
         return when {
             "expired" in raw || "kedaluwarsa" in raw ->
-                "Sesi koneksi sudah berakhir. Mulai kembali dari halaman awal launcher."
+                LocaleText.get(this, "portal.session_ended")
             "identity" in raw || "identitas" in raw || "tidak cocok" in raw ->
-                "Akun yang dikembalikan Portal tidak cocok. Login kembali dan pilih akun yang benar."
+                LocaleText.get(this, "portal.account_mismatch")
             "network" in raw || "unable to resolve" in raw || "timeout" in raw ->
-                "Koneksi internet terputus saat memverifikasi akun. Periksa jaringan lalu coba lagi."
-            else -> "Akun belum dapat dihubungkan. Kembali dan mulai koneksi sekali lagi."
+                LocaleText.get(this, "portal.network_failed")
+            else -> LocaleText.get(this, "portal.failed")
         }
     }
 
