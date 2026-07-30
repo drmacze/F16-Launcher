@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 MODERN = Path('app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt')
 GUIDED = Path('app/src/main/java/com/drmacze/f16launcher/DLavieGuidedActivity.kt')
@@ -115,10 +116,17 @@ fun FullScreenMaintenance(
 elif 'ProfessionalMaintenanceScreen(' not in modern:
     raise SystemExit('FullScreenMaintenance markers not found')
 
-# Staff see the maintenance banner but retain operational controls.
-modern = modern.replace(
-    'val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial"',
-    'val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial" && !maintenanceInfo.staffBypass',
+# Normalize both action-blocking expressions exactly once. This keeps the script idempotent.
+blocked_pattern = re.compile(r'(?m)^(\s*)val maintenanceBlocked = .*$')
+blocked_matches = list(blocked_pattern.finditer(modern))
+if len(blocked_matches) < 2:
+    raise SystemExit('Expected Home and Update maintenanceBlocked expressions')
+modern = blocked_pattern.sub(
+    lambda match: (
+        f'{match.group(1)}val maintenanceBlocked = maintenanceInfo?.enabled == true '
+        '&& maintenanceInfo?.scope == "partial" && !maintenanceInfo.staffBypass'
+    ),
+    modern,
 )
 
 # Refresh the banner from the unified repository rather than a second legacy API path.
