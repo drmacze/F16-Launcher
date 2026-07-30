@@ -2593,7 +2593,7 @@ fun HomeScreen(
 
     // ── Bug 2: Partial maintenance blocking ──
     // Kalau scope=partial, block download/apply/launch tapi allow komunitas & profile.
-    val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial" && !maintenanceInfo.staffBypass && !maintenanceInfo.staffBypass
+    val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial" && !maintenanceInfo.staffBypass && !maintenanceInfo.staffBypass && !maintenanceInfo.staffBypass
 
     // ── Pull-to-refresh state ──
     val pullState    = rememberPullToRefreshState()
@@ -3352,7 +3352,7 @@ fun UpdateScreen(api: CommunityApi, maintenanceInfo: MaintenanceInfo? = null, on
     val context       = LocalContext.current
     val t = Strings.get(LanguageManager.getCurrentLanguage(context))
     // ── Bug 2: Partial maintenance blocking ──
-    val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial" && !maintenanceInfo.staffBypass && !maintenanceInfo.staffBypass
+    val maintenanceBlocked = maintenanceInfo?.enabled == true && maintenanceInfo?.scope == "partial" && !maintenanceInfo.staffBypass && !maintenanceInfo.staffBypass && !maintenanceInfo.staffBypass
     // NOTE: All I/O moved to LaunchedEffect below — don't block main thread during composition.
     // Initialize with safe defaults; real values populate from background.
     var gameInstalled   by remember { mutableStateOf(false) }
