@@ -1,0 +1,132 @@
+name: Update Reliability v333
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/build.gradle'
+      - 'app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/GitHubPublicDatabase.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/CheckUpdateScreen.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/LocaleText.kt'
+      - '.github/scripts/apply_update_reliability_v333.py'
+      - '.github/workflows/update-reliability-v333.yml'
+      - '.github/workflows/apply-i18n-v2.yml'
+  push:
+    branches:
+      - fix/v333-update-reliability
+      - main
+    paths:
+      - 'app/build.gradle'
+      - 'app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/GitHubPublicDatabase.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/CheckUpdateScreen.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/LocaleText.kt'
+      - '.github/scripts/apply_update_reliability_v333.py'
+      - '.github/workflows/update-reliability-v333.yml'
+      - '.github/workflows/apply-i18n-v2.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-reliability-v333-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Apply update reliability migration
+        run: python3 .github/scripts/apply_update_reliability_v333.py
+
+      - name: Validate version source and UI invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'versionCode 333' app/build.gradle
+          grep -F 'versionName "8.6.1"' app/build.gradle
+          grep -F 'Version manifest bypasses jsDelivr branch cache' app/src/main/java/com/drmacze/f16launcher/GitHubPublicDatabase.kt
+          grep -F 'throw IllegalStateException("Tidak dapat memeriksa versi launcher"' app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt
+          grep -F 'Manifest memiliki apk_url yang tidak tepercaya' app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt
+          grep -F 'UpdateCheckStage.ERROR' app/src/main/java/com/drmacze/f16launcher/CheckUpdateScreen.kt
+          grep -F 'LocaleText.get(context, "update.current_label")' app/src/main/java/com/drmacze/f16launcher/CheckUpdateScreen.kt
+          grep -F 'checkFailed -> PortalVersionCheckError' app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt
+          ! grep -F 'Anda sudah menggunakan versi terbaru' app/src/main/java/com/drmacze/f16launcher/CheckUpdateScreen.kt
+
+      - name: Verify public version sources agree
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            "https://api.github.com/repos/drmacze/DLavie-Launcher-Data/contents/manifest.json?ref=main" \
+            -H 'Accept: application/vnd.github+json' > /tmp/api-manifest.json
+          curl --fail --silent --show-error \
+            "https://raw.githubusercontent.com/drmacze/DLavie-Launcher-Data/main/manifest.json?ts=$(date +%s)" \
+            > /tmp/raw-manifest.json
+          python3 - <<'PY'
+          import base64, json
+          api = json.load(open('/tmp/api-manifest.json'))
+          api_manifest = json.loads(base64.b64decode(api['content']).decode())
+          raw_manifest = json.load(open('/tmp/raw-manifest.json'))
+          a = api_manifest['launcher']['latest_version_code']
+          b = raw_manifest['launcher']['latest_version_code']
+          if a != b or a < 332:
+              raise SystemExit(f'Public manifest mismatch: api={a}, raw={b}')
+          print(f'public launcher build={a}')
+          PY
+
+      - name: Compile launcher
+        run: gradle assembleDebug --stacktrace --console=plain
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-update-reliability-v333-${{ github.event_name }}
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Commit materialized source
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'Update reliability source already materialized.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle \
+            app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt \
+            app/src/main/java/com/drmacze/f16launcher/GitHubPublicDatabase.kt \
+            app/src/main/java/com/drmacze/f16launcher/CheckUpdateScreen.kt \
+            app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt \
+            app/src/main/java/com/drmacze/f16launcher/LocaleText.kt \
+            .github/workflows/apply-i18n-v2.yml
+          git commit -m 'fix(v333): materialize reliable update checker'
+          git push
