@@ -61,15 +61,32 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Apply update reliability migration
-        run: python3 .github/scripts/apply_update_reliability_v333.py
+      - name: Apply update reliability migration when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHECKER='app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt'
+          DATABASE='app/src/main/java/com/drmacze/f16launcher/GitHubPublicDatabase.kt'
+          SCREEN='app/src/main/java/com/drmacze/f16launcher/CheckUpdateScreen.kt'
+          PORTAL='app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt'
+          if grep -Fq 'Version manifest bypasses jsDelivr branch cache' "$DATABASE" \
+            && grep -Fq 'throw IllegalStateException("Tidak dapat memeriksa versi launcher"' "$CHECKER" \
+            && grep -Fq 'UpdateCheckStage.ERROR' "$SCREEN" \
+            && grep -Fq 'checkFailed -> PortalVersionCheckError' "$PORTAL"; then
+            echo 'Update reliability source is already materialized; preserving the current release version.'
+          else
+            python3 .github/scripts/apply_update_reliability_v333.py
+          fi
 
       - name: Validate version source and UI invariants
         shell: bash
         run: |
           set -euo pipefail
-          grep -F 'versionCode 333' app/build.gradle
-          grep -F 'versionName "8.6.1"' app/build.gradle
+          VERSION_CODE=$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*/\1/p' app/build.gradle | head -1)
+          VERSION_NAME=$(sed -nE 's/^[[:space:]]*versionName[[:space:]]+"([^"]+)".*/\1/p' app/build.gradle | head -1)
+          test -n "$VERSION_CODE"
+          test "$VERSION_CODE" -ge 333
+          test -n "$VERSION_NAME"
           grep -F 'Version manifest bypasses jsDelivr branch cache' app/src/main/java/com/drmacze/f16launcher/GitHubPublicDatabase.kt
           grep -F 'throw IllegalStateException("Tidak dapat memeriksa versi launcher"' app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt
           grep -F 'Manifest memiliki apk_url yang tidak tepercaya' app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt
@@ -121,14 +138,14 @@ jobs:
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/build.gradle \
+          git add \
             app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt \
             app/src/main/java/com/drmacze/f16launcher/GitHubPublicDatabase.kt \
             app/src/main/java/com/drmacze/f16launcher/CheckUpdateScreen.kt \
             app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt \
             app/src/main/java/com/drmacze/f16launcher/LocaleText.kt
           if git diff --cached --quiet; then
-            echo 'Only workflow metadata changed; application source is already materialized.'
+            echo 'Only release metadata or workflow files changed; no reliability source commit is needed.'
             exit 0
           fi
           git commit -m 'fix(v333): materialize reliable update checker'
