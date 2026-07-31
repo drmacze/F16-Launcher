@@ -126,7 +126,10 @@ jobs:
             app/src/main/java/com/drmacze/f16launcher/GitHubPublicDatabase.kt \
             app/src/main/java/com/drmacze/f16launcher/CheckUpdateScreen.kt \
             app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt \
-            app/src/main/java/com/drmacze/f16launcher/LocaleText.kt \
-            .github/workflows/apply-i18n-v2.yml
+            app/src/main/java/com/drmacze/f16launcher/LocaleText.kt
+          if git diff --cached --quiet; then
+            echo 'Only workflow metadata changed; application source is already materialized.'
+            exit 0
+          fi
           git commit -m 'fix(v333): materialize reliable update checker'
           git push
