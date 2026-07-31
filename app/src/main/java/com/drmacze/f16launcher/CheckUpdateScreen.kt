@@ -1,26 +1,44 @@
 package com.drmacze.f16launcher
 
-import android.content.Context
-import android.os.Build
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -29,351 +47,231 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CHECK UPDATE SCREEN — Full-screen interactive update checker
-// ═══════════════════════════════════════════════════════════════════════════
-// Real-time streaming text yang reflect actual process stages:
-// 1. Fade to pure black
-// 2. Pulsing hexagon logo
-// 3. Streaming messages based on real check progress:
-//    - "Mencari pembaruan..." (saat fetch Supabase)
-//    - "Menghubungkan ke pusat DLavie..." (saat network connect)
-//    - "Menjelajahi server..." (saat parse response)
-//    - "Memeriksa versi..." (saat compare versionCode)
-//    - "Menghitung ukuran update..." (saat fetch APK size)
-//    - "Selesai!" atau "Anda sudah versi terbaru"
-// ═══════════════════════════════════════════════════════════════════════════
-
-// Update stage states
-private enum class CheckStage {
-    IDLE,           // Belum mulai
-    CONNECTING,     // Koneksi ke server
-    SEARCHING,      // Cari pembaruan di Supabase
-    PARSING,        // Parse response
-    COMPARING,      // Bandingkan versi
-    FETCHING_SIZE,  // Ambil ukuran APK
-    DONE_UPDATE,    // Selesai - ada update
-    DONE_LATEST,    // Selesai - sudah versi terbaru
-    ERROR           // Gagal
+private enum class UpdateCheckStage {
+    CHECKING,
+    UPDATE_AVAILABLE,
+    UP_TO_DATE,
+    ERROR,
 }
+
+private val UpdateBackground = Color(0xFF080808)
+private val UpdateSurface = Color(0xFF111111)
+private val UpdateBorder = Color(0x1FFFFFFF)
+private val UpdateText = Color.White
+private val UpdateMuted = Color(0xFF969696)
+private val UpdateGreen = Color(0xFF35D07F)
+private val UpdateRed = Color(0xFFFF5B5B)
 
 @Composable
 fun CheckUpdateScreen(
     api: CommunityApi,
     onDismiss: () -> Unit,
-    onUpdateAvailable: (AppUpdateChecker.UpdateInfo) -> Unit
+    onUpdateAvailable: (AppUpdateChecker.UpdateInfo) -> Unit,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
-    var stage by remember { mutableStateOf(CheckStage.IDLE) }
-    var streamMessage by remember { mutableStateOf("") }
+    var attempt by remember { mutableIntStateOf(0) }
+    var stage by remember { mutableStateOf(UpdateCheckStage.CHECKING) }
     var updateInfo by remember { mutableStateOf<AppUpdateChecker.UpdateInfo?>(null) }
     var errorMessage by remember { mutableStateOf("") }
-    var fadeIn by remember { mutableStateOf(false) }
 
-    // Streaming messages per stage (real progress, bukan dummy)
-    val stageMessages = mapOf(
-        CheckStage.CONNECTING to listOf(
-            "Menghubungkan ke pusat DLavie...",
-            "Menyiapkan koneksi aman...",
-            "Mengaktifkan protokol update..."
-        ),
-        CheckStage.SEARCHING to listOf(
-            "Mencari pembaruan...",
-            "Menjelajahi server DLavie...",
-            "Memindai basis data rilis..."
-        ),
-        CheckStage.PARSING to listOf(
-            "Menganalisis respons server...",
-            "Membaca metadata versi...",
-            "Memproses informasi rilis..."
-        ),
-        CheckStage.COMPARING to listOf(
-            "Memeriksa versi...",
-            "Membandingkan dengan versi saat ini...",
-            "Menghitung selisih versi..."
-        ),
-        CheckStage.FETCHING_SIZE to listOf(
-            "Menghitung ukuran update...",
-            "Mengambil detail file APK...",
-            "Menyiapkan informasi unduhan..."
-        )
-    )
-
-    // Trigger fade in on mount
-    LaunchedEffect(Unit) {
-        fadeIn = true
-        delay(300)
-        // Start check process
-        scope.launch {
-            try {
-                // Stage 1: CONNECTING
-                stage = CheckStage.CONNECTING
-                for (msg in stageMessages[CheckStage.CONNECTING]!!) {
-                    streamMessage = msg
-                    delay(800)
-                }
-
-                // Stage 2: SEARCHING (real Supabase query)
-                stage = CheckStage.SEARCHING
-                streamMessage = stageMessages[CheckStage.SEARCHING]!![0]
-                delay(400)
-
-                val info = withContext(Dispatchers.IO) {
-                    AppUpdateChecker.checkForUpdate(api, context)
-                }
-
-                streamMessage = stageMessages[CheckStage.SEARCHING]!![1]
-                delay(500)
-
-                // Stage 3: PARSING
-                stage = CheckStage.PARSING
-                streamMessage = stageMessages[CheckStage.PARSING]!![0]
-                delay(500)
-
-                // Stage 4: COMPARING
-                stage = CheckStage.COMPARING
-                streamMessage = stageMessages[CheckStage.COMPARING]!![0]
-                delay(600)
-
-                if (info == null || !info.isUpdateAvailable) {
-                    // No update available
-                    streamMessage = "Anda sudah menggunakan versi terbaru"
-                    delay(1000)
-                    stage = CheckStage.DONE_LATEST
-                    delay(1500)
-                    onDismiss()
-                } else {
-                    // Update available - fetch size
-                    stage = CheckStage.FETCHING_SIZE
-                    streamMessage = stageMessages[CheckStage.FETCHING_SIZE]!![0]
-                    delay(700)
-
-                    updateInfo = info
-                    streamMessage = "Pembaruan ditemukan: v${info.versionName}"
-                    delay(800)
-                    stage = CheckStage.DONE_UPDATE
-                    // v7.9.98: Jangan auto-dismiss. Tunggu user pilih tombol.
-                }
-            } catch (e: Exception) {
-                errorMessage = e.message ?: "Terjadi kesalahan"
-                stage = CheckStage.ERROR
-                delay(2000)
-                onDismiss()
+    LaunchedEffect(attempt) {
+        stage = UpdateCheckStage.CHECKING
+        updateInfo = null
+        errorMessage = ""
+        val startedAt = System.currentTimeMillis()
+        val result = runCatching {
+            withContext(Dispatchers.IO) {
+                AppUpdateChecker.checkForUpdate(api = api, context = context)
             }
+        }
+        val remaining = 450L - (System.currentTimeMillis() - startedAt)
+        if (remaining > 0L) delay(remaining)
+
+        result.onSuccess { info ->
+            updateInfo = info
+            stage = if (info != null && info.isUpdateAvailable) {
+                UpdateCheckStage.UPDATE_AVAILABLE
+            } else {
+                UpdateCheckStage.UP_TO_DATE
+            }
+        }.onFailure { error ->
+            errorMessage = error.message.orEmpty()
+            stage = UpdateCheckStage.ERROR
         }
     }
 
-    // Fade animation
-    val bgAlpha by animateFloatAsState(
-        targetValue = if (fadeIn) 1f else 0f,
-        animationSpec = tween(600),
-        label = "bg_fade"
-    )
-
-    // Logo pulse animation
-    val infiniteTransition = rememberInfiniteTransition(label = "logo_pulse")
-    val logoScale by infiniteTransition.animateFloat(
-        initialValue = 0.9f,
-        targetValue = 1.1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "logo_scale"
-    )
-    val logoAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "logo_alpha"
-    )
-
-    // Streaming text fade
-    val textAlpha by animateFloatAsState(
-        targetValue = 1f,
-        animationSpec = tween(400),
-        label = "text_fade"
-    )
-
     Box(
-        Modifier.fillMaxSize()
-            .background(Color.Black.copy(alpha = bgAlpha))
+        modifier = Modifier
+            .fillMaxSize()
+            .background(UpdateBackground),
     ) {
-        if (bgAlpha > 0.5f) {
-            Column(
-                Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Pulsing hexagon logo (DLavie style)
-                Box(
-                    Modifier.size(80.dp).scale(logoScale).alpha(logoAlpha)
-                        .clip(androidx.compose.foundation.shape.GenericShape { _, _ ->
-                            val r = 70f
-                            moveTo(0f, -r); lineTo(r * 0.866f, -r * 0.5f); lineTo(r * 0.866f, r * 0.5f)
-                            lineTo(0f, r); lineTo(-r * 0.866f, r * 0.5f); lineTo(-r * 0.866f, -r * 0.5f); close()
-                        })
-                        .background(Color.White),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("DL", color = Color.Black, fontSize = 28.sp, fontWeight = FontWeight.Black)
-                }
-
-                Spacer(Modifier.height(32.dp))
-
-                // Streaming message
-                if (streamMessage.isNotEmpty() && stage != CheckStage.ERROR) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        streamMessage,
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
+                        LocaleText.get(context, "update.title"),
+                        color = UpdateText,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "DLavie ${BuildConfig.VERSION_NAME} • Build ${BuildConfig.VERSION_CODE}",
+                        color = UpdateMuted,
+                        fontSize = 11.sp,
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Rounded.Close, contentDescription = null, tint = UpdateMuted)
+                }
+            }
+
+            Spacer(Modifier.height(36.dp))
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                UpdateStatusIcon(stage)
+                Spacer(Modifier.height(22.dp))
+                Text(
+                    text = when (stage) {
+                        UpdateCheckStage.CHECKING -> LocaleText.get(context, "update.checking")
+                        UpdateCheckStage.UPDATE_AVAILABLE -> LocaleText.get(context, "update.available")
+                        UpdateCheckStage.UP_TO_DATE -> LocaleText.get(context, "update.latest")
+                        UpdateCheckStage.ERROR -> LocaleText.get(context, "update.failed")
+                    },
+                    color = UpdateText,
+                    fontSize = 21.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = when (stage) {
+                        UpdateCheckStage.CHECKING -> LocaleText.get(context, "update.checking_desc")
+                        UpdateCheckStage.UPDATE_AVAILABLE -> LocaleText.get(context, "update.available_desc")
+                        UpdateCheckStage.UP_TO_DATE -> LocaleText.get(context, "update.latest_desc")
+                        UpdateCheckStage.ERROR -> LocaleText.get(context, "update.failed_desc")
+                    },
+                    color = UpdateMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                )
+            }
+
+            Spacer(Modifier.height(30.dp))
+
+            VersionComparisonCard(
+                latest = updateInfo,
+                checking = stage == UpdateCheckStage.CHECKING,
+            )
+
+            if (stage == UpdateCheckStage.ERROR && errorMessage.isNotBlank()) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    errorMessage,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = UpdateMuted,
+                    fontSize = 10.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                )
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            when (stage) {
+                UpdateCheckStage.CHECKING -> {
+                    Text(
+                        LocaleText.get(context, "update.checking"),
+                        modifier = Modifier.fillMaxWidth(),
+                        color = UpdateMuted,
+                        fontSize = 11.sp,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.alpha(textAlpha).padding(horizontal = 32.dp)
                     )
                 }
-
-                // Progress dots (3 animated dots)
-                if (stage != CheckStage.DONE_UPDATE && stage != CheckStage.DONE_LATEST && stage != CheckStage.ERROR) {
-                    Spacer(Modifier.height(20.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        repeat(3) { i ->
-                            val dotAlpha by infiniteTransition.animateFloat(
-                                initialValue = 0.3f,
-                                targetValue = 1f,
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(600, delayMillis = i * 200),
-                                    repeatMode = RepeatMode.Reverse
-                                ),
-                                label = "dot_$i"
-                            )
-                            Box(
-                                Modifier.size(8.dp).clip(CircleShape)
-                                    .background(Color.White.copy(alpha = dotAlpha))
-                            )
-                        }
-                    }
-                }
-
-                // Success state - update found
-                if (stage == CheckStage.DONE_UPDATE && updateInfo != null) {
-                    Spacer(Modifier.height(24.dp))
-                    Icon(
-                        Icons.Rounded.SystemUpdate,
-                        contentDescription = null,
-                        tint = Color(0xFF00E5FF),
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "v${updateInfo!!.versionName}",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (updateInfo!!.apkSizeMb.isNotEmpty()) {
-                        Text(
-                            updateInfo!!.apkSizeMb,
-                            color = Color.Gray,
-                            fontSize = 13.sp
-                        )
-                    }
-                    Spacer(Modifier.height(24.dp))
-
-                    // v7.9.98: Tombol Update (langsung dari launcher)
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 32.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                UpdateCheckStage.UPDATE_AVAILABLE -> {
+                    Button(
+                        onClick = { updateInfo?.let(onUpdateAvailable) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color.Black,
+                        ),
                     ) {
-                        // Update button — primary, in-app download
-                        Box(
-                            Modifier.weight(1f).height(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF00E5FF))
-                                .clickable {
-                                    onUpdateAvailable(updateInfo!!)
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(Icons.Rounded.SystemUpdate, null, tint = Color.Black, modifier = Modifier.size(18.dp))
-                                Text("Update", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        // Download APK button — secondary, buka website DLavie
-                        Box(
-                            Modifier.weight(1f).height(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0x33FFFFFF))
-                                .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(12.dp))
-                                .clickable {
-                                    try {
-                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://drmacze.github.io/dlavie-web/"))
-                                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        context.startActivity(intent)
-                                    } catch (_: Exception) {}
-                                    onDismiss()
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(Icons.Rounded.Download, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                                Text("Download APK", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            }
-                        }
+                        Icon(Icons.Rounded.SystemUpdate, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text(LocaleText.get(context, "update.install"), fontWeight = FontWeight.Bold)
                     }
-
-                    // Close button
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "Tutup",
-                        color = Color.Gray,
-                        fontSize = 13.sp,
-                        modifier = Modifier.clickable { onDismiss() }
-                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = { AppUpdateChecker.openWebsite(context) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, UpdateBorder),
+                    ) {
+                        Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = UpdateText)
+                        Spacer(Modifier.size(8.dp))
+                        Text(LocaleText.get(context, "update.manual"), color = UpdateText)
+                    }
                 }
-
-                // Latest version state
-                if (stage == CheckStage.DONE_LATEST) {
-                    Spacer(Modifier.height(24.dp))
-                    Icon(
-                        Icons.Rounded.CheckCircle,
-                        contentDescription = null,
-                        tint = Color(0xFF4CAF50),
-                        modifier = Modifier.size(48.dp)
-                    )
+                UpdateCheckStage.UP_TO_DATE -> {
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color.Black,
+                        ),
+                    ) {
+                        Text(LocaleText.get(context, "update.close"), fontWeight = FontWeight.Bold)
+                    }
                 }
-
-                // Error state
-                if (stage == CheckStage.ERROR) {
-                    Spacer(Modifier.height(24.dp))
-                    Icon(
-                        Icons.Rounded.ErrorOutline,
-                        contentDescription = null,
-                        tint = Color(0xFFFF5252),
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Spacer(Modifier.height(12.dp))
+                UpdateCheckStage.ERROR -> {
+                    Button(
+                        onClick = { attempt += 1 },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color.Black,
+                        ),
+                    ) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text(LocaleText.get(context, "update.retry"), fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        "Gagal mengecek pembaruan",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        errorMessage,
-                        color = Color.Gray,
+                        LocaleText.get(context, "update.close"),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onDismiss)
+                            .padding(10.dp),
+                        color = UpdateMuted,
                         fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 32.dp, vertical = 4.dp)
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
@@ -381,81 +279,137 @@ fun CheckUpdateScreen(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// YELLOW TOAST — Warning notification for outdated version
-// ═══════════════════════════════════════════════════════════════════════════
+@Composable
+private fun UpdateStatusIcon(stage: UpdateCheckStage) {
+    Surface(
+        modifier = Modifier.size(76.dp),
+        shape = CircleShape,
+        color = when (stage) {
+            UpdateCheckStage.CHECKING -> Color.White.copy(alpha = 0.07f)
+            UpdateCheckStage.UPDATE_AVAILABLE -> Color.White.copy(alpha = 0.09f)
+            UpdateCheckStage.UP_TO_DATE -> UpdateGreen.copy(alpha = 0.14f)
+            UpdateCheckStage.ERROR -> UpdateRed.copy(alpha = 0.14f)
+        },
+        border = BorderStroke(1.dp, UpdateBorder),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            when (stage) {
+                UpdateCheckStage.CHECKING -> CircularProgressIndicator(
+                    modifier = Modifier.size(30.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                )
+                UpdateCheckStage.UPDATE_AVAILABLE -> Icon(
+                    Icons.Rounded.SystemUpdate,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(34.dp),
+                )
+                UpdateCheckStage.UP_TO_DATE -> Icon(
+                    Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = UpdateGreen,
+                    modifier = Modifier.size(36.dp),
+                )
+                UpdateCheckStage.ERROR -> Icon(
+                    Icons.Rounded.ErrorOutline,
+                    contentDescription = null,
+                    tint = UpdateRed,
+                    modifier = Modifier.size(36.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VersionComparisonCard(
+    latest: AppUpdateChecker.UpdateInfo?,
+    checking: Boolean,
+) {
+    val context = LocalContext.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = UpdateSurface,
+        border = BorderStroke(1.dp, UpdateBorder),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            VersionCell(
+                modifier = Modifier.weight(1f),
+                label = LocaleText.get(context, "update.current_label"),
+                version = BuildConfig.VERSION_NAME,
+                build = BuildConfig.VERSION_CODE.toString(),
+            )
+            VersionCell(
+                modifier = Modifier.weight(1f),
+                label = LocaleText.get(context, "update.public_label"),
+                version = when {
+                    checking -> "—"
+                    latest != null -> latest.versionName
+                    else -> BuildConfig.VERSION_NAME
+                },
+                build = when {
+                    checking -> "—"
+                    latest != null -> latest.versionCode.toString()
+                    else -> BuildConfig.VERSION_CODE.toString()
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun VersionCell(
+    modifier: Modifier,
+    label: String,
+    version: String,
+    build: String,
+) {
+    Column(modifier = modifier) {
+        Text(label.uppercase(), color = UpdateMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(5.dp))
+        Text(version, color = UpdateText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Text("Build $build", color = UpdateMuted, fontSize = 10.sp)
+    }
+}
 
 @Composable
 fun UpdateWarningToast(
     versionName: String,
     onCheckUpdate: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
-    var visible by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        delay(800)  // Wait for app to load
-        visible = true
-    }
-
-    AnimatedVisibility(
-        visible = visible,
-        enter = slideInVertically(
-            initialOffsetY = { -it },
-            animationSpec = tween(400)
-        ) + fadeIn(),
-        exit = slideOutVertically(
-            targetOffsetY = { -it },
-            animationSpec = tween(300)
-        ) + fadeOut()
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFFFFC107),
+        shadowElevation = 8.dp,
     ) {
-        Box(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFFFFC107).copy(alpha = 0.95f),
-                shadowElevation = 8.dp
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(
-                        Icons.Rounded.Warning,
-                        contentDescription = null,
-                        tint = Color.Black,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "Pembaruan tersedia!",
-                            color = Color.Black,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            "Anda menggunakan versi lama. Update ke $versionName sekarang.",
-                            color = Color.Black.copy(alpha = 0.8f),
-                            fontSize = 12.sp
-                        )
-                    }
-                    TextButton(
-                        onClick = { onCheckUpdate() },
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = Color.Black
-                        )
-                    ) {
-                        Text("Update", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-                    IconButton(
-                        onClick = { visible = false; onDismiss() },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(Icons.Rounded.Close, "Tutup", tint = Color.Black, modifier = Modifier.size(18.dp))
-                    }
-                }
+            Icon(Icons.Rounded.SystemUpdate, contentDescription = null, tint = Color.Black)
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Pembaruan tersedia", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("Versi $versionName siap dipasang", color = Color.Black.copy(alpha = 0.72f), fontSize = 11.sp)
+            }
+            Text(
+                "Periksa",
+                modifier = Modifier.clickable(onClick = onCheckUpdate),
+                color = Color.Black,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Rounded.Close, contentDescription = null, tint = Color.Black)
             }
         }
     }

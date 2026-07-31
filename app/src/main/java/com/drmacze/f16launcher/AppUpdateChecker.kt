@@ -60,6 +60,7 @@ object AppUpdateChecker {
                 return null
             }
             val latestCode = launcher.optInt("latest_version_code", 0)
+            require(latestCode > 0) { "Manifest tidak memiliki latest_version_code yang valid" }
             android.util.Log.i(
                 "AppUpdate",
                 "Manifest: latest=$latestCode, current=$currentCode, gap=${latestCode - currentCode}"
@@ -71,10 +72,11 @@ object AppUpdateChecker {
             }
 
             val apkUrl = launcher.optString("apk_url", "")
-            if (apkUrl.isBlank()) {
-                android.util.Log.w("AppUpdate", "Manifest: apk_url kosong")
-                return null
-            }
+            require(
+                apkUrl.startsWith(
+                    "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/"
+                )
+            ) { "Manifest memiliki apk_url yang tidak tepercaya" }
 
             val gap = latestCode - currentCode
             val forceUpdate = gap >= FORCE_UPDATE_THRESHOLD
@@ -103,8 +105,8 @@ object AppUpdateChecker {
                 websiteUrl = DLAVIE_WEBSITE_URL
             )
         } catch (e: Throwable) {
-            android.util.Log.w("AppUpdate", "v325 GitHub manifest check failed: ${e.message}")
-            null
+            android.util.Log.w("AppUpdate", "GitHub manifest check failed: ${e.message}", e)
+            throw IllegalStateException("Tidak dapat memeriksa versi launcher", e)
         }
     }
 

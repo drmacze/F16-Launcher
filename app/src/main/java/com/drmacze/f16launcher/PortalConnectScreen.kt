@@ -85,15 +85,23 @@ internal fun ProfessionalPortalConnectContent(
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     var checked by remember { mutableStateOf(false) }
+    var checkAttempt by remember { mutableStateOf(0) }
+    var checkFailed by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<AppUpdateChecker.UpdateInfo?>(null) }
     var updatePhase by remember { mutableStateOf(PortalUpdatePhase.IDLE) }
     var progress by remember { mutableFloatStateOf(0f) }
     var updateError by remember { mutableStateOf("") }
 
-    LaunchedEffect(Unit) {
-        updateInfo = withContext(Dispatchers.IO) {
-            AppUpdateChecker.checkForUpdate(context = context)
+    LaunchedEffect(checkAttempt) {
+        checked = false
+        checkFailed = false
+        val result = runCatching {
+            withContext(Dispatchers.IO) {
+                AppUpdateChecker.checkForUpdate(context = context)
+            }
         }
+        updateInfo = result.getOrNull()
+        checkFailed = result.isFailure
         checked = true
     }
 
@@ -103,6 +111,9 @@ internal fun ProfessionalPortalConnectContent(
     ) {
         when {
             !checked -> PortalVersionStatus(checking = true)
+            checkFailed -> PortalVersionCheckError(
+                onRetry = { checkAttempt += 1 },
+            )
             updateInfo != null -> PortalUpdateCard(
                 info = updateInfo!!,
                 phase = updatePhase,
@@ -154,6 +165,44 @@ internal fun ProfessionalPortalConnectContent(
             updateRequired = updateInfo != null,
             onOpenPortal = onOpenPortal,
         )
+    }
+}
+
+@Composable
+private fun PortalVersionCheckError(onRetry: () -> Unit) {
+    val context = LocalContext.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = PortalSurfaceRaised,
+        border = BorderStroke(1.dp, PortalBorder),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                Icons.Rounded.SystemUpdate,
+                contentDescription = null,
+                tint = PortalMuted,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                LocaleText.get(context, "update.version_check_failed"),
+                modifier = Modifier.weight(1f),
+                color = PortalMuted,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+            )
+            Text(
+                LocaleText.get(context, "update.retry"),
+                modifier = Modifier.clickable(onClick = onRetry),
+                color = PortalText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }
 

@@ -90,7 +90,12 @@ object GitHubPublicDatabase {
         }
 
     private fun fetchFromJsDelivr(file: PublicFile): String {
-        // Ten-minute bucket keeps CDN useful while still allowing reasonably fresh data.
+        // A mutable branch CDN alias can remain stale for hours. Version checks
+        // must fall through to GitHub Contents API / raw GitHub instead.
+        if (file == PublicFile.MANIFEST) {
+            throw IllegalStateException("Version manifest bypasses jsDelivr branch cache")
+        }
+        // Ten-minute bucket keeps CDN useful for non-version public content.
         val revisionBucket = System.currentTimeMillis() / (10 * 60 * 1000L)
         val url = "https://cdn.jsdelivr.net/gh/$OWNER/$REPOSITORY@$BRANCH/${file.path}?v=$revisionBucket"
         return getText(url)
