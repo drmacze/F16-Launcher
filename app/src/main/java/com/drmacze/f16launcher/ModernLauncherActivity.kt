@@ -805,43 +805,45 @@ fun DLavieModernApp(initialPostId: String? = null) {
                             if (!updateDownloading) {
                                 val currentInfo = updateInfo
                                 if (currentInfo == null || currentInfo.apkUrl.isBlank()) {
-                                    // Tidak ada URL download — buka website DLavie
-                                    AppUpdateChecker.openWebsite(context)
-                                    showUpdatePopup = false
+                                    updateDownloadError =
+                                        "Tautan APK resmi tidak tersedia. Periksa pembaruan lagi."
                                     return@AppUpdatePopup
                                 }
+
                                 updateDownloading = true
                                 updateDownloadProgress = 0f
                                 updateDownloadError = ""
                                 updateScope.launch {
                                     try {
                                         val apkFile = withContext(Dispatchers.IO) {
-                                            AppUpdateChecker.downloadApk(context, currentInfo.apkUrl) { progress ->
-                                                updateDownloadProgress = progress
-                                            }
+                                            AppUpdateChecker.downloadApk(
+                                                context = context,
+                                                apkUrl = currentInfo.apkUrl,
+                                                onProgress = { value ->
+                                                    updateDownloadProgress = value
+                                                },
+                                            )
                                         }
                                         updateDownloading = false
-                                        if (apkFile != null && apkFile.exists() && apkFile.length() > 0) {
-                                            // v7.5.4: grantUriPermission untuk Android 13+
-                                            runCatching {
-                                                context.grantUriPermission(
-                                                    "com.android.packageinstaller",
-                                                    androidx.core.content.FileProvider.getUriForFile(
-                                                        context, "${context.packageName}.files", apkFile
-                                                    ),
-                                                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                                )
-                                            }
-                                            val installed = AppUpdateChecker.installApk(context, apkFile)
-                                            if (!installed) {
-                                                updateDownloadError = "Tidak bisa membuka installer. Coba download dari website DLavie."
-                                            }
+
+                                        if (apkFile == null || !apkFile.exists()) {
+                                            updateDownloadError =
+                                                "Download belum selesai. Coba lagi dari launcher."
+                                            return@launch
+                                        }
+
+                                        val installerOpened = AppUpdateChecker.installApk(context, apkFile)
+                                        if (installerOpened) {
+                                            showUpdatePopup = false
                                         } else {
-                                            updateDownloadError = "Download gagal. Coba download dari website DLavie."
+                                            updateDownloadError =
+                                                "Installer Android tidak dapat dibuka. Gunakan download manual di bawah."
                                         }
-                                    } catch (e: Throwable) {
+                                    } catch (error: Throwable) {
                                         updateDownloading = false
-                                        updateDownloadError = e.message ?: "Download gagal. Coba download dari website DLavie."
+                                        updateDownloadProgress = 0f
+                                        updateDownloadError = error.message
+                                            ?: "Download gagal. Periksa koneksi lalu coba lagi."
                                     }
                                 }
                             }
@@ -8703,58 +8705,43 @@ fun AppUpdatePopup(
     error: String = "",
     onUpdate: () -> Unit,
     onLater: () -> Unit,
-    onOpenWebsite: () -> Unit = {}
+    onOpenWebsite: () -> Unit = {},
 ) {
-    // v323: Force update — popup tidak bisa di-dismiss, langsung ke website
     val forceUpdate = info.forceUpdate
+    val progressPercent = (progress.coerceIn(0f, 1f) * 100f).toInt()
+
     AlertDialog(
         onDismissRequest = {
-            // v322: Hanya allow dismiss kalau BUKAN force update dan tidak sedang download
             if (!downloading && !forceUpdate) onLater()
         },
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     if (forceUpdate) Icons.Rounded.PriorityHigh else Icons.Rounded.SystemUpdate,
-                    null,
+                    contentDescription = null,
                     tint = if (forceUpdate) AmberWarn else Color.White,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(24.dp),
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    if (forceUpdate) "Update Wajib!" else "Update Tersedia!",
+                    if (forceUpdate) "Pembaruan wajib" else "Pembaruan tersedia",
                     color = Color.White,
                     fontSize = 18.sp,
-                    fontWeight = FontWeight.Black
+                    fontWeight = FontWeight.Black,
                 )
                 if (forceUpdate) {
                     Spacer(Modifier.width(8.dp))
                     Surface(
-                        color = DangerRed.copy(0.18f),
-                        border = BorderStroke(1.dp, DangerRed.copy(0.5f)),
-                        shape = RoundedCornerShape(999.dp)
+                        color = DangerRed.copy(alpha = 0.18f),
+                        border = BorderStroke(1.dp, DangerRed.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(999.dp),
                     ) {
                         Text(
                             "WAJIB",
                             color = DangerRed,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Black,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                } else if (!info.isPublished) {
-                    Spacer(Modifier.width(8.dp))
-                    Surface(
-                        color = AmberWarn.copy(0.15f),
-                        border = BorderStroke(1.dp, AmberWarn.copy(0.4f)),
-                        shape = RoundedCornerShape(999.dp)
-                    ) {
-                        Text(
-                            "DRAFT",
-                            color = AmberWarn,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Black,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                         )
                     }
                 }
@@ -8763,216 +8750,232 @@ fun AppUpdatePopup(
         text = {
             Column {
                 Text(
-                    "Versi baru ${info.versionName} sudah tersedia.",
-                    color = SoftText, fontSize = 13.sp
+                    "Versi ${info.versionName} siap dipasang langsung dari launcher.",
+                    color = SoftText,
+                    fontSize = 13.sp,
                 )
-                // v322: Tampilkan versi saat ini vs versi baru
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Versi Anda: v${info.currentVersionCode}  →  Versi Baru: v${info.versionCode}",
-                    color = SubText, fontSize = 11.sp, fontWeight = FontWeight.Medium
+                    "Build ${info.currentVersionCode}  →  Build ${info.versionCode}",
+                    color = SubText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
                 )
+
                 if (forceUpdate) {
                     Spacer(Modifier.height(8.dp))
                     Row(
-                        Modifier.fillMaxWidth()
-                            .background(DangerRed.copy(0.08f), RoundedCornerShape(10.dp))
-                            .border(1.dp, DangerRed.copy(0.25f), RoundedCornerShape(10.dp))
+                        Modifier
+                            .fillMaxWidth()
+                            .background(DangerRed.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                            .border(1.dp, DangerRed.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Icon(Icons.Rounded.Warning, null, tint = DangerRed, modifier = Modifier.size(16.dp))
+                        Icon(
+                            Icons.Rounded.Warning,
+                            contentDescription = null,
+                            tint = DangerRed,
+                            modifier = Modifier.size(16.dp),
+                        )
                         Text(
-                            "Versi Anda sudah kedaluwarsa. Anda WAJIB update ke versi terbaru untuk melanjutkan.",
-                            color = DangerRed, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.weight(1f)
+                            "Versi ini sudah kedaluwarsa. Pembaruan harus dipasang untuk melanjutkan.",
+                            color = DangerRed,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            modifier = Modifier.weight(1f),
                         )
                     }
                 }
-                if (!info.isPublished && !forceUpdate) {
-                    Spacer(Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Icon(Icons.Rounded.Warning, contentDescription = null, tint = AmberWarn, modifier = Modifier.size(12.dp))
-                        Text(
-                            "Versi draft — belum dirilis ke publik. Hanya untuk testing.",
-                            color = AmberWarn, fontSize = 10.sp
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
 
-                // v7.9.90: Update size info (glassmorphic info card)
                 if (info.apkSizeMb.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
                     Row(
-                        Modifier.fillMaxWidth()
-                            .background(Surface2.copy(0.5f), RoundedCornerShape(10.dp))
+                        Modifier
+                            .fillMaxWidth()
+                            .background(Surface2.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
                             .border(1.dp, GlassStroke, RoundedCornerShape(10.dp))
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Icon(Icons.Rounded.Download, null, tint = CandyCyan, modifier = Modifier.size(16.dp))
+                        Icon(
+                            Icons.Rounded.Download,
+                            contentDescription = null,
+                            tint = CandyCyan,
+                            modifier = Modifier.size(16.dp),
+                        )
                         Column {
-                            Text("Ukuran Download", color = SubText, fontSize = 10.sp)
-                            Text(info.apkSizeMb, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("Ukuran download", color = SubText, fontSize = 10.sp)
+                            Text(
+                                info.apkSizeMb,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
                         }
                         Spacer(Modifier.weight(1f))
-                        Text("v${info.versionCode}", color = SubText, fontSize = 11.sp)
+                        Text("Build ${info.versionCode}", color = SubText, fontSize = 11.sp)
                     }
-                    Spacer(Modifier.height(8.dp))
                 }
 
-                // Release notes (truncate kalau terlalu panjang)
                 val notes = info.releaseNotes.take(500)
-                if (notes.isNotEmpty() && !forceUpdate) {
+                if (notes.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
                     Text(
                         notes,
-                        color = SubText, fontSize = 11.sp, lineHeight = 15.sp,
-                        maxLines = 8,
-                        overflow = TextOverflow.Ellipsis
+                        color = SubText,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        maxLines = 7,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 
-                // Download progress (only for non-force update — force update goes to website)
-                if (downloading && !forceUpdate) {
-                    Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(CandyCyan.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                        .border(1.dp, CandyCyan.copy(alpha = 0.28f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.CloudDownload,
+                        contentDescription = null,
+                        tint = CandyCyan,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Download langsung di launcher",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            "Setelah selesai, installer Android akan terbuka otomatis.",
+                            color = SubText,
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                        )
+                    }
+                }
+
+                if (downloading) {
+                    Spacer(Modifier.height(14.dp))
                     LinearProgressIndicator(
-                        progress = { progress },
+                        progress = { progress.coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth(),
                         color = Color.White,
-                        trackColor = Surface2
+                        trackColor = Surface2,
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Downloading... ${(progress * 100).toInt()}%",
-                        color = SoftText, fontSize = 11.sp
-                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            if (progressPercent >= 100) {
+                                "Menyiapkan installer…"
+                            } else {
+                                "Mengunduh pembaruan…"
+                            },
+                            color = SoftText,
+                            fontSize = 11.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "$progressPercent%",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
 
-                // v7.5.4: Error display (modern, with icon)
-                if (error.isNotBlank() && !forceUpdate) {
+                if (error.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
                     Row(
-                        Modifier.fillMaxWidth()
-                            .background(DangerRed.copy(0.08f), RoundedCornerShape(12.dp))
-                            .border(1.dp, DangerRed.copy(0.20f), RoundedCornerShape(12.dp))
+                        Modifier
+                            .fillMaxWidth()
+                            .background(DangerRed.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                            .border(1.dp, DangerRed.copy(alpha = 0.20f), RoundedCornerShape(12.dp))
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.Top,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Icon(Icons.Rounded.ErrorOutline, null, tint = DangerRed, modifier = Modifier.size(16.dp).padding(top = 1.dp))
-                        Text(error, color = DangerRed, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.weight(1f))
-                    }
-                }
-
-                // v323: Force update — show prominent website instruction card
-                if (forceUpdate) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Klik tombol di bawah untuk membuka website DLavie dan mengunduh APK versi terbaru:",
-                        color = Color.White, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .background(CandyCyan.copy(0.10f), RoundedCornerShape(10.dp))
-                            .border(1.dp, CandyCyan.copy(0.4f), RoundedCornerShape(10.dp))
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Rounded.Language, null, tint = CandyCyan, modifier = Modifier.size(20.dp))
+                        Icon(
+                            Icons.Rounded.ErrorOutline,
+                            contentDescription = null,
+                            tint = DangerRed,
+                            modifier = Modifier.size(16.dp).padding(top = 1.dp),
+                        )
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Website DLavie", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            Text("drmacze.github.io/dlavie-web", color = SubText, fontSize = 10.sp)
+                            Text(
+                                error,
+                                color = DangerRed,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp,
+                            )
+                            Spacer(Modifier.height(7.dp))
+                            Text(
+                                "Download manual dari website",
+                                modifier = Modifier.clickable(onClick = onOpenWebsite),
+                                color = CandyCyan,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
                         }
-                        Icon(Icons.Rounded.OpenInNew, null, tint = CandyCyan, modifier = Modifier.size(16.dp))
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Setelah download selesai, install APK baru tersebut. Aplikasi lama akan otomatis terganti dengan versi terbaru.",
-                        color = SubText, fontSize = 10.sp, lineHeight = 13.sp
-                    )
-                } else {
-                    // v322: Tombol "Buka Website DLavie" — selalu tersedia sebagai fallback
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "Jika download gagal, Anda bisa mengunduh APK langsung dari website DLavie:",
-                        color = SubText, fontSize = 10.sp, lineHeight = 13.sp
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .background(CandyCyan.copy(0.06f), RoundedCornerShape(10.dp))
-                            .border(1.dp, CandyCyan.copy(0.3f), RoundedCornerShape(10.dp))
-                            .clickable { onOpenWebsite() }
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Rounded.Language, null, tint = CandyCyan, modifier = Modifier.size(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Buka Website DLavie", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Text("drmacze.github.io/dlavie-web", color = SubText, fontSize = 10.sp)
-                        }
-                        Icon(Icons.Rounded.OpenInNew, null, tint = CandyCyan, modifier = Modifier.size(14.dp))
                     }
                 }
             }
         },
         confirmButton = {
-            // v323: Force update → button langsung buka website (no in-app download)
-            if (forceUpdate) {
-                Button(
-                    onClick = onOpenWebsite,
-                    shape = TTShapes.button,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = DangerRed,
-                        contentColor = Color.White
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.Language, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Install Latest Version", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(6.dp))
-                    Icon(Icons.Rounded.OpenInNew, null, modifier = Modifier.size(16.dp))
-                }
-            } else {
-                // Normal update: keep in-app download + website option
-                Button(
-                    onClick = onUpdate,
-                    enabled = !downloading,
-                    shape = TTShapes.button,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Carbon
+            Button(
+                onClick = onUpdate,
+                enabled = !downloading,
+                shape = TTShapes.button,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (forceUpdate) DangerRed else Color.White,
+                    contentColor = if (forceUpdate) Color.White else Carbon,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (downloading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = if (forceUpdate) Color.White else Carbon,
+                        strokeWidth = 2.dp,
                     )
-                ) {
-                    if (downloading) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Carbon, strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Downloading...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    } else {
-                        Icon(Icons.Rounded.SystemUpdate, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Update Now", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Mengunduh $progressPercent%",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                } else {
+                    Icon(Icons.Rounded.SystemUpdate, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (forceUpdate) "Unduh & perbarui sekarang" else "Perbarui dari launcher",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             }
         },
         dismissButton = {
-            // v322: Sembunyikan tombol "Later" kalau forceUpdate
             if (!forceUpdate) {
                 TextButton(
                     onClick = onLater,
-                    enabled = !downloading
+                    enabled = !downloading,
                 ) {
-                    Text("Later", color = SubText, fontSize = 13.sp)
+                    Text("Nanti", color = SubText, fontSize = 13.sp)
                 }
             }
         },
-        containerColor = GlassBase
+        containerColor = GlassBase,
     )
 }
 
