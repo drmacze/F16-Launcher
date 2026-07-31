@@ -1,0 +1,115 @@
+name: In-App Updater v334
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/build.gradle'
+      - 'app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt'
+      - '.github/scripts/apply_in_app_updater_v334.py'
+      - '.github/workflows/in-app-updater-v334.yml'
+  push:
+    branches:
+      - feat/v334-in-app-updater
+      - main
+    paths:
+      - 'app/build.gradle'
+      - 'app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt'
+      - 'app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt'
+      - '.github/scripts/apply_in_app_updater_v334.py'
+      - '.github/workflows/in-app-updater-v334.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: in-app-updater-v334-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Materialize in-app updater
+        run: python3 .github/scripts/apply_in_app_updater_v334.py
+
+      - name: Validate updater contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'versionCode 334' app/build.gradle
+          grep -F 'versionName "8.6.2"' app/build.gradle
+          grep -F 'TRUSTED_APK_PREFIX' app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt
+          grep -F 'private fun validateDownloadedApk' app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt
+          grep -F 'dlavie-update.apk.part' app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt
+          grep -F 'reportProgress(onProgress, 1f)' app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt
+          grep -F 'Unduh & perbarui sekarang' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
+          grep -F 'Download langsung di launcher' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
+          grep -F 'Menyiapkan installer' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
+          grep -F 'showUpdatePopup = false' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
+          ! grep -F 'Force update → button langsung buka website' app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt').read_text()
+          popup = text.split('// ─── App Update Popup', 1)[1].split('// ─── Helper functions', 1)[0]
+          confirm = popup.split('confirmButton = {', 1)[1].split('dismissButton = {', 1)[0]
+          assert 'onClick = onUpdate' in confirm
+          assert 'onClick = onOpenWebsite' not in confirm
+          assert 'LinearProgressIndicator' in popup
+          assert 'if (error.isNotBlank())' in popup
+          print('in-app updater invariants valid')
+          PY
+
+      - name: Compile launcher
+        run: gradle assembleDebug --stacktrace --console=plain
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-in-app-updater-v334-${{ github.event_name }}
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Commit materialized app source
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- \
+            app/build.gradle \
+            app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt \
+            app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt; then
+            echo 'In-app updater source already materialized.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            app/build.gradle \
+            app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt \
+            app/src/main/java/com/drmacze/f16launcher/ModernLauncherActivity.kt
+          git commit -m 'feat(v334): materialize launcher-native updater'
+          git push
