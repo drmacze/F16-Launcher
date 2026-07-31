@@ -21,8 +21,10 @@ object AppUpdateChecker {
     /** URL website DLavie — halaman download APK */
     const val DLAVIE_WEBSITE_URL = "https://drmacze.github.io/dlavie-web/"
 
-    /** Any version gap triggers the non-dismissable website update flow. */
+    /** Any version gap remains non-dismissable, but downloads stay in-app. */
     private const val FORCE_UPDATE_THRESHOLD = 1
+    private const val TRUSTED_APK_PREFIX =
+        "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/"
 
     data class UpdateInfo(
         val versionName: String,
@@ -73,9 +75,7 @@ object AppUpdateChecker {
 
             val apkUrl = launcher.optString("apk_url", "")
             require(
-                apkUrl.startsWith(
-                    "https://github.com/drmacze/DLavie-Launcher-Data/releases/download/"
-                )
+                apkUrl.startsWith(TRUSTED_APK_PREFIX)
             ) { "Manifest memiliki apk_url yang tidak tepercaya" }
 
             val gap = latestCode - currentCode
@@ -110,117 +110,223 @@ object AppUpdateChecker {
         }
     }
 
-    /** Download APK to cache with progress and retry handling. */
-    suspend fun downloadApk(context: Context, apkUrl: String, onProgress: ((Float) -> Unit)? = null): File? {
-        val cacheDir = File(context.cacheDir, "app-updates").also { it.mkdirs() }
-        val apkFile = File(cacheDir, "dlavie-update.apk")
-        if (apkFile.exists()) apkFile.delete()
+    /**
+     * Download the official launcher APK into private cache with visible progress.
+     * A `.part` file is used until the archive passes structural/package/version
+     * validation, preventing an interrupted response from reaching the installer.
+     */
+    suspend fun downloadApk(
+        context: Context,
+        apkUrl: String,
+        onProgress: ((Float) -> Unit)? = null,
+    ): File? {
+        require(apkUrl.startsWith(TRUSTED_APK_PREFIX)) {
+            "Tautan pembaruan launcher tidak tepercaya"
+        }
 
-        var lastError: String? = null
+        val cacheDir = File(context.cacheDir, "app-updates").also { it.mkdirs() }
+        val partialFile = File(cacheDir, "dlavie-update.apk.part")
+        val finalFile = File(cacheDir, "dlavie-update.apk")
+        partialFile.delete()
+        finalFile.delete()
+
+        var lastError: Throwable? = null
         val maxRetries = 3
 
         for (attempt in 1..maxRetries) {
             try {
+                reportProgress(onProgress, 0f)
                 android.util.Log.i("AppUpdate", "Download attempt $attempt/$maxRetries: $apkUrl")
-                val success = downloadApkAttempt(apkUrl, apkFile, onProgress)
-                if (success && apkFile.length() > 1_000_000) {
-                    android.util.Log.i("AppUpdate", "Download success: ${apkFile.length()} bytes")
-                    return apkFile
-                } else if (apkFile.exists()) {
-                    apkFile.delete()
+                downloadApkAttempt(apkUrl, partialFile, onProgress)
+                validateDownloadedApk(context, partialFile)
+
+                if (!partialFile.renameTo(finalFile)) {
+                    partialFile.copyTo(finalFile, overwrite = true)
+                    partialFile.delete()
                 }
-            } catch (e: Exception) {
-                android.util.Log.w("AppUpdate", "Attempt $attempt failed: ${e.message}")
-                lastError = e.message
-                if (apkFile.exists()) apkFile.delete()
+                require(finalFile.isFile && finalFile.length() > 1_000_000L) {
+                    "File pembaruan tidak lengkap"
+                }
+                reportProgress(onProgress, 1f)
+                android.util.Log.i("AppUpdate", "Download verified: ${finalFile.length()} bytes")
+                return finalFile
+            } catch (error: Throwable) {
+                lastError = error
+                android.util.Log.w(
+                    "AppUpdate",
+                    "Download attempt $attempt/$maxRetries failed: ${error.message}",
+                    error,
+                )
+                partialFile.delete()
+                finalFile.delete()
                 if (attempt < maxRetries) {
-                    kotlinx.coroutines.delay(2000L * attempt)
+                    kotlinx.coroutines.delay(1_500L * attempt)
                 }
             }
         }
-        throw Exception(lastError ?: "Download failed after $maxRetries attempts")
+
+        throw IllegalStateException(
+            lastError?.message ?: "Download gagal setelah $maxRetries percobaan",
+            lastError,
+        )
     }
 
-    private fun downloadApkAttempt(apkUrl: String, apkFile: File, onProgress: ((Float) -> Unit)?): Boolean {
+    private suspend fun downloadApkAttempt(
+        apkUrl: String,
+        partialFile: File,
+        onProgress: ((Float) -> Unit)?,
+    ) {
         var currentUrl = apkUrl
         var redirectCount = 0
-        var conn: HttpURLConnection? = null
+        var connection: HttpURLConnection? = null
 
         try {
             while (true) {
-                val url = URL(currentUrl)
-                conn = (url.openConnection() as HttpURLConnection).apply {
+                val requestUrl = URL(currentUrl)
+                connection = (requestUrl.openConnection() as HttpURLConnection).apply {
                     instanceFollowRedirects = false
                     connectTimeout = 30_000
                     readTimeout = 120_000
                     setRequestProperty("User-Agent", "DLavie-Launcher/${BuildConfig.VERSION_CODE} (Android)")
-                    setRequestProperty("Accept", "application/vnd.android.package-archive, application/octet-stream, */*")
+                    setRequestProperty(
+                        "Accept",
+                        "application/vnd.android.package-archive, application/octet-stream, */*",
+                    )
                     setRequestProperty("Accept-Encoding", "identity")
                     connect()
                 }
 
-                val responseCode = conn.responseCode
+                val responseCode = connection.responseCode
                 if (responseCode in 300..399) {
-                    val location = conn.getHeaderField("Location")
-                    conn.disconnect()
-                    conn = null
-                    if (location.isNullOrBlank()) {
-                        throw Exception("Redirect tanpa Location header (HTTP $responseCode)")
+                    val location = connection.getHeaderField("Location")
+                    connection.disconnect()
+                    connection = null
+                    require(!location.isNullOrBlank()) {
+                        "Redirect tanpa Location header (HTTP $responseCode)"
                     }
-                    if (redirectCount >= 5) {
-                        throw Exception("Too many redirects (max 5)")
-                    }
-                    currentUrl = location
-                    redirectCount++
+                    require(redirectCount < 5) { "Terlalu banyak redirect" }
+                    currentUrl = URL(requestUrl, location).toString()
+                    redirectCount += 1
                     continue
                 }
 
-                if (responseCode == 404) {
-                    throw Exception("File tidak ditemukan di server (HTTP 404)")
+                when (responseCode) {
+                    403 -> throw IllegalStateException("Akses file pembaruan ditolak (HTTP 403)")
+                    404 -> throw IllegalStateException("File pembaruan tidak ditemukan (HTTP 404)")
                 }
-                if (responseCode == 403) {
-                    throw Exception("Akses ditolak (HTTP 403). URL mungkin kedaluwarsa, retry...")
-                }
-                if (responseCode !in 200..299) {
-                    throw Exception("Server return HTTP $responseCode")
+                require(responseCode in 200..299) {
+                    "Server pembaruan mengembalikan HTTP $responseCode"
                 }
 
-                val total = conn.contentLengthLong.toFloat().coerceAtLeast(1f)
-                val buf = ByteArray(32 * 1024)
-                conn.inputStream.use { inp ->
-                    apkFile.outputStream().use { out ->
-                        var n: Int
-                        var read = 0L
-                        while (inp.read(buf).also { n = it } != -1) {
-                            out.write(buf, 0, n)
-                            read += n
-                            onProgress?.invoke((read / total).coerceIn(0f, 0.99f))
+                val totalBytes = connection.contentLengthLong.takeIf { it > 0L }
+                val buffer = ByteArray(32 * 1024)
+                var downloadedBytes = 0L
+                var lastReportedPercent = -1
+
+                connection.inputStream.use { input ->
+                    partialFile.outputStream().buffered().use { output ->
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                            downloadedBytes += count
+
+                            if (totalBytes != null) {
+                                val progress = (downloadedBytes.toDouble() / totalBytes.toDouble())
+                                    .toFloat()
+                                    .coerceIn(0f, 0.99f)
+                                val percent = (progress * 100).toInt()
+                                if (percent > lastReportedPercent) {
+                                    lastReportedPercent = percent
+                                    reportProgress(onProgress, progress)
+                                }
+                            }
                         }
+                        output.flush()
                     }
                 }
-                return true
+
+                if (totalBytes != null) {
+                    require(downloadedBytes == totalBytes) {
+                        "Download terputus: $downloadedBytes dari $totalBytes byte"
+                    }
+                }
+                return
             }
         } finally {
-            conn?.disconnect()
+            connection?.disconnect()
         }
     }
 
-    /** Trigger APK installation through FileProvider. */
+    private suspend fun reportProgress(
+        callback: ((Float) -> Unit)?,
+        value: Float,
+    ) {
+        if (callback == null) return
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+            callback(value.coerceIn(0f, 1f))
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun validateDownloadedApk(context: Context, apkFile: File) {
+        require(apkFile.isFile && apkFile.length() > 1_000_000L) {
+            "File pembaruan terlalu kecil atau tidak lengkap"
+        }
+
+        apkFile.inputStream().use { input ->
+            val signature = ByteArray(4)
+            require(input.read(signature) == signature.size) {
+                "File pembaruan tidak dapat dibaca"
+            }
+            require(signature[0] == 0x50.toByte() && signature[1] == 0x4B.toByte()) {
+                "File yang diterima bukan APK yang valid"
+            }
+        }
+
+        val archive = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+            ?: throw IllegalStateException("Android tidak dapat membaca APK pembaruan")
+        require(archive.packageName == context.packageName) {
+            "APK pembaruan memiliki package yang tidak sesuai"
+        }
+
+        val archiveVersion = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            archive.longVersionCode
+        } else {
+            archive.versionCode.toLong()
+        }
+        require(archiveVersion > BuildConfig.VERSION_CODE.toLong()) {
+            "APK yang diunduh bukan versi yang lebih baru"
+        }
+    }
+
+    /** Trigger the Android package installer for a verified cached APK. */
+    @Suppress("DEPRECATION")
     fun installApk(context: Context, apkFile: File): Boolean {
         return try {
             val uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.files",
-                apkFile
+                apkFile,
             )
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                clipData = android.content.ClipData.newRawUri("DLavie update", uri)
+            }
+
+            context.packageManager.queryIntentActivities(intent, 0).forEach { target ->
+                context.grantUriPermission(
+                    target.activityInfo.packageName,
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
             }
             context.startActivity(intent)
             true
-        } catch (e: Throwable) {
-            android.util.Log.e("DLavie", "installApk: FileProvider failed", e)
+        } catch (error: Throwable) {
+            android.util.Log.e("DLavie", "installApk failed", error)
             false
         }
     }
