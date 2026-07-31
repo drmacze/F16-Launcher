@@ -1,0 +1,44 @@
+name: Dispatch Publisher v334
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/dispatch-publish-v334.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/dispatch-publish-v334.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate v334 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'versionCode 334' app/build.gradle
+          grep -F 'versionName "8.6.2"' app/build.gradle
+          grep -F 'validateDownloadedApk(context, partialFile)' app/src/main/java/com/drmacze/f16launcher/AppUpdateChecker.kt
+          grep -F 'LinearProgressIndicator(' app/src/main/java/com/drmacze/f16launcher/PortalConnectScreen.kt
+
+  dispatch:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start idempotent production publisher
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/publish-current-launcher.yml/dispatches" \
+            -f ref=main
