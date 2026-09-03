@@ -308,15 +308,17 @@ fun GameActionPanel(
         }
     }
 
-    // ── Build step list (v7.2.6: simplified flow per user request) ──
-    // ALUR BARU:
+    // ── Build step list ─────────────────────────────────────────────────────
+    // RESOURCE FLOW FIX:
     //   1. Install APK (jika belum terinstall) → download APK → auto-open installer
-    //   2. Install Resource (jika data+obb belum) → klik → OPEN APK FIFA 16
-    //      APK akan download data+obb otomatis dari dalam game (in-app)
-    //   3. Play (jika semua resource sudah terpasang) → langsung launch game
+    //   2. Install Resource:
+    //      • FIFA 16 → launcher-owned Base Data installer (DATA + OBB)
+    //      • FIFA 15 → Fifa15DataManager download + extract langsung
+    //   3. Play hanya aktif setelah APK + resource benar-benar terdeteksi.
     //
-    // TIDAK ADA lagi "Apply Data" / "Apply Mod" step di sini.
-    // Mod patches tetap di DLC page (terpisah, untuk user yang mau apply mod).
+    // Jangan bootstrap resource FIFA 16 dari dalam game. Nimble/EA legacy mencoba
+    // endpoint lama (mis. mars.tnt-ea.com) yang sudah tidak dapat diandalkan dan
+    // dapat membuat first-run berhenti di network/EASP initialization.
     val visibleSteps = remember(apkInstalled, dataReady, game, apkDownloadActive, installing) {
         val steps = mutableListOf<Step>()
         var n = 1
@@ -333,45 +335,59 @@ fun GameActionPanel(
         }
 
         // Step 2: Install Resource (skip if already dataReady)
-        // Klik → langsung OPEN APK FIFA 16 (bukan ke DLC page)
-        // APK akan download data + OBB otomatis dari dalam game saat first launch.
         if (!dataReady) {
             steps.add(Step(
                 num = n++,
                 label = "Install Resource",
                 done = false,
                 action = {
-                    // v7.2.7: Check return value — kalau gagal, tampilkan error
-                    val launched = launchGame(context, game.packageName, game.mainActivity)
-                    if (launched) {
-                        onDismiss()
+                    installError = ""
+                    if (game.packageName == GAME_PKG_15) {
+                        startFifa15Install()
                     } else {
-                        installError = "Gagal membuka game. Pastikan APK sudah terinstall dengan benar."
-                        scope.launch { withContext(Dispatchers.Main) { refresh() } }
+                        try {
+                            context.startActivity(
+                                Intent(context, DevLauncherActivity::class.java).apply {
+                                    putExtra(EXTRA_BASE_DATA_INSTALLER, true)
+                                }
+                            )
+                            onDismiss()
+                        } catch (t: Throwable) {
+                            installError = "Gagal membuka Base Data Installer: ${t.message ?: "unknown error"}"
+                        }
                     }
                 },
                 icon = Icons.Rounded.FolderOpen
             ))
         }
 
-        // Step 3: Play (always shown — muncul kalau semua resource sudah terpasang)
-        // v7.2.7: Play action sekarang check return value dari launchGame.
-        // Kalau launchGame return false (game belum terinstall), tampilkan error.
+        // Step 3: Play. APK saja tidak cukup: DATA + OBB harus siap lebih dulu.
         steps.add(Step(
             num = n,
             label = "Play",
             done = false,
             action = {
-                val launched = launchGame(context, game.packageName, game.mainActivity)
-                if (launched) {
-                    onDismiss()
-                } else {
-                    // v7.2.7: Game belum terinstall — tampilkan error, JANGAN buka browser
-                    installError = "Game belum terinstall. Install APK dulu sebelum main."
-                    scope.launch {
-                        withContext(Dispatchers.Main) {
-                            // Refresh state untuk pastikan apkInstalled akurat
-                            refresh()
+                when {
+                    !apkInstalled -> {
+                        installError = "Game belum terinstall. Install APK dulu sebelum main."
+                        refresh()
+                    }
+                    !dataReady -> {
+                        installError = if (game.packageName == GAME_PKG_16) {
+                            "Resource FIFA 16 belum lengkap. Install Base Data + OBB dari launcher terlebih dahulu."
+                        } else {
+                            "Resource game belum lengkap. Install DATA + OBB dari launcher terlebih dahulu."
+                        }
+                    }
+                    else -> {
+                        val launched = launchGame(context, game.packageName, game.mainActivity)
+                        if (launched) {
+                            onDismiss()
+                        } else {
+                            installError = "Gagal membuka game. APK mungkin rusak atau activity game tidak ditemukan."
+                            scope.launch {
+                                withContext(Dispatchers.Main) { refresh() }
+                            }
                         }
                     }
                 }
@@ -672,16 +688,12 @@ fun GameActionPanel(
                             verticalAlignment = Alignment.Top
                         ) {
                             visibleSteps.forEachIndexed { index, step ->
-                                // v7.2.7: Play step disabled kalau APK belum terinstall.
-                                // Sebelumnya user bisa tap Play walaupun APK belum install
-                                // → launchGame fallback ke browser → user kecewa.
+                                // Resource integrity is now part of Play gating.
                                 val stepEnabled = when {
                                     !apkDownloadActive && !installing && !loading -> {
                                         if (step.label == "Play") {
-                                            // Play hanya bisa di-tap kalau APK sudah terinstall
-                                            apkInstalled
+                                            apkInstalled && dataReady
                                         } else if (step.label == "Install Resource") {
-                                            // Install Resource hanya bisa di-tap kalau APK sudah terinstall
                                             apkInstalled
                                         } else {
                                             true
@@ -707,7 +719,8 @@ fun GameActionPanel(
                         installing -> "${phaseLabel(installPhase)} ${(installProgress * 100).toInt()}%"
                         currentStep.label == "Play" -> "Play Now"
                         currentStep.label == "Install APK" -> "Download APK"
-                        currentStep.label == "Install Resource" -> "Open Game & Install"
+                        currentStep.label == "Install Resource" && game.packageName == GAME_PKG_15 -> "Install Data & OBB"
+                        currentStep.label == "Install Resource" -> "Install Base Data & OBB"
                         else -> currentStep.label
                     }
 
@@ -741,7 +754,11 @@ fun GameActionPanel(
                     ) {
                         Icon(Icons.Rounded.CheckCircle, null, tint = PanelMuted, modifier = Modifier.size(12.dp))
                         Text(
-                            "Tip: Setelah install APK, buka game untuk download data + OBB otomatis. Setelah selesai, kembali ke launcher untuk main.",
+                            if (game.packageName == GAME_PKG_16) {
+                                "Tip: Install Base Data + OBB dari launcher sebelum Play. Jangan mengandalkan download first-run dari server EA/Nimble lama."
+                            } else {
+                                "Tip: Install DATA + OBB dari launcher sampai terverifikasi, lalu tekan Play."
+                            },
                             color = PanelMuted,
                             fontSize = 10.sp,
                             fontFamily = InterFontFamily,
