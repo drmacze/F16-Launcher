@@ -1,65 +1,90 @@
 package com.drmacze.f16launcher
 
-import androidx.compose.animation.core.*
-import androidx.compose.animation.*
-import androidx.compose.foundation.*
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.PressInteraction
-import androidx.compose.foundation.layout.*
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.BatteryFull
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.*
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.graphicsLayer
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PS5 LAUNCHER — Design System (PlayStation 5 UI style)
-// ═══════════════════════════════════════════════════════════════════════════
-// Pure black bg + PS blue accent + landscape game cards + glow on focus
+// DLAVIE GAME EXPERIENCE — 2026 visual refresh
+//
+// Historical function names are preserved for compatibility with the launcher,
+// but the presentation now follows the shared DLavie 2026 design system rather
+// than a separate PlayStation-blue theme.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ── PS5 Design Tokens ──
 object PS5Colors {
-    val Bg          = Color(0xFF000000)   // Pure black
-    val BgCard      = Color(0xFF0A0A0A)   // Card surface (barely visible)
-    val BgNav       = Color(0xFF0D0D0D)   // Nav bar
-    val Surface     = Color(0xFF1A1A1A)   // Elevated surface
-    val GlassBg     = Color(0x99000000)   // 60% black for glassmorphism
-    val Border      = Color(0x20FFFFFF)   // 12% white border
-    val BorderHi    = Color(0x40FFFFFF)   // 25% white border (selected)
-    val TextWhite   = Color(0xFFFFFFFF)
-    val TextGray    = Color(0xFF999999)   // PS5 secondary text
-    val TextDim     = Color(0xFF666666)
-    val Accent      = Color(0xFF0070D1)   // PS Blue
-    val AccentBright= Color(0xFF1F80FF)   // Brighter PS Blue for glow
-    val AccentDim   = Color(0xFF0050A0)
-    val Green       = Color(0xFF00C853)   // PS5 green for Play
-    val Amber       = Color(0xFFFFB300)
-    val Red         = Color(0xFFFF5252)
+    val Bg           get() = PureBlack
+    val BgCard       get() = GlassBase
+    val BgNav        get() = Color(0xF2101318)
+    val Surface      get() = Surface2
+    val GlassBg      get() = Color(0xD90B0D10)
+    val Border       get() = GlassStroke
+    val BorderHi     get() = GlassStrokeHi
+    val TextWhite    get() = TextWhite
+    val TextGray     get() = SubText
+    val TextDim      get() = DimText
+    val Accent       get() = DLavieAccent
+    val AccentBright get() = TextWhite
+    val AccentDim    get() = DLavieAccentDim
+    val Green        get() = SuccessGreen
+    val Amber        get() = AmberWarn
+    val Red          get() = DangerRed
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PS5 GAME CAROUSEL — landscape cards, focused scale + glow
+// GAME CAROUSEL
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -74,8 +99,8 @@ fun PS5GameCarousel(
 
     LazyRow(
         state = listState,
-        contentPadding = PaddingValues(horizontal = 64.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = modifier.fillMaxWidth()
     ) {
         itemsIndexed(games) { idx, game ->
@@ -96,119 +121,170 @@ private fun PS5GameCard(
     isFocused: Boolean,
     onClick: () -> Unit
 ) {
-    // PS5 focus animation: focused card bigger + glow
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1f else 0.82f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 200f),
-        label = "ps5_scale"
+        targetValue = if (isFocused) 1f else 0.95f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "dlavie_game_scale"
     )
     val alpha by animateFloatAsState(
-        targetValue = if (isFocused) 1f else 0.4f,
-        animationSpec = tween(400),
-        label = "ps5_alpha"
+        targetValue = if (isFocused) 1f else 0.72f,
+        animationSpec = tween(220),
+        label = "dlavie_game_alpha"
     )
-    val glowAlpha by animateFloatAsState(
-        targetValue = if (isFocused) 0.6f else 0f,
-        animationSpec = tween(400),
-        label = "ps5_glow"
+    val borderColor by animateColorAsState(
+        targetValue = if (isFocused) GlassStrokeHi else GlassStroke,
+        animationSpec = tween(220),
+        label = "dlavie_game_border"
     )
 
     Column(
-        Modifier.width(280.dp).graphicsLayer {
-            scaleX = scale; scaleY = scale; this.alpha = alpha
-        },
-        horizontalAlignment = Alignment.CenterHorizontally
+        Modifier
+            .width(292.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                this.alpha = alpha
+            }
     ) {
-        // ── CARD (landscape 16:9, full-bleed artwork, no border) ──
-        Box(
-            Modifier.width(280.dp).height(158.dp)  // 16:9 ratio
-                .clip(RoundedCornerShape(16.dp))
-                .background(Brush.linearGradient(game.coverGradient))
-                .clickable { onClick() }
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(164.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = GlassBase,
+            border = BorderStroke(1.dp, borderColor),
+            shadowElevation = if (isFocused) 8.dp else 0.dp,
+            onClick = onClick
         ) {
-            // Cover image full bleed
-            if (game.coverImageRes != null) {
-                Image(
-                    painter = painterResource(id = game.coverImageRes),
-                    contentDescription = game.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            }
-
-            // PS5 glow border on focused card
-            if (isFocused) {
+            Box(Modifier.fillMaxSize()) {
                 Box(
-                    Modifier.fillMaxSize()
-                        .border(2.dp, PS5Colors.AccentBright.copy(alpha = glowAlpha), RoundedCornerShape(16.dp))
+                    Modifier
+                        .fillMaxSize()
+                        .background(Brush.linearGradient(game.coverGradient))
                 )
-            }
 
-            // Bottom gradient for text readability (PS5 style — subtle)
-            Box(
-                Modifier.fillMaxWidth().height(80.dp).align(Alignment.BottomStart)
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.85f))))
-            )
+                if (game.coverImageRes != null) {
+                    Image(
+                        painter = painterResource(id = game.coverImageRes),
+                        contentDescription = game.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
 
-            // Status badge (top-right, PS5 style)
-            val (sc, st) = when (game.serverStatus) {
-                ServerStatus.ONLINE -> Pair(PS5Colors.Green, "ONLINE")
-                ServerStatus.MAINTENANCE -> Pair(PS5Colors.Amber, "MAINT")
-                ServerStatus.OFFLINE -> Pair(PS5Colors.Red, "OFFLINE")
-                ServerStatus.BUSY -> Pair(PS5Colors.Amber, "BUSY")
-            }
-            Box(
-                Modifier.align(Alignment.TopEnd).padding(12.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(sc.copy(alpha = 0.9f))
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
-            ) {
-                Text(st, color = PS5Colors.TextWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
-
-            // Title overlay (bottom-left, PS5 style)
-            Column(Modifier.align(Alignment.BottomStart).padding(14.dp)) {
-                Text(
-                    game.title,
-                    color = PS5Colors.TextWhite,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium,  // PS5 uses Medium, not Black
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                // Readability layer: quiet and uniform across every artwork.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Black.copy(alpha = 0.04f),
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.88f)
+                                )
+                            )
+                        )
                 )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    game.subtitle,
-                    color = PS5Colors.TextGray,
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+
+                val (statusColor, statusText) = when (game.serverStatus) {
+                    ServerStatus.ONLINE -> SuccessGreen to "ONLINE"
+                    ServerStatus.MAINTENANCE -> AmberWarn to "MAINTENANCE"
+                    ServerStatus.OFFLINE -> DangerRed to "OFFLINE"
+                    ServerStatus.BUSY -> AmberWarn to "BUSY"
+                }
+
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp),
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color.Black.copy(alpha = 0.66f),
+                    border = BorderStroke(1.dp, statusColor.copy(alpha = 0.45f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Box(
+                            Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(statusColor)
+                        )
+                        Text(
+                            statusText,
+                            color = TextWhite,
+                            fontFamily = InterFontFamily,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.3.sp
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        game.title,
+                        color = TextWhite,
+                        fontFamily = InterFontFamily,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        game.subtitle,
+                        color = SoftText,
+                        fontFamily = InterFontFamily,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
 
-        // ── ACTION BUTTON (below card, only visible when focused) ──
-        if (isFocused) {
-            Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            color = if (isInstalled) TextWhite else Surface2,
+            border = if (isInstalled) null else BorderStroke(1.dp, GlassStroke),
+            onClick = onClick
+        ) {
             Row(
-                Modifier.clip(RoundedCornerShape(8.dp))
-                    .background(if (isInstalled) PS5Colors.Green else PS5Colors.Accent)
-                    .clickable { onClick() }
-                    .padding(horizontal = 24.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp)
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download,
-                    null,
-                    tint = PS5Colors.TextWhite,
+                    imageVector = if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download,
+                    contentDescription = null,
+                    tint = if (isInstalled) Carbon else TextWhite,
                     modifier = Modifier.size(18.dp)
                 )
+                Spacer(Modifier.width(7.dp))
                 Text(
-                    if (isInstalled) "Play" else "Install",
-                    color = PS5Colors.TextWhite,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
+                    text = if (isInstalled) "Play" else "Install",
+                    color = if (isInstalled) Carbon else TextWhite,
+                    fontFamily = InterFontFamily,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
@@ -216,7 +292,7 @@ private fun PS5GameCard(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PS5 TOP BAR — minimal, transparent, time/battery/profile
+// TOP BAR
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -229,37 +305,53 @@ fun PS5TopBar(
     Row(
         modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 12.dp),
+            .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.End
     ) {
-        // Time
-        Text(currentTime, color = PS5Colors.TextWhite, fontSize = 13.sp, fontWeight = FontWeight.Light)
-        Spacer(Modifier.width(12.dp))
-        // Battery
-        Icon(Icons.Rounded.BatteryFull, "Battery", tint = PS5Colors.TextGray, modifier = Modifier.size(18.dp))
+        Text(
+            currentTime,
+            color = SoftText,
+            fontFamily = InterFontFamily,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Spacer(Modifier.width(10.dp))
+        Icon(
+            Icons.Rounded.BatteryFull,
+            contentDescription = "Battery",
+            tint = SubText,
+            modifier = Modifier.size(17.dp)
+        )
         Spacer(Modifier.width(3.dp))
-        Text("$batteryLevel%", color = PS5Colors.TextGray, fontSize = 12.sp)
+        Text(
+            "$batteryLevel%",
+            color = SubText,
+            fontFamily = InterFontFamily,
+            fontSize = 11.sp
+        )
         Spacer(Modifier.width(12.dp))
-        // Profile circle
-        Box(
-            Modifier.size(32.dp).clip(CircleShape)
-                .background(PS5Colors.Accent)
-                .border(1.dp, PS5Colors.BorderHi, CircleShape),
-            contentAlignment = Alignment.Center
+        Surface(
+            modifier = Modifier.size(34.dp),
+            shape = CircleShape,
+            color = Surface2,
+            border = BorderStroke(1.dp, GlassStrokeHi)
         ) {
-            Text(
-                username.take(1).ifEmpty { "D" },
-                color = PS5Colors.TextWhite,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    username.take(1).ifEmpty { "D" }.uppercase(),
+                    color = TextWhite,
+                    fontFamily = InterFontFamily,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PS5 FLOATING NAV — dark pill, blue glow on selected, center button
+// FLOATING NAVIGATION
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -274,31 +366,34 @@ fun PS5FloatingNav(
 
     Box(
         modifier = modifier
-            .widthIn(max = 600.dp)
-            .padding(horizontal = 16.dp)
+            .widthIn(max = 560.dp)
+            .padding(horizontal = 14.dp, vertical = 6.dp)
     ) {
-        // ── Dark pill bar (PS5 style) ──
         Surface(
-            shape = RoundedCornerShape(999.dp),
-            color = PS5Colors.BgNav,
-            shadowElevation = 16.dp,
-            tonalElevation = 0.dp,
-            border = androidx.compose.foundation.BorderStroke(1.dp, PS5Colors.Border)
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xF5101318),
+            border = BorderStroke(1.dp, GlassStroke),
+            shadowElevation = 18.dp,
+            tonalElevation = 0.dp
         ) {
             Row(
-                Modifier.height(64.dp).padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(0.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .height(68.dp)
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left: Home, DLC
                 pages.filter { it != centerPage }.take(2).forEach { item ->
                     PS5NavSideButton(item, page == item) {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onPage(item)
                     }
                 }
-                Spacer(Modifier.width(64.dp))
-                // Right: Chat, Me
+
+                Spacer(Modifier.width(62.dp))
+
                 pages.filter { it != centerPage }.drop(2).forEach { item ->
                     PS5NavSideButton(item, page == item) {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -308,50 +403,83 @@ fun PS5FloatingNav(
             }
         }
 
-        // ── Center button (PS5 style — blue glow) ──
-        Box(
-            Modifier.align(Alignment.Center)
-                .size(64.dp)
-                .offset(y = (-22).dp)
-                .shadow(elevation = 20.dp, shape = CircleShape, ambientColor = PS5Colors.AccentBright.copy(0.4f), spotColor = PS5Colors.AccentBright.copy(0.6f))
-                .clip(CircleShape)
-                .background(PS5Colors.Accent)
-                .border(2.dp, PS5Colors.TextWhite.copy(0.3f), CircleShape)
-                .clickable {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onPage(centerPage)
-                },
-            contentAlignment = Alignment.Center
+        // GameHub remains the visual anchor, but no oversized colored glow.
+        Surface(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(y = (-10).dp)
+                .size(58.dp)
+                .shadow(12.dp, RoundedCornerShape(19.dp)),
+            shape = RoundedCornerShape(19.dp),
+            color = TextWhite,
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onPage(centerPage)
+            }
         ) {
-            Icon(Icons.Rounded.PlayArrow, "GameHub", tint = PS5Colors.TextWhite, modifier = Modifier.size(34.dp))
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Rounded.PlayArrow,
+                    contentDescription = "GameHub",
+                    tint = Carbon,
+                    modifier = Modifier.size(30.dp)
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun PS5NavSideButton(item: Page, selected: Boolean, onClick: () -> Unit) {
+private fun PS5NavSideButton(
+    item: Page,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
     val iconTint by animateColorAsState(
-        if (selected) PS5Colors.AccentBright else PS5Colors.TextGray,
-        tween(300), label = "ps5_nav_tint_${item.label}"
+        targetValue = if (selected) TextWhite else SubText,
+        animationSpec = tween(180),
+        label = "nav_icon_${item.label}"
+    )
+    val background by animateColorAsState(
+        targetValue = if (selected) Surface2 else Color.Transparent,
+        animationSpec = tween(180),
+        label = "nav_bg_${item.label}"
     )
     val labelColor by animateColorAsState(
-        if (selected) PS5Colors.TextWhite else PS5Colors.TextDim,
-        tween(300), label = "ps5_nav_label_${item.label}"
+        targetValue = if (selected) TextWhite else DimText,
+        animationSpec = tween(180),
+        label = "nav_label_${item.label}"
     )
 
-    Box(
-        modifier = Modifier.width(72.dp).height(52.dp)
-            .clip(RoundedCornerShape(999.dp))
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
+    Surface(
+        modifier = Modifier.width(66.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = background,
+        onClick = onClick
     ) {
         Column(
+            modifier = Modifier
+                .height(52.dp)
+                .padding(vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(item.navIcon, item.label, tint = iconTint, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.height(2.dp))
-            Text(item.label, fontSize = 9.sp, color = labelColor, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal)
+            Icon(
+                item.navIcon,
+                contentDescription = item.label,
+                tint = iconTint,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                item.label,
+                fontFamily = InterFontFamily,
+                fontSize = 9.sp,
+                color = labelColor,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1
+            )
         }
     }
 }
