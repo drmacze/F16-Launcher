@@ -69,6 +69,9 @@ jobs:
       - name: Patch guided launcher UX
         run: python .github/scripts/patch_guided_ux.py
 
+      - name: Apply DLavie screen refresh
+        run: python .github/scripts/apply_ui_screen_refresh_v2.py
+
       - name: Build debug APK
         id: build_apk
         shell: bash
