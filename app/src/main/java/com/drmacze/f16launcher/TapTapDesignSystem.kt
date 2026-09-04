@@ -4,99 +4,99 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // ════════════════════════════════════════════════════════════════════════════
-// DLAVIE DESIGN SYSTEM v6.0 — PURE MONOCHROME + HALFTONE
+// DLAVIE DESIGN SYSTEM 2026
 //
-// PHILOSOPHY:
-//   Pure black & white. No colorful accents. No cyan, no violet, no green.
-//   - Background: #000000 (pure black) with halftone dot pattern overlay
-//   - Surfaces: #0A0A0A → #1A1A1A → #222222 (subtle gray elevation)
-//   - Text: #FFFFFF (pure white) for primary, #999999 for secondary
-//   - Borders: white at 10-20% alpha (subtle, elegant)
-//   - Icons: solid white or thick white outline
-//   - Status colors (error/warning) kept MINIMAL — only for actual alerts
+// One visual language for the whole launcher:
+// • graphite-black surfaces instead of flat pure black everywhere
+// • crisp off-white typography with softer secondary hierarchy
+// • subtle cool accent only for selection/focus — never decorative overload
+// • consistent 12/16/20dp radii and predictable spacing
+// • thin borders + restrained elevation instead of heavy glows
 //
-// The halftone dot pattern is the SIGNATURE element — small white dots
-// varying in size/opacity across the background, creating depth and a
-// retro-digital/holographic feel.
-//
-// All legacy color aliases (CandyCyan, NeonGreen, etc.) are remapped to
-// monochrome equivalents so existing code compiles without changes.
+// Legacy aliases are intentionally preserved so older screens inherit the new
+// visual system without requiring a risky app-wide rewrite in one release.
 // ════════════════════════════════════════════════════════════════════════════
 
-// ─── Core Monochrome Palette ────────────────────────────────────────────────
-val PureBlack   = Color(0xFF000000)   // deepest background
-val Carbon      = Color(0xFF050505)   // base background (near-black)
-val GlassBase   = Color(0xFF0A0A0A)   // card background
-val Surface1    = Color(0xFF111111)   // elevated surface
-val Surface2    = Color(0xFF1A1A1A)   // higher elevation
-val Surface3    = Color(0xFF222222)   // highest surface
-val Surface4    = Color(0xFF2D2D2D)   // active/pressed state
+// ─── Core graphite palette ──────────────────────────────────────────────────
+val PureBlack   = Color(0xFF070809)
+val Carbon      = Color(0xFF0B0D10)
+val GlassBase   = Color(0xFF101318)
+val Surface1    = Color(0xFF15191F)
+val Surface2    = Color(0xFF1B2028)
+val Surface3    = Color(0xFF232A34)
+val Surface4    = Color(0xFF2D3541)
+
+// ─── Brand / focus ──────────────────────────────────────────────────────────
+// Used sparingly for active navigation, focus rings, links, and progress.
+val DLavieAccent     = Color(0xFF9DBBFF)
+val DLavieAccentSoft = Color(0xFF6F8FD8)
+val DLavieAccentDim  = Color(0xFF40577F)
 
 // ─── Text ────────────────────────────────────────────────────────────────────
-val TextWhite   = Color(0xFFFFFFFF)   // primary text (pure white)
-val SoftText    = Color(0xFFCCCCCC)   // body text (light gray)
-val SubText     = Color(0xFF888888)   // secondary text (medium gray)
-val DimText     = Color(0xFF555555)   // disabled/hint text (dark gray)
+val TextWhite   = Color(0xFFF7F8FA)
+val SoftText    = Color(0xFFD1D5DC)
+val SubText     = Color(0xFF989FAA)
+val DimText     = Color(0xFF646C78)
 
-// ─── Borders & Strokes ───────────────────────────────────────────────────────
-val GlassStroke    = Color(0x1AFFFFFF)   // 10% white — default border
-val GlassStrokeHi  = Color(0x33FFFFFF)   // 20% white — active/focused border
-val Hairline       = Color(0x0DFFFFFF)   // 5% white — subtle dividers
+// ─── Borders & dividers ──────────────────────────────────────────────────────
+val GlassStroke    = Color(0x24FFFFFF)   // ~14% white
+val GlassStrokeHi  = Color(0x42FFFFFF)   // ~26% white
+val Hairline       = Color(0x12FFFFFF)   // ~7% white
 
-// ─── Halftone ────────────────────────────────────────────────────────────────
-val HalftoneBright = Color(0xFFFFFFFF)   // halftone dot color (pure white)
-val HalftoneDim    = Color(0x66666666)   // dimmer halftone dots
+// ─── Background detail ───────────────────────────────────────────────────────
+val HalftoneBright = Color(0xFFF7F8FA)
+val HalftoneDim    = Color(0x527B828D)
 
-// ─── Status Colors (MINIMAL — only for actual alerts) ───────────────────────
-val DangerRed    = Color(0xFFFF4444)   // error/danger only (slightly muted)
-val AmberWarn    = Color(0xFFFFAA00)   // warning/rating only
-val SuccessWhite = Color(0xFFFFFFFF)   // success = white checkmark (no green)
+// ─── Status colors — only for actual state communication ────────────────────
+val DangerRed    = Color(0xFFFF5D67)
+val AmberWarn    = Color(0xFFFFB84D)
+val SuccessGreen = Color(0xFF67D89A)
+val SuccessWhite = SuccessGreen
 
 // ════════════════════════════════════════════════════════════════════════════
-// LEGACY ALIASES — all remapped to monochrome. Existing code compiles
-// without changes but visually uses the new pure B/W palette.
+// LEGACY ALIASES
+// Keep old names compiling while routing them into the 2026 palette.
 // ════════════════════════════════════════════════════════════════════════════
-val AccentGreen: Color    get() = TextWhite        // was: #00E676 → now: white
-val NeonGreen: Color      get() = TextWhite        // was: #00E676 → now: white
-val CandyCyan: Color      get() = TextWhite        // was: cyan → now: white
-val CandyBlue: Color      get() = SoftText         // was: blue → now: gray
-val TapTapGreen: Color    get() = TextWhite        // was: green → now: white
-val TapTapGold: Color     get() = AmberWarn        // kept: amber for ratings
-val PremiumGold: Color    get() = AmberWarn        // kept: amber for ratings
-val PremiumViolet: Color  get() = SubText          // was: violet → now: gray
+val AccentGreen: Color    get() = DLavieAccent
+val NeonGreen: Color      get() = SuccessGreen
+val CandyCyan: Color      get() = DLavieAccent
+val CandyBlue: Color      get() = DLavieAccentSoft
+val TapTapGreen: Color    get() = DLavieAccent
+val TapTapGold: Color     get() = AmberWarn
+val PremiumGold: Color    get() = AmberWarn
+val PremiumViolet: Color  get() = DLavieAccentSoft
 val StarWhite: Color      get() = TextWhite
-val HalftoneMid: Color    get() = SoftText
+val HalftoneMid: Color    get() = SubText
 
-// ─── DLavie Glass (v5.0 legacy — remapped to monochrome) ────────────────────
+// ─── DLavie glass surface aliases ────────────────────────────────────────────
 object DLavieGlass {
     val SpaceBlack    = PureBlack
     val SpaceCharcoal = Carbon
     val SpaceSurface  = Surface2
 
-    val GlassSurface     = Color(0x14FFFFFF)   // 8% white
-    val GlassSurfaceHigh = Color(0x1FFFFFFF)   // 12% white
-    val GlassSurfaceLow  = Color(0x0AFFFFFF)   // 4% white
-    val GlassStroke      = Color(0x1AFFFFFF)   // 10% white
-    val GlassStrokeHigh  = Color(0x33FFFFFF)   // 20% white
+    val GlassSurface     = Color(0xB8101318)
+    val GlassSurfaceHigh = Color(0xE615191F)
+    val GlassSurfaceLow  = Color(0x8F0B0D10)
+    val GlassStroke      = com.drmacze.f16launcher.GlassStroke
+    val GlassStrokeHigh  = com.drmacze.f16launcher.GlassStrokeHi
 
-    // All aurora colors → monochrome
-    val AuroraCyan    = TextWhite
-    val AuroraViolet  = SubText
-    val AuroraMint    = TextWhite
+    val AuroraCyan    = DLavieAccent
+    val AuroraViolet  = DLavieAccentSoft
+    val AuroraMint    = SuccessGreen
     val AuroraCoral   = DangerRed
     val AuroraAmber   = AmberWarn
 
-    val GlowCyan   = Color(0x33FFFFFF)   // 20% white glow
-    val GlowViolet = Color(0x22FFFFFF)   // 13% white glow
-    val GlowMint   = Color(0x33FFFFFF)   // 20% white glow
+    val GlowCyan   = DLavieAccent.copy(alpha = 0.20f)
+    val GlowViolet = DLavieAccentSoft.copy(alpha = 0.14f)
+    val GlowMint   = SuccessGreen.copy(alpha = 0.18f)
 
     val TextPrimary   = TextWhite
     val TextSecondary = SoftText
@@ -104,46 +104,112 @@ object DLavieGlass {
     val TextDim       = DimText
 
     val BrandMarkCyan   = TextWhite
-    val BrandMarkMint   = SoftText
-    val BrandMarkStroke = SubText
+    val BrandMarkMint   = DLavieAccent
+    val BrandMarkStroke = GlassStrokeHi
 }
 
 // Convenience aliases
-val DLAuroraCyan    get() = TextWhite
-val DLAuroraViolet  get() = SubText
-val DLAuroraMint    get() = TextWhite
+val DLAuroraCyan    get() = DLavieAccent
+val DLAuroraViolet  get() = DLavieAccentSoft
+val DLAuroraMint    get() = SuccessGreen
 val DLAuroraCoral   get() = DangerRed
-val DLGlassSurface     get() = DLavieGlass.GlassSurface
-val DLGlassStroke      get() = DLavieGlass.GlassStroke
+val DLGlassSurface  get() = DLavieGlass.GlassSurface
+val DLGlassStroke   get() = DLavieGlass.GlassStroke
 val DLTextPrimary   get() = TextWhite
 val DLTextSecondary get() = SoftText
 val DLTextMuted     get() = SubText
 
-// ─── Inter Font Family (bundled in APK) ──────────────────────────────────────
+// ─── Inter font family (bundled in APK) ──────────────────────────────────────
 val InterFontFamily: FontFamily = FontFamily(
     Font(R.font.inter_regular, FontWeight.Normal),
-    Font(R.font.inter_bold,    FontWeight.Bold),
-    Font(R.font.inter_black,   FontWeight.Black),
+    Font(R.font.inter_bold, FontWeight.Bold),
+    Font(R.font.inter_black, FontWeight.Black),
 )
 
 // ─── Typography ──────────────────────────────────────────────────────────────
+// Slightly calmer weights and line-heights make dense screens easier to scan.
 object TTTypography {
-    val displayLarge   = TextStyle(fontFamily = InterFontFamily, fontSize = 32.sp, fontWeight = FontWeight.Black)
-    val displayMedium  = TextStyle(fontFamily = InterFontFamily, fontSize = 24.sp, fontWeight = FontWeight.Black)
-    val headlineLarge  = TextStyle(fontFamily = InterFontFamily, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-    val headlineMedium = TextStyle(fontFamily = InterFontFamily, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-    val titleLarge     = TextStyle(fontFamily = InterFontFamily, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-    val titleMedium    = TextStyle(fontFamily = InterFontFamily, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-    val bodyLarge      = TextStyle(fontFamily = InterFontFamily, fontSize = 14.sp, fontWeight = FontWeight.Normal)
-    val bodyMedium     = TextStyle(fontFamily = InterFontFamily, fontSize = 13.sp, fontWeight = FontWeight.Normal)
-    val bodySmall      = TextStyle(fontFamily = InterFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Normal)
-    val caption        = TextStyle(fontFamily = InterFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-    val micro          = TextStyle(fontFamily = InterFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-    val labelMedium    = TextStyle(fontFamily = InterFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    val displayLarge = TextStyle(
+        fontFamily = InterFontFamily,
+        fontSize = 32.sp,
+        lineHeight = 36.sp,
+        fontWeight = FontWeight.Black,
+        letterSpacing = (-0.5).sp
+    )
+    val displayMedium = TextStyle(
+        fontFamily = InterFontFamily,
+        fontSize = 25.sp,
+        lineHeight = 30.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = (-0.3).sp
+    )
+    val headlineLarge = TextStyle(
+        fontFamily = InterFontFamily,
+        fontSize = 22.sp,
+        lineHeight = 28.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = (-0.2).sp
+    )
+    val headlineMedium = TextStyle(
+        fontFamily = InterFontFamily,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
+        fontWeight = FontWeight.Bold
+    )
+    val titleLarge = TextStyle(
+        fontFamily = InterFontFamily,
+        fontSize = 16.sp,
+        lineHeight = 22.sp,
+        fontWeight = FontWeight.Bold
+    )
+    val titleMedium = TextStyle(
+        fontFamily = InterFontFamily,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        fontWeight = FontWeight.SemiBold
+    )
+    val bodyLarge = TextStyle(
+        fontFamily = InterFontFamily,
+        fontSize = 14.sp,
+        lineHeight = 21.sp,
+        fontWeight = FontWeight.Normal
+    )
+    val bodyMedium = TextStyle(
+        fontFamily = InterFontFamily,
+        fontSize = 13.sp,
+        lineHeight = 19.sp,
+        fontWeight = FontWeight.Normal
+    )
+    val bodySmall = TextStyle(
+        fontFamily = InterFontFamily,
+        fontSize = 12.sp,
+        lineHeight = 18.sp,
+        fontWeight = FontWeight.Normal
+    )
+    val caption = TextStyle(
+        fontFamily = InterFontFamily,
+        fontSize = 11.sp,
+        lineHeight = 16.sp,
+        fontWeight = FontWeight.Medium
+    )
+    val micro = TextStyle(
+        fontFamily = InterFontFamily,
+        fontSize = 10.sp,
+        lineHeight = 14.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.25.sp
+    )
+    val labelMedium = TextStyle(
+        fontFamily = InterFontFamily,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        fontWeight = FontWeight.SemiBold
+    )
 }
 
 // ─── Spacing ─────────────────────────────────────────────────────────────────
 object TTSpacing {
+    val xxs  = 2.dp
     val xs   = 4.dp
     val sm   = 8.dp
     val md   = 12.dp
@@ -151,18 +217,20 @@ object TTSpacing {
     val xl   = 20.dp
     val xxl  = 24.dp
     val xxxl = 32.dp
+    val huge = 40.dp
 }
 
-// ─── Shapes (subtle rounded corners — 8-16dp) ────────────────────────────────
+// ─── Shapes ──────────────────────────────────────────────────────────────────
+// One radius language across cards, sheets, controls, and navigation.
 object TTShapes {
-    val small   = RoundedCornerShape(8.dp)
-    val medium  = RoundedCornerShape(12.dp)
-    val large   = RoundedCornerShape(16.dp)
-    val xlarge  = RoundedCornerShape(20.dp)
+    val small   = RoundedCornerShape(10.dp)
+    val medium  = RoundedCornerShape(14.dp)
+    val large   = RoundedCornerShape(18.dp)
+    val xlarge  = RoundedCornerShape(22.dp)
     val pill    = RoundedCornerShape(999.dp)
 
     val card      get() = large
-    val cardLarge get() = large
+    val cardLarge get() = xlarge
     val button    get() = medium
     val chip      get() = pill
     val input     get() = medium
@@ -173,51 +241,58 @@ val TTBorder: BorderStroke = BorderStroke(1.dp, GlassStroke)
 
 // ─── Elevation ───────────────────────────────────────────────────────────────
 object TTElevation {
-    val card  = 0.dp
-    val modal = 8.dp
-    val nav   = 12.dp
+    val card  = 1.dp
+    val modal = 10.dp
+    val nav   = 18.dp
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// v6.0 MONOCHROME HALFTONE — Gradients & Backgrounds
-// ════════════════════════════════════════════════════════════════════════════
-
+// ─── Gradients ───────────────────────────────────────────────────────────────
 object DLavieGradients {
-    // Card gradient — subtle white top to transparent bottom
+    // Quiet top-light gives cards depth without looking glossy.
     val glassCard = Brush.verticalGradient(
         colors = listOf(
-            Color.White.copy(alpha = 0.08f),
-            Color.White.copy(alpha = 0.02f),
-        )
-    )
-
-    // Button primary — pure white (for primary CTAs)
-    val primaryButton = Brush.horizontalGradient(
-        colors = listOf(
-            Color.White,
-            Color.White.copy(alpha = 0.90f),
-        )
-    )
-
-    // Accent ring — pure white (no color)
-    val accentRing = Brush.sweepGradient(
-        colors = listOf(
-            Color.White,
-            Color.White.copy(alpha = 0.5f),
-            Color.White,
-        )
-    )
-
-    // Legacy: auroraTopToBottom — now just subtle white glow
-    val auroraTopToBottom = Brush.verticalGradient(
-        colors = listOf(
-            Color.White.copy(alpha = 0.04f),
+            Color.White.copy(alpha = 0.055f),
+            Color.White.copy(alpha = 0.012f),
             Color.Transparent,
         )
     )
+
+    // Primary CTA stays high contrast and brand-neutral.
+    val primaryButton = Brush.horizontalGradient(
+        colors = listOf(
+            TextWhite,
+            Color(0xFFE7EBF2),
+        )
+    )
+
+    // Selection ring carries the single cool accent used across the app.
+    val accentRing = Brush.sweepGradient(
+        colors = listOf(
+            DLavieAccent,
+            TextWhite,
+            DLavieAccentSoft,
+            DLavieAccent,
+        )
+    )
+
+    val auroraTopToBottom = Brush.verticalGradient(
+        colors = listOf(
+            DLavieAccent.copy(alpha = 0.07f),
+            Color.White.copy(alpha = 0.018f),
+            Color.Transparent,
+        )
+    )
+
+    val appBackground = Brush.verticalGradient(
+        colors = listOf(
+            Color(0xFF0D1015),
+            Carbon,
+            PureBlack,
+        )
+    )
 }
 
-// ─── Glass Spacing ───────────────────────────────────────────────────────────
+// ─── Glass spacing aliases ───────────────────────────────────────────────────
 object DLSpacing {
     val xs   = 4.dp
     val sm   = 8.dp
@@ -229,24 +304,24 @@ object DLSpacing {
     val huge = 48.dp
 }
 
-// ─── Glass Radius ────────────────────────────────────────────────────────────
+// ─── Glass radius aliases ────────────────────────────────────────────────────
 object DLRadius {
-    val xs    = 8.dp
-    val sm    = 12.dp
-    val md    = 16.dp
-    val lg    = 20.dp
-    val xl    = 24.dp
-    val xxl   = 28.dp
+    val xs     = 8.dp
+    val sm     = 12.dp
+    val md     = 16.dp
+    val lg     = 18.dp
+    val xl     = 22.dp
+    val xxl    = 26.dp
     val pillDp = 999.dp
 
-    val card     get() = RoundedCornerShape(xl)
-    val cardLg   get() = RoundedCornerShape(xxl)
-    val button   get() = RoundedCornerShape(md)
-    val pill     get() = RoundedCornerShape(pillDp)
-    val input    get() = RoundedCornerShape(md)
-    val chip     get() = RoundedCornerShape(sm)
+    val card   get() = RoundedCornerShape(xl)
+    val cardLg get() = RoundedCornerShape(xxl)
+    val button get() = RoundedCornerShape(md)
+    val pill   get() = RoundedCornerShape(pillDp)
+    val input  get() = RoundedCornerShape(md)
+    val chip   get() = RoundedCornerShape(sm)
 }
 
-// ─── Glass Border ────────────────────────────────────────────────────────────
+// ─── Glass border aliases ────────────────────────────────────────────────────
 val DLBorderStroke: BorderStroke = BorderStroke(1.dp, DLavieGlass.GlassStroke)
-val DLBorderActive: BorderStroke = BorderStroke(1.5.dp, DLavieGlass.GlassStrokeHigh)
+val DLBorderActive: BorderStroke = BorderStroke(1.dp, DLavieGlass.GlassStrokeHigh)
