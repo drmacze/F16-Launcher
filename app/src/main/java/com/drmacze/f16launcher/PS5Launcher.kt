@@ -1,15 +1,13 @@
 package com.drmacze.f16launcher
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,22 +63,22 @@ import androidx.compose.ui.unit.sp
 // ═══════════════════════════════════════════════════════════════════════════
 
 object PS5Colors {
-    val Bg           get() = PureBlack
-    val BgCard       get() = GlassBase
+    val Bg           get() = com.drmacze.f16launcher.PureBlack
+    val BgCard       get() = com.drmacze.f16launcher.GlassBase
     val BgNav        get() = Color(0xF2101318)
-    val Surface      get() = Surface2
+    val Surface      get() = com.drmacze.f16launcher.Surface2
     val GlassBg      get() = Color(0xD90B0D10)
-    val Border       get() = GlassStroke
-    val BorderHi     get() = GlassStrokeHi
-    val TextWhite    get() = TextWhite
-    val TextGray     get() = SubText
-    val TextDim      get() = DimText
-    val Accent       get() = DLavieAccent
-    val AccentBright get() = TextWhite
-    val AccentDim    get() = DLavieAccentDim
-    val Green        get() = SuccessGreen
-    val Amber        get() = AmberWarn
-    val Red          get() = DangerRed
+    val Border       get() = com.drmacze.f16launcher.GlassStroke
+    val BorderHi     get() = com.drmacze.f16launcher.GlassStrokeHi
+    val TextWhite    get() = com.drmacze.f16launcher.TextWhite
+    val TextGray     get() = com.drmacze.f16launcher.SubText
+    val TextDim      get() = com.drmacze.f16launcher.DimText
+    val Accent       get() = com.drmacze.f16launcher.DLavieAccent
+    val AccentBright get() = com.drmacze.f16launcher.TextWhite
+    val AccentDim    get() = com.drmacze.f16launcher.DLavieAccentDim
+    val Green        get() = com.drmacze.f16launcher.SuccessGreen
+    val Amber        get() = com.drmacze.f16launcher.AmberWarn
+    val Red          get() = com.drmacze.f16launcher.DangerRed
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -175,7 +173,6 @@ private fun PS5GameCard(
                     )
                 }
 
-                // Readability layer: quiet and uniform across every artwork.
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -403,7 +400,6 @@ fun PS5FloatingNav(
             }
         }
 
-        // GameHub remains the visual anchor, but no oversized colored glow.
         Surface(
             modifier = Modifier
                 .align(Alignment.Center)
