@@ -1,5 +1,7 @@
 package com.drmacze.f16launcher
 
+// DLAVIE_SCREEN_REFRESH_V2
+
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -47,7 +49,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * GameDetailScreen v7.9.3 — Console-style redesign (PS5/Xbox inspired).
+ * GameDetailScreen — DLavie mobile-first game experience.
  *
  * Major changes from v7.2.9:
  * - Parameterized: accepts GameItem (works for FIFA 16 AND FIFA 15)
@@ -130,14 +132,14 @@ fun GameDetailScreen(
         ) {
             // ── Hero header with blurred background ──
             Box(
-                Modifier.fillMaxWidth().height(360.dp)
+                Modifier.fillMaxWidth().height(336.dp)
             ) {
                 // Blurred cover background (PS5 style)
                 if (game.coverImageRes != null) {
                     AsyncImage(
                         model = game.coverImageRes,
                         contentDescription = null,
-                        modifier = Modifier.fillMaxSize().blur(40.dp),
+                        modifier = Modifier.fillMaxSize().blur(24.dp),
                         contentScale = ContentScale.Crop
                     )
                 } else {
@@ -162,7 +164,7 @@ fun GameDetailScreen(
                 // Back button (top-left)
                 Box(
                     Modifier.padding(top = 48.dp, start = 16.dp).size(40.dp)
-                        .clip(CircleShape).background(Color.Black.copy(0.6f))
+                        .clip(RoundedCornerShape(14.dp)).background(Surface2.copy(alpha = 0.88f)).border(1.dp, GlassStroke, RoundedCornerShape(14.dp))
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onBack()
@@ -176,7 +178,7 @@ fun GameDetailScreen(
                 if (gameInstalled) {
                     Box(
                         Modifier.padding(top = 48.dp, end = 16.dp).align(Alignment.TopEnd)
-                            .size(40.dp).clip(CircleShape).background(Color.Black.copy(0.6f))
+                            .size(40.dp).clip(RoundedCornerShape(14.dp)).background(Surface2.copy(alpha = 0.88f)).border(1.dp, GlassStroke, RoundedCornerShape(14.dp))
                             .clickable {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 showDeleteConfirm = true
@@ -197,8 +199,9 @@ fun GameDetailScreen(
                         AsyncImage(
                             model = game.coverImageRes,
                             contentDescription = game.title,
-                            modifier = Modifier.size(120.dp, 160.dp)
-                                .clip(RoundedCornerShape(16.dp)),
+                            modifier = Modifier.size(112.dp, 150.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .border(1.dp, GlassStrokeHi, RoundedCornerShape(20.dp)),
                             contentScale = ContentScale.Crop
                         )
                     } else {
@@ -213,8 +216,9 @@ fun GameDetailScreen(
                     Text(
                         game.title,
                         color = Color.White,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Black,
+                        fontSize = 24.sp,
+                        lineHeight = 29.sp,
+                        fontWeight = FontWeight.Bold,
                         fontFamily = InterFontFamily
                     )
                     Text(
@@ -231,7 +235,7 @@ fun GameDetailScreen(
                     ) {
                         // Server status badge
                         Row(
-                            Modifier.clip(RoundedCornerShape(8.dp))
+                            Modifier.clip(RoundedCornerShape(999.dp))
                                 .background(game.serverStatus.bgColor)
                                 .padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -372,8 +376,9 @@ fun GameDetailScreen(
                             AsyncImage(
                                 model = screenshotRes,
                                 contentDescription = "Screenshot",
-                                modifier = Modifier.size(200.dp, 120.dp)
-                                    .clip(RoundedCornerShape(12.dp))
+                                modifier = Modifier.size(214.dp, 128.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .border(1.dp, GlassStroke, RoundedCornerShape(16.dp))
                                     .clickable { selectedScreenshot = screenshotRes },
                                 contentScale = ContentScale.Crop
                             )
@@ -395,8 +400,8 @@ fun GameDetailScreen(
             // ── Game Details section ──
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = GlassBase),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Surface2.copy(alpha = 0.72f)),
                 border = BorderStroke(1.dp, GlassStroke)
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -450,9 +455,9 @@ fun GameDetailScreen(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Rounded.Verified, null, tint = NeonGreen, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.Verified, null, tint = TextWhite, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Trusted by DLavie", color = NeonGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
+                Text("Verified by DLavie", color = SoftText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, fontFamily = InterFontFamily)
             }
 
             // ── v7.9.37: Save Game Manager (multi-mode) ──
@@ -464,8 +469,9 @@ fun GameDetailScreen(
         // ── Sticky bottom CTA bar (console-style) ──
         Surface(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-            color = Carbon.copy(alpha = 0.95f),
-            shadowElevation = 16.dp
+            color = Color(0xF2101318),
+            shadowElevation = 10.dp,
+            border = BorderStroke(1.dp, GlassStroke)
         ) {
             Box(
                 Modifier.fillMaxWidth().padding(16.dp).navigationBarsPadding(),
@@ -500,13 +506,13 @@ fun GameDetailScreen(
                             modifier = Modifier.fillMaxWidth().height(56.dp),
                             shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = NeonGreen,
-                                contentColor = Color.Black
+                                containerColor = TextWhite,
+                                contentColor = Carbon
                             )
                         ) {
                             Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(24.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Play", fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
+                            Text("Mainkan", fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
                         }
                     }
                     else -> {
@@ -530,7 +536,7 @@ fun GameDetailScreen(
                         ) {
                             Icon(Icons.Rounded.Download, null, modifier = Modifier.size(24.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Install", fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = InterFontFamily)
+                            Text("Install Game", fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = InterFontFamily)
                         }
                     }
                 }

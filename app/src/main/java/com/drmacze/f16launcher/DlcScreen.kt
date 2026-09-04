@@ -1,5 +1,7 @@
 package com.drmacze.f16launcher
 
+// DLAVIE_SCREEN_REFRESH_V2
+
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
@@ -103,17 +105,17 @@ import java.util.Locale
 // ──────────────────────────────────────────────────────────────────────────────
 
 // Design tokens (matching existing monochrome theme)
-private val DlcBlack     = Color(0xFF000000)
-private val DlcCardBg    = Color(0xFF0A0A0A)
-private val DlcCardBgAlt = Color(0xFF101010)
-private val DlcBorder    = Color(0x1AFFFFFF)
-private val DlcBorderHi  = Color(0x33FFFFFF)
-private val DlcText      = Color(0xFFFFFFFF)
-private val DlcSubText   = Color(0xFFAAAAAA)
-private val DlcMuted     = Color(0xFF666666)
-private val DlcGreen     = Color(0xFFFFFFFF)
-private val DlcRed       = Color(0xFFFF5555)
-private val DlcYellow    = Color(0xFFFFFF88)
+private val DlcBlack     get() = Carbon
+private val DlcCardBg    get() = GlassBase
+private val DlcCardBgAlt get() = Surface2
+private val DlcBorder    get() = GlassStroke
+private val DlcBorderHi  get() = GlassStrokeHi
+private val DlcText      get() = TextWhite
+private val DlcSubText   get() = SoftText
+private val DlcMuted     get() = DimText
+private val DlcGreen     get() = SuccessGreen
+private val DlcRed       get() = DangerRed
+private val DlcYellow    get() = AmberWarn
 
 data class ModPatch(
     val id: String,
@@ -283,10 +285,10 @@ fun DlcScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(DlcBlack)
+            .background(Brush.verticalGradient(listOf(Carbon, PureBlack)))
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(horizontal = 18.dp, vertical = 22.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // ─── Header ───
         DlcHeader()
@@ -308,9 +310,9 @@ fun DlcScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                Modifier.size(width = 3.dp, height = 18.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(DlcText)
+                Modifier.size(width = 4.dp, height = 18.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(DLavieAccent)
             )
             Spacer(Modifier.width(8.dp))
             Text(

@@ -1,5 +1,7 @@
 package com.drmacze.f16launcher
 
+// DLAVIE_SCREEN_REFRESH_V2
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -121,9 +123,9 @@ fun PremiumGlassCard(
 
     Card(
         modifier = baseModifier,
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xCC0B0B0B)   // v3.0 monochrome — near-black glass
+            containerColor = Color(0xE60F1217)   // v3.0 monochrome — near-black glass
         ),
         border = if (gradientBorder) null else BorderStroke(1.dp, borderColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -134,14 +136,14 @@ fun PremiumGlassCard(
                 Box(
                     Modifier
                         .matchParentSize()
-                        .clip(RoundedCornerShape(24.dp))
+                        .clip(RoundedCornerShape(22.dp))
                         .background(
                             Brush.sweepGradient(
                                 listOf(
-                                    CandyCyan.copy(0.0f),
-                                    CandyBlue.copy(0.45f),
-                                    PremiumViolet.copy(0.30f),
-                                    CandyCyan.copy(0.0f)
+                                    TextWhite.copy(alpha = 0.02f),
+                                    TextWhite.copy(alpha = 0.22f),
+                                    GlassStrokeHi,
+                                    TextWhite.copy(alpha = 0.02f)
                                 )
                             )
                         )
@@ -151,7 +153,7 @@ fun PremiumGlassCard(
                     Modifier
                         .matchParentSize()
                         .padding(1.dp)
-                        .clip(RoundedCornerShape(23.dp))
+                        .clip(RoundedCornerShape(21.dp))
                         .background(Carbon.copy(0.95f))
                 )
             }
@@ -213,7 +215,7 @@ fun ModernSectionHeader(
     icon: ImageVector? = null,
     expanded: Boolean = false,
     onToggle: (() -> Unit)? = null,
-    accentColor: Color = CandyCyan
+    accentColor: Color = TextWhite
 ) {
     val chevronRotation by animateFloatAsState(
         if (expanded) 90f else 0f,
@@ -330,7 +332,7 @@ fun ModernActionButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     icon: ImageVector? = null,
-    containerColor: Color = CandyCyan,
+    containerColor: Color = TextWhite,
     contentColor: Color = Carbon,
     height: Int = 52,
     glow: Boolean = false

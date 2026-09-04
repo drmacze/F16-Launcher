@@ -1,5 +1,7 @@
 package com.drmacze.f16launcher
 
+// DLAVIE_SCREEN_REFRESH_V2
+
 import android.content.Intent
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -62,22 +64,42 @@ fun SettingsScreen(
     }
 
     Column(
-        Modifier.fillMaxSize().background(Carbon).verticalScroll(rememberScrollState())
+        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Carbon, PureBlack))).verticalScroll(rememberScrollState())
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(16.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 18.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                Icons.Rounded.ArrowBack, null,
-                tint = Color.White,
-                modifier = Modifier.size(24.dp).clickable {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            Surface(
+                modifier = Modifier.size(42.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = Surface2,
+                border = BorderStroke(1.dp, GlassStroke),
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     onBack()
                 }
-            )
-            Spacer(Modifier.width(16.dp))
-            Text("Pengaturan", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.ArrowBack, null, tint = TextWhite, modifier = Modifier.size(21.dp))
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text(
+                    "Pengaturan",
+                    color = TextWhite,
+                    fontFamily = InterFontFamily,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Launcher, penyimpanan, keamanan, dan akun",
+                    color = SubText,
+                    fontFamily = InterFontFamily,
+                    fontSize = 11.sp
+                )
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -96,10 +118,10 @@ fun SettingsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF4CAF50).copy(0.15f)),
+                            .background(SuccessGreen.copy(0.15f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Rounded.Save, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(18.dp))
+                        Icon(Icons.Rounded.Save, null, tint = SuccessGreen, modifier = Modifier.size(18.dp))
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
@@ -146,13 +168,13 @@ fun SettingsScreen(
                 saveMessage?.let { (success, msg) ->
                     Spacer(Modifier.height(8.dp))
                     Surface(
-                        color = if (success) Color(0xFF4CAF50).copy(0.1f) else Color(0xFFFF5252).copy(0.1f),
-                        border = BorderStroke(1.dp, if (success) Color(0xFF4CAF50).copy(0.3f) else Color(0xFFFF5252).copy(0.3f)),
+                        color = if (success) SuccessGreen.copy(0.1f) else DangerRed.copy(0.1f),
+                        border = BorderStroke(1.dp, if (success) SuccessGreen.copy(0.3f) else DangerRed.copy(0.3f)),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(
                             msg,
-                            color = if (success) Color(0xFF4CAF50) else Color(0xFFFF5252),
+                            color = if (success) SuccessGreen else DangerRed,
                             fontSize = 11.sp,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         )
@@ -403,7 +425,7 @@ private fun SaveSlotCard(
         ),
         border = BorderStroke(
             1.dp,
-            if (slot.exists) Color(0xFF4CAF50).copy(0.2f) else GlassStroke
+            if (slot.exists) SuccessGreen.copy(0.2f) else GlassStroke
         )
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -412,14 +434,14 @@ private fun SaveSlotCard(
                 Box(
                     Modifier.size(32.dp).clip(RoundedCornerShape(8.dp))
                         .background(
-                            if (slot.exists) Color(0xFF4CAF50).copy(0.2f)
+                            if (slot.exists) SuccessGreen.copy(0.2f)
                             else Color.White.copy(0.05f)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         slot.slotNumber.toString(),
-                        color = if (slot.exists) Color(0xFF4CAF50) else SubText,
+                        color = if (slot.exists) SuccessGreen else SubText,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Black
                     )
@@ -459,14 +481,14 @@ private fun SaveSlotCard(
                     // Restore button
                     Icon(
                         Icons.Rounded.Restore, null,
-                        tint = Color(0xFF4CAF50),
+                        tint = SuccessGreen,
                         modifier = Modifier.size(22.dp).clickable { onRestore() }
                     )
                     Spacer(Modifier.width(8.dp))
                     // Delete button
                     Icon(
                         Icons.Rounded.Delete, null,
-                        tint = Color(0xFFFF5252),
+                        tint = DangerRed,
                         modifier = Modifier.size(20.dp).clickable { onDelete() }
                     )
                 }
@@ -486,12 +508,12 @@ private fun formatSaveSize(bytes: Long): String {
 @Composable
 private fun SettingsSectionHeader(title: String, icon: ImageVector) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, tint = Color.White.copy(0.7f), modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(title, color = Color.White.copy(0.7f), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Icon(icon, null, tint = TextWhite, modifier = Modifier.size(17.dp))
+        Spacer(Modifier.width(9.dp))
+        Text(title, color = SoftText, fontFamily = InterFontFamily, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.4.sp)
     }
 }
 
@@ -504,9 +526,9 @@ private fun SettingsToggle(
     onChange: (Boolean) -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = TTShapes.card,
-        colors = CardDefaults.cardColors(containerColor = GlassBase),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 5.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Surface2.copy(alpha = 0.72f)),
         border = BorderStroke(1.dp, GlassStroke)
     ) {
         Row(
@@ -514,16 +536,16 @@ private fun SettingsToggle(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(0.05f)),
+                Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
+                    .background(Surface3),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp))
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text(subtitle, color = SubText, fontSize = 11.sp)
+                Text(title, color = TextWhite, fontFamily = InterFontFamily, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(subtitle, color = SubText, fontFamily = InterFontFamily, fontSize = 11.sp, lineHeight = 15.sp)
             }
             Switch(
                 checked = checked,
@@ -559,16 +581,16 @@ private fun SettingsAction(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(0.05f)),
+                Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
+                    .background(Surface3),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp))
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text(subtitle, color = SubText, fontSize = 11.sp)
+                Text(title, color = TextWhite, fontFamily = InterFontFamily, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(subtitle, color = SubText, fontFamily = InterFontFamily, fontSize = 11.sp, lineHeight = 15.sp)
             }
             if (actionLabel.isNotEmpty()) {
                 Text(actionLabel, color = Color.White.copy(0.5f), fontSize = 12.sp)
@@ -595,8 +617,8 @@ private fun SettingsInfo(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(0.05f)),
+                Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
+                    .background(Surface3),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp))

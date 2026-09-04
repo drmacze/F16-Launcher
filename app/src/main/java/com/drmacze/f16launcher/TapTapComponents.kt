@@ -1,5 +1,7 @@
 package com.drmacze.f16launcher
 
+// DLAVIE_SCREEN_REFRESH_V2
+
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -191,8 +193,8 @@ fun TTTappableCard(
     val isPressed by interactionSource.collectIsPressedAsState()
     val haptic = LocalHapticFeedback.current
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        targetValue = if (isPressed) 0.985f else 1f,
+        animationSpec = tween(120),
         label = "card_press"
     )
 
@@ -256,7 +258,7 @@ fun TTBannerCarousel(
     Box(modifier) {
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxWidth().height(180.dp),
+            modifier = Modifier.fillMaxWidth().height(196.dp),
             pageSpacing = TTSpacing.md
         ) { page ->
             // P2C: Parallax — banner background moves at half speed of the page
@@ -291,7 +293,7 @@ fun TTBannerCarousel(
                         .size(width = width, height = 6.dp)
                         .clip(CircleShape)
                         .background(
-                            if (isSelected) AccentGreen else Color.White.copy(0.3f)
+                            if (isSelected) TextWhite else TextWhite.copy(alpha = 0.18f)
                         )
                 )
             }
@@ -349,15 +351,19 @@ private fun TTBannerItem(
                 Column {
                     Text(
                         banner.title,
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Black
+                        color = TextWhite,
+                        fontFamily = InterFontFamily,
+                        fontSize = 22.sp,
+                        lineHeight = 27.sp,
+                        fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(TTSpacing.xs))
                     Text(
                         banner.subtitle,
-                        color = Color.White.copy(0.7f),
-                        fontSize = 12.sp
+                        color = SoftText,
+                        fontFamily = InterFontFamily,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
                     )
                 }
                 banner.icon?.let {
@@ -400,7 +406,7 @@ fun TTGameCard(
             // If coverImageRes is provided, show the image. Otherwise, fall back
             // to gradient + coverText (legacy behavior).
             val coverModifier = if (sharedContentKey != null) {
-                Modifier.size(56.dp).clip(RoundedCornerShape(14.dp))
+                Modifier.size(64.dp).clip(RoundedCornerShape(16.dp))
                     .background(Brush.linearGradient(coverGradient))
                     .then(sharedGameCoverModifier(sharedContentKey))
             } else {
@@ -425,8 +431,8 @@ fun TTGameCard(
             }
             Spacer(Modifier.width(TTSpacing.lg))
             Column(Modifier.weight(1f)) {
-                Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
-                Text(subtitle, color = SoftText, fontSize = 11.sp)
+                Text(title, color = TextWhite, fontFamily = InterFontFamily, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(subtitle, color = SoftText, fontFamily = InterFontFamily, fontSize = 12.sp, lineHeight = 16.sp)
                 Spacer(Modifier.height(2.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                     Icon(Icons.Rounded.Star, contentDescription = null, tint = DLavieGlass.AuroraAmber, modifier = Modifier.size(12.dp))
