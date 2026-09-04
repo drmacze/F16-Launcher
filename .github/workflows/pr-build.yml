@@ -8,6 +8,7 @@ on:
       - 'build.gradle'
       - 'settings.gradle'
       - 'gradle.properties'
+      - '.github/scripts/apply_ui_screen_refresh_v2.py'
       - '.github/workflows/pr-build.yml'
 
 permissions:
@@ -42,6 +43,9 @@ jobs:
 
       - name: Patch guided launcher UX
         run: python .github/scripts/patch_guided_ux.py
+
+      - name: Apply DLavie screen refresh
+        run: python .github/scripts/apply_ui_screen_refresh_v2.py
 
       - name: Assemble debug APK
         run: gradle assembleDebug --stacktrace --console=plain
