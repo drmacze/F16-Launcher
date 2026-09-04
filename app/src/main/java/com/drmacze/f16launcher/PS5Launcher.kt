@@ -8,20 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -41,10 +28,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.graphicsLayer
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -54,36 +41,26 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// ═══════════════════════════════════════════════════════════════════════════
-// DLAVIE GAME EXPERIENCE — 2026 visual refresh
-//
-// Historical function names are preserved for compatibility with the launcher,
-// but the presentation now follows the shared DLavie 2026 design system rather
-// than a separate PlayStation-blue theme.
-// ═══════════════════════════════════════════════════════════════════════════
-
+// Historical function names are kept for binary/source compatibility with the
+// current launcher shell. Their visual language is now DLavie 2026, not PS5.
 object PS5Colors {
-    val Bg           get() = com.drmacze.f16launcher.PureBlack
-    val BgCard       get() = com.drmacze.f16launcher.GlassBase
-    val BgNav        get() = Color(0xF2101318)
-    val Surface      get() = com.drmacze.f16launcher.Surface2
-    val GlassBg      get() = Color(0xD90B0D10)
-    val Border       get() = com.drmacze.f16launcher.GlassStroke
-    val BorderHi     get() = com.drmacze.f16launcher.GlassStrokeHi
-    val TextWhite    get() = com.drmacze.f16launcher.TextWhite
-    val TextGray     get() = com.drmacze.f16launcher.SubText
-    val TextDim      get() = com.drmacze.f16launcher.DimText
-    val Accent       get() = com.drmacze.f16launcher.DLavieAccent
+    val Bg get() = com.drmacze.f16launcher.PureBlack
+    val BgCard get() = com.drmacze.f16launcher.GlassBase
+    val BgNav get() = Color(0xF2101318)
+    val Surface get() = com.drmacze.f16launcher.Surface2
+    val GlassBg get() = Color(0xD90B0D10)
+    val Border get() = com.drmacze.f16launcher.GlassStroke
+    val BorderHi get() = com.drmacze.f16launcher.GlassStrokeHi
+    val TextWhite get() = com.drmacze.f16launcher.TextWhite
+    val TextGray get() = com.drmacze.f16launcher.SubText
+    val TextDim get() = com.drmacze.f16launcher.DimText
+    val Accent get() = com.drmacze.f16launcher.DLavieAccent
     val AccentBright get() = com.drmacze.f16launcher.TextWhite
-    val AccentDim    get() = com.drmacze.f16launcher.DLavieAccentDim
-    val Green        get() = com.drmacze.f16launcher.SuccessGreen
-    val Amber        get() = com.drmacze.f16launcher.AmberWarn
-    val Red          get() = com.drmacze.f16launcher.DangerRed
+    val AccentDim get() = com.drmacze.f16launcher.DLavieAccentDim
+    val Green get() = com.drmacze.f16launcher.SuccessGreen
+    val Amber get() = com.drmacze.f16launcher.AmberWarn
+    val Red get() = com.drmacze.f16launcher.DangerRed
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// GAME CAROUSEL
-// ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
 fun PS5GameCarousel(
@@ -101,11 +78,11 @@ fun PS5GameCarousel(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = modifier.fillMaxWidth()
     ) {
-        itemsIndexed(games) { idx, game ->
-            PS5GameCard(
+        itemsIndexed(games) { index, game ->
+            DLavieModernGameCard(
                 game = game,
                 isInstalled = isInstalled(game.packageName),
-                isFocused = idx == focusedIdx,
+                focused = index == focusedIdx,
                 onClick = { onGameClick(game.packageName) }
             )
         }
@@ -113,29 +90,29 @@ fun PS5GameCarousel(
 }
 
 @Composable
-private fun PS5GameCard(
+private fun DLavieModernGameCard(
     game: GameItem,
     isInstalled: Boolean,
-    isFocused: Boolean,
+    focused: Boolean,
     onClick: () -> Unit
 ) {
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1f else 0.95f,
+        targetValue = if (focused) 1f else 0.95f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioNoBouncy,
             stiffness = Spring.StiffnessMediumLow
         ),
-        label = "dlavie_game_scale"
+        label = "game_scale"
     )
     val alpha by animateFloatAsState(
-        targetValue = if (isFocused) 1f else 0.72f,
+        targetValue = if (focused) 1f else 0.72f,
         animationSpec = tween(220),
-        label = "dlavie_game_alpha"
+        label = "game_alpha"
     )
     val borderColor by animateColorAsState(
-        targetValue = if (isFocused) GlassStrokeHi else GlassStroke,
+        targetValue = if (focused) GlassStrokeHi else GlassStroke,
         animationSpec = tween(220),
-        label = "dlavie_game_border"
+        label = "game_border"
     )
 
     Column(
@@ -148,13 +125,11 @@ private fun PS5GameCard(
             }
     ) {
         Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(164.dp),
+            modifier = Modifier.fillMaxWidth().height(164.dp),
             shape = RoundedCornerShape(20.dp),
             color = GlassBase,
             border = BorderStroke(1.dp, borderColor),
-            shadowElevation = if (isFocused) 8.dp else 0.dp,
+            shadowElevation = if (focused) 8.dp else 0.dp,
             onClick = onClick
         ) {
             Box(Modifier.fillMaxSize()) {
@@ -164,9 +139,9 @@ private fun PS5GameCard(
                         .background(Brush.linearGradient(game.coverGradient))
                 )
 
-                if (game.coverImageRes != null) {
+                game.coverImageRes?.let { imageRes ->
                     Image(
-                        painter = painterResource(id = game.coverImageRes),
+                        painter = painterResource(imageRes),
                         contentDescription = game.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -178,7 +153,7 @@ private fun PS5GameCard(
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(
+                                listOf(
                                     Color.Black.copy(alpha = 0.04f),
                                     Color.Transparent,
                                     Color.Black.copy(alpha = 0.88f)
@@ -195,9 +170,7 @@ private fun PS5GameCard(
                 }
 
                 Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(12.dp),
+                    modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
                     shape = RoundedCornerShape(999.dp),
                     color = Color.Black.copy(alpha = 0.66f),
                     border = BorderStroke(1.dp, statusColor.copy(alpha = 0.45f))
@@ -225,7 +198,7 @@ private fun PS5GameCard(
                 }
 
                 Column(
-                    modifier = Modifier
+                    Modifier
                         .align(Alignment.BottomStart)
                         .fillMaxWidth()
                         .padding(16.dp)
@@ -262,22 +235,19 @@ private fun PS5GameCard(
             onClick = onClick
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(46.dp)
-                    .padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxWidth().height(46.dp).padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download,
+                    if (isInstalled) Icons.Rounded.PlayArrow else Icons.Rounded.Download,
                     contentDescription = null,
                     tint = if (isInstalled) Carbon else TextWhite,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(7.dp))
                 Text(
-                    text = if (isInstalled) "Play" else "Install",
+                    if (isInstalled) "Play" else "Install",
                     color = if (isInstalled) Carbon else TextWhite,
                     fontFamily = InterFontFamily,
                     fontSize = 13.sp,
@@ -288,10 +258,6 @@ private fun PS5GameCard(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TOP BAR
-// ═══════════════════════════════════════════════════════════════════════════
-
 @Composable
 fun PS5TopBar(
     currentTime: String,
@@ -300,9 +266,7 @@ fun PS5TopBar(
     modifier: Modifier = Modifier
 ) {
     Row(
-        modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+        modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.End
     ) {
@@ -347,10 +311,6 @@ fun PS5TopBar(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// FLOATING NAVIGATION
-// ═══════════════════════════════════════════════════════════════════════════
-
 @Composable
 fun PS5FloatingNav(
     page: Page,
@@ -375,15 +335,12 @@ fun PS5FloatingNav(
             tonalElevation = 0.dp
         ) {
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .height(68.dp)
-                    .padding(horizontal = 8.dp),
+                Modifier.fillMaxWidth().height(68.dp).padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 pages.filter { it != centerPage }.take(2).forEach { item ->
-                    PS5NavSideButton(item, page == item) {
+                    DLavieModernNavButton(item, page == item) {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onPage(item)
                     }
@@ -392,7 +349,7 @@ fun PS5FloatingNav(
                 Spacer(Modifier.width(62.dp))
 
                 pages.filter { it != centerPage }.drop(2).forEach { item ->
-                    PS5NavSideButton(item, page == item) {
+                    DLavieModernNavButton(item, page == item) {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onPage(item)
                     }
@@ -427,24 +384,24 @@ fun PS5FloatingNav(
 }
 
 @Composable
-private fun PS5NavSideButton(
+private fun DLavieModernNavButton(
     item: Page,
     selected: Boolean,
     onClick: () -> Unit
 ) {
     val iconTint by animateColorAsState(
-        targetValue = if (selected) TextWhite else SubText,
-        animationSpec = tween(180),
+        if (selected) TextWhite else SubText,
+        tween(180),
         label = "nav_icon_${item.label}"
     )
     val background by animateColorAsState(
-        targetValue = if (selected) Surface2 else Color.Transparent,
-        animationSpec = tween(180),
+        if (selected) Surface2 else Color.Transparent,
+        tween(180),
         label = "nav_bg_${item.label}"
     )
     val labelColor by animateColorAsState(
-        targetValue = if (selected) TextWhite else DimText,
-        animationSpec = tween(180),
+        if (selected) TextWhite else DimText,
+        tween(180),
         label = "nav_label_${item.label}"
     )
 
@@ -455,9 +412,7 @@ private fun PS5NavSideButton(
         onClick = onClick
     ) {
         Column(
-            modifier = Modifier
-                .height(52.dp)
-                .padding(vertical = 6.dp),
+            modifier = Modifier.height(52.dp).padding(vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
